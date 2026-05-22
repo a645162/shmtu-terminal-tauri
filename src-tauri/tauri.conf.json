@@ -12,9 +12,11 @@
   "app": {
     "windows": [
       {
-        "title": "shmtu-terminal-tauri",
-        "width": 800,
-        "height": 600
+        "title": "海大终端",
+        "width": 1000,
+        "height": 650,
+        "minWidth": 800,
+        "minHeight": 500
       }
     ],
     "security": {

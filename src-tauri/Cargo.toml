@@ -20,7 +20,37 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
+tauri-plugin-fs = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-shmtu-cas = { path = "vendor/shmtu-cas-rs/shmtu-cas" }
+shmtu-cas = { path = "vendor/shmtu-cas-rs/Core/shmtu-cas" }
 
+# Database
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Encryption
+aes-gcm = "0.10"
+base64 = "0.22"
+hex = "0.4"
+sha2 = "0.10"
+rand = "0.8"
+subtle = "2"
+
+# Configuration
+toml = "0.8"
+
+# Date/Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Error handling
+thiserror = "1"
+anyhow = "1"
+
+# HTTP client (for remote rule updates)
+reqwest = { version = "0.12", features = ["cookies"] }
+
+# ZIP (for snapshots)
+zip = "2"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }

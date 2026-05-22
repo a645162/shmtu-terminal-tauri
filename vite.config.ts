@@ -29,4 +29,15 @@ export default defineConfig(async () => ({
       ignored: ["**/src-tauri/**"],
     },
   },
+
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'fluent-ui': ['@fluentui/react-components', '@fluentui/react-icons'],
+          'recharts': ['recharts'],
+        },
+      },
+    },
+  },
 }));
