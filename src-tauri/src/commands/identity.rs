@@ -61,10 +61,7 @@ pub async fn get_default_identity(state: State<'_, AppState>) -> Result<Option<i
 }
 
 #[tauri::command]
-pub async fn set_last_identity(
-    state: State<'_, AppState>,
-    identity_id: i64,
-) -> Result<(), String> {
+pub async fn set_last_identity(state: State<'_, AppState>, identity_id: i64) -> Result<(), String> {
     let mut config = state.config.write().await;
     config
         .set_last_identity(identity_id)

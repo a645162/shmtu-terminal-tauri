@@ -8,7 +8,10 @@ pub async fn list_accounts(
     state: State<'_, AppState>,
     identity_id: i64,
 ) -> Result<Vec<Account>, String> {
-    tracing::debug!("[Account] list_accounts called, identity_id={}", identity_id);
+    tracing::debug!(
+        "[Account] list_accounts called, identity_id={}",
+        identity_id
+    );
     let db = state.db_manager.read().await;
     db.list_accounts_by_identity(identity_id)
         .map_err(|e| {
@@ -26,15 +29,16 @@ pub async fn create_account(
     state: State<'_, AppState>,
     account: CreateAccountParams,
 ) -> Result<Account, String> {
-    tracing::info!("[Account] create_account called, account_id={}", account.account_id);
+    tracing::info!(
+        "[Account] create_account called, account_id={}",
+        account.account_id
+    );
     let db = state.db_manager.read().await;
     let crypto = state.crypto.read().await;
-    let id = db
-        .create_account(&account, &crypto)
-        .map_err(|e| {
-            tracing::error!("[Account] create_account FAILED: {}", e);
-            e.to_string()
-        })?;
+    let id = db.create_account(&account, &crypto).map_err(|e| {
+        tracing::error!("[Account] create_account FAILED: {}", e);
+        e.to_string()
+    })?;
     drop(crypto);
     db.get_account(id)
         .map_err(|e| {
@@ -61,12 +65,10 @@ pub async fn update_account(
     let crypto = state.crypto.read().await;
 
     if !account.password.is_empty() && !is_encrypted_format(&account.password) {
-        account.password = crypto
-            .encrypt_string(&account.password)
-            .map_err(|e| {
-                tracing::error!("[Account] update_account: encrypt FAILED: {}", e);
-                e.to_string()
-            })?;
+        account.password = crypto.encrypt_string(&account.password).map_err(|e| {
+            tracing::error!("[Account] update_account: encrypt FAILED: {}", e);
+            e.to_string()
+        })?;
     }
 
     db.update_account(&account, &crypto)

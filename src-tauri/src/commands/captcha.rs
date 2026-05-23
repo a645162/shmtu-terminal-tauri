@@ -20,9 +20,9 @@ pub struct CaptchaTestResultFrontend {
 #[tauri::command]
 pub async fn get_captcha_image() -> Result<String, String> {
     tracing::debug!("[Captcha] get_captcha_image called");
-    
+
     use shmtu_cas::cas::epay::EpayAuth;
-    
+
     let mut epay = EpayAuth::new().map_err(|e| {
         tracing::error!("[Captcha] get_captcha_image: EpayAuth::new() failed: {}", e);
         format!("创建EpayAuth失败: {}", e)
@@ -37,11 +37,17 @@ pub async fn get_captcha_image() -> Result<String, String> {
             match epay.prepare_challenge().await {
                 Ok(challenge) => {
                     let base64_image = BASE64.encode(&challenge.captcha_image);
-                    tracing::info!("[Captcha] get_captcha_image success, image_len={}", base64_image.len());
+                    tracing::info!(
+                        "[Captcha] get_captcha_image success, image_len={}",
+                        base64_image.len()
+                    );
                     Ok(base64_image)
                 }
                 Err(e) => {
-                    tracing::error!("[Captcha] get_captcha_image: prepare_challenge failed: {}", e);
+                    tracing::error!(
+                        "[Captcha] get_captcha_image: prepare_challenge failed: {}",
+                        e
+                    );
                     Err(format!("获取验证码失败: {}", e))
                 }
             }
@@ -62,11 +68,14 @@ pub struct CaptchaChallengeResponse {
 #[tauri::command]
 pub async fn get_captcha_with_execution() -> Result<CaptchaChallengeResponse, String> {
     tracing::debug!("[Captcha] get_captcha_with_execution called");
-    
+
     use shmtu_cas::cas::epay::EpayAuth;
-    
+
     let mut epay = EpayAuth::new().map_err(|e| {
-        tracing::error!("[Captcha] get_captcha_with_execution: EpayAuth::new() failed: {}", e);
+        tracing::error!(
+            "[Captcha] get_captcha_with_execution: EpayAuth::new() failed: {}",
+            e
+        );
         format!("创建EpayAuth失败: {}", e)
     })?;
 
@@ -86,13 +95,19 @@ pub async fn get_captcha_with_execution() -> Result<CaptchaChallengeResponse, St
                     })
                 }
                 Err(e) => {
-                    tracing::error!("[Captcha] get_captcha_with_execution: prepare_challenge failed: {}", e);
+                    tracing::error!(
+                        "[Captcha] get_captcha_with_execution: prepare_challenge failed: {}",
+                        e
+                    );
                     Err(format!("获取验证码失败: {}", e))
                 }
             }
         }
         Err(e) => {
-            tracing::error!("[Captcha] get_captcha_with_execution: probe_login failed: {}", e);
+            tracing::error!(
+                "[Captcha] get_captcha_with_execution: probe_login failed: {}",
+                e
+            );
             Err(format!("探测登录状态失败: {}", e))
         }
     }
@@ -103,7 +118,7 @@ async fn do_test_captcha(
     mode: &str,
 ) -> Result<CaptchaTestResultFrontend, String> {
     tracing::debug!("[Captcha] do_test_captcha called, mode={}", mode);
-    
+
     let captcha_mode = match mode {
         "manual" => CaptchaMode::Manual,
         "remote_ocr" => CaptchaMode::RemoteOcr,
@@ -121,12 +136,12 @@ async fn do_test_captcha(
         tracing::error!("[Captcha] do_test_captcha: EpayAuth::new() failed: {}", e);
         format!("创建EpayAuth失败: {}", e)
     })?;
-    
+
     let _ = epay.probe_login().await.map_err(|e| {
         tracing::error!("[Captcha] do_test_captcha: probe_login failed: {}", e);
         format!("探测登录状态失败: {}", e)
     })?;
-    
+
     let challenge = epay.prepare_challenge().await.map_err(|e| {
         tracing::error!("[Captcha] do_test_captcha: prepare_challenge failed: {}", e);
         format!("获取验证码失败: {}", e)
@@ -137,7 +152,12 @@ async fn do_test_captcha(
     let (expression, answer, success, error) = match captcha_mode {
         CaptchaMode::Manual => {
             tracing::info!("[Captcha] do_test_captcha: manual mode, no recognition");
-            (String::new(), String::new(), false, Some("手动模式需要用户输入".to_string()))
+            (
+                String::new(),
+                String::new(),
+                false,
+                Some("手动模式需要用户输入".to_string()),
+            )
         }
         CaptchaMode::RemoteOcr => {
             let (host, port, retry_count) = if let Some(state) = state {
@@ -154,9 +174,18 @@ async fn do_test_captcha(
 
             if host.is_empty() || port == 0 {
                 tracing::error!("[Captcha] do_test_captcha: remote OCR not configured");
-                (String::new(), String::new(), false, Some("未配置远程OCR服务器地址".to_string()))
+                (
+                    String::new(),
+                    String::new(),
+                    false,
+                    Some("未配置远程OCR服务器地址".to_string()),
+                )
             } else {
-                tracing::info!("[Captcha] do_test_captcha: using remote OCR {}:{}", host, port);
+                tracing::info!(
+                    "[Captcha] do_test_captcha: using remote OCR {}:{}",
+                    host,
+                    port
+                );
                 let resolver = shmtu_cas::captcha::OcrCaptchaResolver::new(&host, port)
                     .with_retries(retry_count);
                 match resolver.resolve(&challenge.captcha_image).await {
@@ -168,14 +197,24 @@ async fn do_test_captcha(
                     }
                     Err(e) => {
                         tracing::error!("[Captcha] do_test_captcha: OCR failed: {}", e);
-                        (String::new(), String::new(), false, Some(format!("远程OCR识别失败: {}", e)))
+                        (
+                            String::new(),
+                            String::new(),
+                            false,
+                            Some(format!("远程OCR识别失败: {}", e)),
+                        )
                     }
                 }
             }
         }
         CaptchaMode::LocalOnnx => {
             tracing::error!("[Captcha] do_test_captcha: local ONNX not implemented");
-            (String::new(), String::new(), false, Some("本地ONNX模式暂未实现，请使用远程OCR或手动模式".to_string()))
+            (
+                String::new(),
+                String::new(),
+                false,
+                Some("本地ONNX模式暂未实现，请使用远程OCR或手动模式".to_string()),
+            )
         }
     };
 
@@ -214,7 +253,11 @@ pub async fn batch_test_captcha(
     mode: String,
     count: u32,
 ) -> Result<Vec<CaptchaTestResultFrontend>, String> {
-    tracing::info!("[Captcha] batch_test_captcha called, mode={}, count={}", mode, count);
+    tracing::info!(
+        "[Captcha] batch_test_captcha called, mode={}, count={}",
+        mode,
+        count
+    );
     let state_ref = &*state;
     let mut results = Vec::new();
     for i in 0..count {
@@ -224,11 +267,18 @@ pub async fn batch_test_captcha(
                 results.push(result);
             }
             Err(e) => {
-                tracing::error!("[Captcha] batch_test_captcha: test #{} failed: {}", i + 1, e);
+                tracing::error!(
+                    "[Captcha] batch_test_captcha: test #{} failed: {}",
+                    i + 1,
+                    e
+                );
                 break;
             }
         }
     }
-    tracing::info!("[Captcha] batch_test_captcha completed, results={}", results.len());
+    tracing::info!(
+        "[Captcha] batch_test_captcha completed, results={}",
+        results.len()
+    );
     Ok(results)
 }

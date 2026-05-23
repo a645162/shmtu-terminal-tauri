@@ -10,10 +10,7 @@ pub mod state;
 pub mod sync;
 
 use commands::{
-    account, bill, captcha,
-    config as cmd_config,
-    data, identity, statistics,
-    sync as cmd_sync,
+    account, bill, captcha, config as cmd_config, data, identity, statistics, sync as cmd_sync,
 };
 use tauri::Manager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -32,7 +29,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            let data_dir = app.path().app_data_dir().expect("Failed to resolve app data dir");
+            let data_dir = app
+                .path()
+                .app_data_dir()
+                .expect("Failed to resolve app data dir");
             tracing::info!("数据目录: {:?}", data_dir);
 
             let legacy_data = std::path::Path::new("Data");
@@ -53,7 +53,8 @@ pub fn run() {
             }
 
             let runtime = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
-            let app_state = runtime.block_on(state::AppState::init(data_dir.to_str().unwrap_or("Data")))
+            let app_state = runtime
+                .block_on(state::AppState::init(data_dir.to_str().unwrap_or("Data")))
                 .expect("Failed to initialize app state");
 
             tracing::info!("应用状态初始化完成");
