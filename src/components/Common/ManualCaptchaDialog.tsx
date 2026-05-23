@@ -32,6 +32,7 @@ export const ManualCaptchaDialog: React.FC<ManualCaptchaDialogProps> = ({
   const [error, setError] = useState<string | null>(null);
   const currentIdentity = useAppStore((s) => s.currentIdentity);
   const loadBills = useAppStore((s) => s.loadBills);
+  const setCaptchaForManualLogin = useAppStore((s) => s.setCaptchaForManualLogin);
 
   const handleSubmit = async () => {
     if (!currentIdentity || !captchaCode.trim()) return;
@@ -49,6 +50,9 @@ export const ManualCaptchaDialog: React.FC<ManualCaptchaDialogProps> = ({
       if (result.status === 'completed') {
         loadBills();
         onSuccess();
+      } else if (result.status === 'captcha_required' && result.captcha_image && result.execution) {
+        setCaptchaForManualLogin(result.captcha_image, result.execution);
+        setError(result.error ?? '验证码错误，请重试');
       } else {
         setError('验证码错误，请重试');
       }

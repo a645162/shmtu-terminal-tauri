@@ -37,6 +37,8 @@ pub struct IdentityConfig {
     pub remember_default: bool,
     #[serde(default)]
     pub default_identity_id: i64,
+    #[serde(default)]
+    pub last_identity_id: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -208,14 +210,17 @@ impl TomlConfig {
     }
 
     pub fn set_default_identity(&mut self, identity_id: i64) -> AppResult<()> {
-        self.config.identity.remember_default = true;
         self.config.identity.default_identity_id = identity_id;
         self.save()
     }
 
     pub fn clear_default_identity(&mut self) -> AppResult<()> {
-        self.config.identity.remember_default = false;
         self.config.identity.default_identity_id = 0;
+        self.save()
+    }
+
+    pub fn set_last_identity(&mut self, identity_id: i64) -> AppResult<()> {
+        self.config.identity.last_identity_id = identity_id;
         self.save()
     }
 

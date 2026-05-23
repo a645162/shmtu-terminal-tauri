@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   FluentProvider,
   webLightTheme,
@@ -21,20 +21,34 @@ export const AppProvider: React.FC = () => {
   const theme = useAppStore((s) => s.theme);
   const loadIdentities = useAppStore((s) => s.loadIdentities);
   const loadConfig = useAppStore((s) => s.loadConfig);
+  const activateIdentity = useAppStore((s) => s.activateIdentity);
+  const currentIdentity = useAppStore((s) => s.currentIdentity);
+  const identities = useAppStore((s) => s.identities);
   const setShowStartupDialog = useAppStore((s) => s.setShowStartupDialog);
+  const setShowIdentitySelectDialog = useAppStore((s) => s.setShowIdentitySelectDialog);
   const config = useAppStore((s) => s.config);
+  const [isBootstrapped, setIsBootstrapped] = useState(false);
+  const [isStartupUnlocked, setIsStartupUnlocked] = useState(false);
+  const [hasRequestedStartupDialog, setHasRequestedStartupDialog] = useState(false);
 
   useEffect(() => {
     const init = async () => {
       await loadConfig();
+      await loadIdentities();
+      setIsBootstrapped(true);
     };
-    init();
-  }, []);
+    init().catch(console.error);
+  }, [loadConfig, loadIdentities]);
 
   // Enable startup protection if configured
   useEffect(() => {
     if (config?.security?.enable_startup_protection) {
+      setIsStartupUnlocked(false);
+      setHasRequestedStartupDialog(true);
       setShowStartupDialog(true);
+    } else if (config) {
+      setHasRequestedStartupDialog(false);
+      setIsStartupUnlocked(true);
     }
   }, [config, setShowStartupDialog]);
 
@@ -50,6 +64,50 @@ export const AppProvider: React.FC = () => {
   const captchaImage = useAppStore((s) => s.captchaImage);
   const captchaExecution = useAppStore((s) => s.captchaExecution);
   const setShowManualCaptchaDialog = useAppStore((s) => s.setShowManualCaptchaDialog);
+
+  useEffect(() => {
+    if (config?.security?.enable_startup_protection && hasRequestedStartupDialog && !showStartupDialog) {
+      setIsStartupUnlocked(true);
+    }
+  }, [config, hasRequestedStartupDialog, showStartupDialog]);
+
+  useEffect(() => {
+    if (!isBootstrapped || !config || !isStartupUnlocked || currentIdentity) {
+      return;
+    }
+
+    const enabledIdentities = identities.filter((identity) => identity.enable);
+    if (enabledIdentities.length === 0) {
+      setShowIdentitySelectDialog(true);
+      return;
+    }
+
+    if (enabledIdentities.length === 1) {
+      setShowIdentitySelectDialog(false);
+      activateIdentity(enabledIdentities[0]).catch(console.error);
+      return;
+    }
+
+    const startupIdentityId = config.identity.remember_default
+      ? config.identity.default_identity_id
+      : config.identity.last_identity_id;
+    const startupIdentity = enabledIdentities.find((identity) => identity.id === startupIdentityId);
+
+    if (startupIdentity) {
+      setShowIdentitySelectDialog(false);
+      activateIdentity(startupIdentity).catch(console.error);
+    } else {
+      setShowIdentitySelectDialog(true);
+    }
+  }, [
+    activateIdentity,
+    config,
+    currentIdentity,
+    identities,
+    isBootstrapped,
+    isStartupUnlocked,
+    setShowIdentitySelectDialog,
+  ]);
 
   const fluentTheme = theme === 'dark' ? webDarkTheme : webLightTheme;
 

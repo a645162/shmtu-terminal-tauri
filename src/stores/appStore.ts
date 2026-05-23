@@ -64,6 +64,7 @@ interface AppState {
 
   // Actions
   setCurrentIdentity: (identity: Identity | null) => void;
+  activateIdentity: (identity: Identity) => Promise<void>;
   loadIdentities: () => Promise<void>;
   loadAccounts: (identityId: number) => Promise<void>;
   loadBills: () => Promise<void>;
@@ -135,6 +136,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   captchaExecution: null,
 
   setCurrentIdentity: (identity) => set({ currentIdentity: identity }),
+
+  activateIdentity: async (identity) => {
+    set({ currentIdentity: identity });
+    try {
+      await tauri.set_last_identity(identity.id);
+    } catch (e) {
+      console.error('Failed to persist last identity:', e);
+    }
+    await get().loadAccounts(identity.id);
+    await get().loadBills();
+  },
 
   loadIdentities: async () => {
     try {
@@ -213,8 +225,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setTheme: (theme) => {
+    const currentConfig = get().config;
     set({ theme });
-    tauri.save_config({ ui: { theme, language: 'zh-CN' } }).catch(console.error);
+
+    if (!currentConfig) return;
+
+    const nextConfig = {
+      ...currentConfig,
+      ui: {
+        ...currentConfig.ui,
+        theme,
+      },
+    };
+
+    set({ config: nextConfig });
+    tauri.save_config(nextConfig).catch(console.error);
   },
 
   startSync: async (identityId) => {

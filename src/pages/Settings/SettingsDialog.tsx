@@ -11,7 +11,6 @@ import {
   Input,
   Text,
   Label,
-  Divider,
   Dropdown,
   Option,
   Slider,
@@ -19,13 +18,13 @@ import {
   MessageBarBody,
   TabList,
   Tab,
-  SelectTabEvent,
 } from '@fluentui/react-components';
 import { useAppStore } from '../../stores/appStore';
 import type { CaptchaMode, AppTheme } from '../../types';
 import * as tauri from '../../services/tauri';
 
-type SettingsTab = 'security' | 'captcha' | 'sync' | 'data' | 'ui' | 'classification' | 'update';
+type SettingsTab = 'security' | 'identity' | 'captcha' | 'sync' | 'data' | 'ui' | 'classification' | 'update';
+type IdentityStartupMode = 'last_used' | 'configured_default';
 
 export const SettingsDialog: React.FC = () => {
   const showSettingsDialog = useAppStore((s) => s.showSettingsDialog);
@@ -34,6 +33,7 @@ export const SettingsDialog: React.FC = () => {
   const theme = useAppStore((s) => s.theme);
   const setTheme = useAppStore((s) => s.setTheme);
   const loadConfig = useAppStore((s) => s.loadConfig);
+  const identities = useAppStore((s) => s.identities);
 
   const [selectedTab, setSelectedTab] = useState<SettingsTab>('security');
   const [saving, setSaving] = useState(false);
@@ -45,6 +45,11 @@ export const SettingsDialog: React.FC = () => {
   );
   const [protectionPassword, setProtectionPassword] = useState('');
   const [passwordChanged, setPasswordChanged] = useState(false);
+
+  // Identity settings
+  const [identityStartupMode, setIdentityStartupMode] = useState<IdentityStartupMode>(
+    config?.identity.remember_default ? 'configured_default' : 'last_used'
+  );
 
   // Captcha settings
   const [captchaMode, setCaptchaMode] = useState<CaptchaMode>(
@@ -64,21 +69,30 @@ export const SettingsDialog: React.FC = () => {
   const [snapshotKeep, setSnapshotKeep] = useState(config?.data.snapshot_keep_count ?? 10);
   const [rulesUpdateUrl, setRulesUpdateUrl] = useState(config?.classification.rules_update_url ?? '');
   const [rulesPath, setRulesPath] = useState(config?.classification.rules_path ?? '');
+  const currentDefaultIdentity =
+    identities.find((identity) => identity.id === config?.identity.default_identity_id) ?? null;
 
   const handleSave = async () => {
+    if (!config) return;
+
     setSaving(true);
     setMessage('');
     try {
-      await tauri.save_config({
+      const nextConfig: tauri.AppConfig = {
+        ...config,
         security: {
           enable_startup_protection: startupProtection,
-          password_hash: '', // Backend handles hashing
+          password_hash: config.security.password_hash,
+        },
+        identity: {
+          ...config.identity,
+          remember_default: identityStartupMode === 'configured_default',
         },
         captcha: {
           mode: captchaMode,
           remote_ocr_host: ocrHost,
           remote_ocr_port: parseInt(ocrPort) || 0,
-          onnx_model_path: '',
+          onnx_model_path: config.captcha.onnx_model_path,
           ocr_retry_count: ocrRetry,
         },
         sync: {
@@ -90,11 +104,24 @@ export const SettingsDialog: React.FC = () => {
           data_directory: dataDir,
           snapshot_keep_count: snapshotKeep,
         },
-        ui: {
-          theme: theme,
-          language: 'zh-CN',
+        classification: {
+          rules_path: rulesPath,
+          rules_update_url: rulesUpdateUrl,
         },
-      });
+        update: {
+          ...config.update,
+        },
+        ui: {
+          theme,
+          language: config.ui.language,
+        },
+      };
+
+      await tauri.save_config(nextConfig);
+
+      if (startupProtection && passwordChanged && protectionPassword.trim()) {
+        await tauri.set_startup_password(protectionPassword.trim());
+      }
 
       await loadConfig();
       setMessage('设置已保存');
@@ -136,6 +163,45 @@ export const SettingsDialog: React.FC = () => {
                 />
               </div>
             )}
+          </div>
+        );
+
+      case 'identity':
+        return (
+          <div style={{ display: 'grid', gap: 16 }}>
+            <Text weight="semibold" size={400}>身份设置</Text>
+            <div>
+              <Label>启动时优先加载</Label>
+              <Dropdown
+                value={identityStartupMode === 'last_used' ? '上一次使用的身份' : '设置的默认身份'}
+                selectedOptions={[identityStartupMode]}
+                onOptionSelect={(_, data) => setIdentityStartupMode(data.optionValue as IdentityStartupMode)}
+                style={{ width: '100%' }}
+              >
+                <Option value="last_used">上一次使用的身份</Option>
+                <Option value="configured_default">设置的默认身份</Option>
+              </Dropdown>
+            </div>
+            <div
+              style={{
+                padding: 14,
+                borderRadius: 10,
+                border: '1px solid var(--colorNeutralStroke2)',
+                background: 'var(--colorNeutralBackground2)',
+              }}
+            >
+              <Text weight="semibold" block style={{ marginBottom: 4 }}>
+                当前默认身份
+              </Text>
+              <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                {currentDefaultIdentity
+                  ? `${currentDefaultIdentity.name}（ID #${currentDefaultIdentity.id}）`
+                  : '尚未设置。可在“切换身份”对话框中直接设为默认身份。'}
+              </Text>
+            </div>
+            <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+              如果当前只有一个启用身份，应用会直接进入该身份，不受上述策略影响。
+            </Text>
           </div>
         );
 
@@ -328,6 +394,7 @@ export const SettingsDialog: React.FC = () => {
                   onTabSelect={(_, data) => setSelectedTab(data.value as SettingsTab)}
                 >
                   <Tab value="security">安全</Tab>
+                  <Tab value="identity">身份</Tab>
                   <Tab value="captcha">验证码</Tab>
                   <Tab value="sync">同步</Tab>
                   <Tab value="data">数据</Tab>

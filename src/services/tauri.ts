@@ -26,6 +26,7 @@ export interface AppConfig {
   identity: {
     remember_default: boolean;
     default_identity_id: number;
+    last_identity_id: number;
   };
   captcha: {
     mode: CaptchaMode;
@@ -62,7 +63,7 @@ export async function load_config(): Promise<AppConfig> {
   return invoke<AppConfig>('load_config');
 }
 
-export async function save_config(config: Partial<AppConfig>): Promise<void> {
+export async function save_config(config: AppConfig): Promise<void> {
   return invoke('save_config', { config });
 }
 
@@ -253,6 +254,14 @@ export async function set_default_identity(identityId: number): Promise<void> {
 
 export async function get_default_identity(): Promise<number | null> {
   return invoke<number | null>('get_default_identity');
+}
+
+export async function set_last_identity(identityId: number): Promise<void> {
+  return invoke('set_last_identity', { identityId });
+}
+
+export async function get_last_identity(): Promise<number | null> {
+  return invoke<number | null>('get_last_identity');
 }
 
 // ========== Card Balance ==========
