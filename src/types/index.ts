@@ -157,3 +157,10 @@ export interface MealDistItem {
   count: number;
   amount: number;
 }
+
+// Card balance
+export interface CardBalance {
+  account_id: string;
+  balance: number;
+  last_updated: string;
+}

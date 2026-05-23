@@ -6,6 +6,10 @@ import type {
   BillType,
   SyncProgress,
   AppTheme,
+  StatisticsSummary,
+  DailyTrendItem,
+  CategoryItem,
+  MealDistItem,
 } from '../types';
 import type { AppConfig } from '../services/tauri';
 import * as tauri from '../services/tauri';
@@ -34,6 +38,15 @@ interface AppState {
   // Config
   config: AppConfig | null;
   theme: AppTheme;
+
+  // Statistics
+  statisticsSummary: StatisticsSummary | null;
+  todaySummary: StatisticsSummary | null;
+  monthSummary: StatisticsSummary | null;
+  dailyTrend: DailyTrendItem[];
+  categoryDistribution: CategoryItem[];
+  mealDistribution: MealDistItem[];
+  isLoadingStatistics: boolean;
 
   // UI state
   isLoading: boolean;
@@ -67,6 +80,12 @@ interface AppState {
   setShowCaptchaTestDialog: (show: boolean) => void;
   setShowDataTransferDialog: (show: boolean) => void;
   setShowStatisticsDialog: (show: boolean) => void;
+  loadStatisticsSummary: (params: tauri.StatisticsParams) => Promise<void>;
+  loadTodaySummary: (params: tauri.StatisticsParams) => Promise<void>;
+  loadMonthSummary: (params: tauri.StatisticsParams) => Promise<void>;
+  loadDailyTrend: (params: tauri.StatisticsParams) => Promise<void>;
+  loadCategoryDistribution: (params: tauri.StatisticsParams) => Promise<void>;
+  loadMealDistribution: (params: tauri.StatisticsParams) => Promise<void>;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -87,6 +106,15 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   config: null,
   theme: 'light',
+
+  // Statistics
+  statisticsSummary: null,
+  todaySummary: null,
+  monthSummary: null,
+  dailyTrend: [],
+  categoryDistribution: [],
+  mealDistribution: [],
+  isLoadingStatistics: false,
 
   isLoading: false,
   showStartupDialog: false,
@@ -118,19 +146,23 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  loadBills: async () => {
+  loadBills: async (overrides?: { type?: BillType; keyword?: string; dateStart?: string; dateEnd?: string }) => {
     const { currentIdentity, billPage, billPageSize, billType, billKeyword, billDateStart, billDateEnd } = get();
     if (!currentIdentity) return;
     set({ isLoading: true });
+    const type = overrides?.type ?? billType;
+    const keyword = overrides?.keyword ?? billKeyword;
+    const dateStart = overrides?.dateStart ?? billDateStart;
+    const dateEnd = overrides?.dateEnd ?? billDateEnd;
     try {
       const result = await tauri.query_bills({
         identityId: currentIdentity.id,
-        billType,
+        billType: type,
         page: billPage,
         pageSize: billPageSize,
-        keyword: billKeyword || undefined,
-        dateStart: billDateStart || undefined,
-        dateEnd: billDateEnd || undefined,
+        keyword: keyword || undefined,
+        dateStart: dateStart || undefined,
+        dateEnd: dateEnd || undefined,
       });
       set({ bills: result.items, billTotal: result.total, isLoading: false });
     } catch (e) {
@@ -174,7 +206,6 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setTheme: (theme) => {
     set({ theme });
-    // Persist theme change
     tauri.save_config({ ui: { theme, language: 'zh-CN' } }).catch(console.error);
   },
 
@@ -182,7 +213,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const progress = await tauri.incremental_sync(identityId);
       set({ syncProgress: progress });
-      // Refresh bills after sync
       get().loadBills();
     } catch (e) {
       console.error('Sync failed:', e);
@@ -197,4 +227,63 @@ export const useAppStore = create<AppState>((set, get) => ({
   setShowCaptchaTestDialog: (show) => set({ showCaptchaTestDialog: show }),
   setShowDataTransferDialog: (show) => set({ showDataTransferDialog: show }),
   setShowStatisticsDialog: (show) => set({ showStatisticsDialog: show }),
+
+  loadStatisticsSummary: async (params) => {
+    set({ isLoadingStatistics: true });
+    try {
+      const summary = await tauri.get_statistics_summary(params);
+      set({ statisticsSummary: summary, isLoadingStatistics: false });
+    } catch (e) {
+      console.error('Failed to load statistics summary:', e);
+      set({ statisticsSummary: null, isLoadingStatistics: false });
+    }
+  },
+  loadTodaySummary: async (params) => {
+    try {
+      const summary = await tauri.get_statistics_summary(params);
+      set({ todaySummary: summary });
+    } catch (e) {
+      console.error('Failed to load today summary:', e);
+      set({ todaySummary: null });
+    }
+  },
+  loadMonthSummary: async (params) => {
+    try {
+      const summary = await tauri.get_statistics_summary(params);
+      set({ monthSummary: summary });
+    } catch (e) {
+      console.error('Failed to load month summary:', e);
+      set({ monthSummary: null });
+    }
+  },
+
+  loadDailyTrend: async (params) => {
+    try {
+      const trend = await tauri.get_daily_trend(params);
+      set({ dailyTrend: trend });
+    } catch (e) {
+      console.error('Failed to load daily trend:', e);
+      set({ dailyTrend: [] });
+    }
+  },
+
+  loadCategoryDistribution: async (params) => {
+    try {
+      const distribution = await tauri.get_category_distribution(params);
+      set({ categoryDistribution: distribution });
+    } catch (e) {
+      console.error('Failed to load category distribution:', e);
+      set({ categoryDistribution: [] });
+    }
+  },
+
+  loadMealDistribution: async (params) => {
+    try {
+      const distribution = await tauri.get_meal_distribution(params);
+      set({ mealDistribution: distribution });
+    } catch (e) {
+      console.error('Failed to load meal distribution:', e);
+      set({ mealDistribution: [] });
+    }
+  },
 }));

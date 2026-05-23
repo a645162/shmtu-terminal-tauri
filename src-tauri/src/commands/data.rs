@@ -53,11 +53,13 @@ pub async fn export_data(
     };
 
     let start_timestamp = params.date_start.as_ref().and_then(|d| {
-        chrono::NaiveDateTime::parse_from_str(d, "%Y-%m-%d").ok()
+        chrono::NaiveDateTime::parse_from_str(d, "%Y-%m-%d")
+            .ok()
             .map(|dt| dt.and_utc().timestamp())
     });
     let end_timestamp = params.date_end.as_ref().and_then(|d| {
-        chrono::NaiveDateTime::parse_from_str(d, "%Y-%m-%d").ok()
+        chrono::NaiveDateTime::parse_from_str(d, "%Y-%m-%d")
+            .ok()
             .map(|dt| dt.and_utc().timestamp())
     });
 
@@ -74,7 +76,9 @@ pub async fn export_data(
     if params.source_type == "original" {
         // 导出原始数据需要找到账号ID
         let db = state.db_manager.read().await;
-        let accounts = db.list_accounts_by_identity(params.identity_id).map_err(|e| e.to_string())?;
+        let accounts = db
+            .list_accounts_by_identity(params.identity_id)
+            .map_err(|e| e.to_string())?;
         if let Some(account) = accounts.first() {
             export_service
                 .export_account_bills(&account.account_id, &options)
@@ -83,7 +87,9 @@ pub async fn export_data(
     } else {
         // 获取身份名称
         let db = state.db_manager.read().await;
-        let identity = db.get_identity(params.identity_id).map_err(|e| e.to_string())?;
+        let identity = db
+            .get_identity(params.identity_id)
+            .map_err(|e| e.to_string())?;
         let identity_name = identity
             .as_ref()
             .map(|i| i.name.as_str())
@@ -110,10 +116,15 @@ pub async fn import_data(
 }
 
 #[tauri::command]
-pub async fn list_snapshots(state: State<'_, AppState>) -> Result<Vec<SnapshotInfoFrontend>, String> {
+pub async fn list_snapshots(
+    state: State<'_, AppState>,
+) -> Result<Vec<SnapshotInfoFrontend>, String> {
     let export_service = state.export_service.read().await;
     let snapshots = export_service.list_snapshots().map_err(|e| e.to_string())?;
-    Ok(snapshots.into_iter().map(SnapshotInfoFrontend::from).collect())
+    Ok(snapshots
+        .into_iter()
+        .map(SnapshotInfoFrontend::from)
+        .collect())
 }
 
 #[tauri::command]

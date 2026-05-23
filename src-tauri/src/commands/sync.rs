@@ -53,16 +53,18 @@ pub async fn incremental_sync(
         .await
         .map_err(|e| e.to_string())?;
 
-    // 发送同步完成事件
-    let _ = app.emit("sync-progress", SyncProgressFrontend {
-        account_id: String::new(),
-        current_page: 0,
-        total_pages: 0,
-        new_items: result.total_new_count,
-        is_running: false,
-        status: "completed".to_string(),
-        error: None,
-    });
+    let _ = app.emit(
+        "sync-progress",
+        SyncProgressFrontend {
+            account_id: String::new(),
+            current_page: 0,
+            total_pages: 0,
+            new_items: result.total_new_count,
+            is_running: false,
+            status: "completed".to_string(),
+            error: None,
+        },
+    );
 
     Ok(SyncProgressFrontend {
         account_id: String::new(),
@@ -87,15 +89,18 @@ pub async fn full_sync(
         .await
         .map_err(|e| e.to_string())?;
 
-    let _ = app.emit("sync-progress", SyncProgressFrontend {
-        account_id: String::new(),
-        current_page: 0,
-        total_pages: 0,
-        new_items: result.total_new_count,
-        is_running: false,
-        status: "completed".to_string(),
-        error: None,
-    });
+    let _ = app.emit(
+        "sync-progress",
+        SyncProgressFrontend {
+            account_id: String::new(),
+            current_page: 0,
+            total_pages: 0,
+            new_items: result.total_new_count,
+            is_running: false,
+            status: "completed".to_string(),
+            error: None,
+        },
+    );
 
     Ok(SyncProgressFrontend {
         account_id: String::new(),
@@ -110,8 +115,6 @@ pub async fn full_sync(
 
 #[tauri::command]
 pub async fn get_sync_progress() -> Result<SyncProgressFrontend, String> {
-    // 同步操作是同步执行的，不支持后台查询进度
-    // 未来可通过 tokio channel 实现实时进度推送
     Ok(SyncProgressFrontend::idle())
 }
 
@@ -145,8 +148,8 @@ pub async fn check_login_status(
     let db = state.db_manager.read().await;
     let crypto = state.crypto.read().await;
     let session = db
-        .get_session(&account_id, &*crypto)
+        .get_session(&account_id, &crypto)
         .map_err(|e| e.to_string())?;
 
-    Ok(session.is_some() && session.unwrap().is_valid)
+    Ok(session.as_ref().map(|s| s.is_valid).unwrap_or(false))
 }

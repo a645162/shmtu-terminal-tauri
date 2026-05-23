@@ -1,53 +1,75 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import {
   Card,
   CardHeader,
-  CardPreview,
   Text,
   Title3,
   Subtitle2,
-  Badge,
   Spinner,
-  MessageBar,
-  MessageBarBody,
 } from '@fluentui/react-components';
 import {
   Money24Regular,
-  Money24Filled,
-  ArrowTrending24Regular,
-  CalendarToday24Regular,
-  AddCircle24Regular,
   SubtractCircle24Regular,
+  AddCircle24Regular,
 } from '@fluentui/react-icons';
 import { useAppStore } from '../../stores/appStore';
 import { ExpenseTrendChart } from '../../components/Charts/ExpenseTrendChart';
 import { CategoryPieChart } from '../../components/Charts/CategoryPieChart';
+import * as tauri from '../../services/tauri';
+
+function getDateRangeParams(rangeKey: string, identityId: number): tauri.StatisticsParams {
+  const now = new Date();
+  let dateStart: string | undefined;
+  let dateEnd: string | undefined;
+
+  const today = now.toISOString().split('T')[0];
+  dateEnd = today;
+
+  switch (rangeKey) {
+    case 'week': {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 6);
+      dateStart = d.toISOString().split('T')[0];
+      break;
+    }
+    case 'month': {
+      const d = new Date(now.getFullYear(), now.getMonth(), 1);
+      dateStart = d.toISOString().split('T')[0];
+      break;
+    }
+    case 'today':
+    default: {
+      dateStart = today;
+      break;
+    }
+  }
+
+  return { identityId, dateStart, dateEnd };
+}
 
 export const HomePage: React.FC = () => {
   const currentIdentity = useAppStore((s) => s.currentIdentity);
   const bills = useAppStore((s) => s.bills);
+  const statisticsSummary = useAppStore((s) => s.statisticsSummary);
+  const dailyTrend = useAppStore((s) => s.dailyTrend);
+  const categoryDistribution = useAppStore((s) => s.categoryDistribution);
+  const isLoadingStatistics = useAppStore((s) => s.isLoadingStatistics);
+  const todaySummary = useAppStore((s) => s.todaySummary);
+  const monthSummary = useAppStore((s) => s.monthSummary);
+  const loadTodaySummary = useAppStore((s) => s.loadTodaySummary);
+  const loadMonthSummary = useAppStore((s) => s.loadMonthSummary);
+  const loadDailyTrend = useAppStore((s) => s.loadDailyTrend);
+  const loadCategoryDistribution = useAppStore((s) => s.loadCategoryDistribution);
 
-  // Compute stats from current bills (mock fallback when no backend)
-  const todayExpense = bills
-    .filter((b) => {
-      const today = new Date().toISOString().split('T')[0];
-      return b.date_time_formatted?.startsWith(today.replace(/-/g, '.')) && b.money < 0;
-    })
-    .reduce((sum, b) => sum + b.money, 0);
-
-  const monthExpense = bills
-    .filter((b) => {
-      const month = new Date().toISOString().slice(0, 7).replace(/-/g, '.');
-      return b.date_time_formatted?.startsWith(month) && b.money < 0;
-    })
-    .reduce((sum, b) => sum + b.money, 0);
-
-  const monthIncome = bills
-    .filter((b) => {
-      const month = new Date().toISOString().slice(0, 7).replace(/-/g, '.');
-      return b.date_time_formatted?.startsWith(month) && b.money > 0;
-    })
-    .reduce((sum, b) => sum + b.money, 0);
+  useEffect(() => {
+    if (!currentIdentity) return;
+    const todayParams = getDateRangeParams('today', currentIdentity.id);
+    const monthParams = getDateRangeParams('month', currentIdentity.id);
+    loadTodaySummary(todayParams);
+    loadMonthSummary(monthParams);
+    loadDailyTrend(todayParams);
+    loadCategoryDistribution(todayParams);
+  }, [currentIdentity]);
 
   const recentBills = bills.slice(0, 5);
 
@@ -67,25 +89,25 @@ export const HomePage: React.FC = () => {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 20 }}>
         <StatCard
           title="今日消费"
-          value={`¥ ${Math.abs(todayExpense).toFixed(2)}`}
+          value={todaySummary ? `¥ ${Math.abs(todaySummary.total_expense).toFixed(2)}` : '加载中...'}
           icon={<SubtractCircle24Regular />}
           color="var(--colorPaletteRedForeground3)"
         />
         <StatCard
           title="本月消费"
-          value={`¥ ${Math.abs(monthExpense).toFixed(2)}`}
+          value={todaySummary ? `¥ ${Math.abs(todaySummary.total_expense).toFixed(2)}` : '加载中...'}
           icon={<SubtractCircle24Regular />}
           color="var(--colorPaletteRedForeground3)"
         />
         <StatCard
           title="本月充值"
-          value={`¥ ${monthIncome.toFixed(2)}`}
+          value={monthSummary ? `¥ ${monthSummary.total_income.toFixed(2)}` : '加载中...'}
           icon={<AddCircle24Regular />}
           color="var(--colorPaletteGreenForeground3)"
         />
         <StatCard
           title="卡片余额"
-          value="¥ --"
+          value="暂不可用"
           icon={<Money24Regular />}
           color="var(--colorBrandForeground1)"
         />
@@ -97,13 +119,19 @@ export const HomePage: React.FC = () => {
           <CardHeader>
             <Subtitle2>近7日消费趋势</Subtitle2>
           </CardHeader>
-          <ExpenseTrendChart />
+          {isLoadingStatistics ? (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
+              <Spinner label="加载中..." />
+            </div>
+          ) : (
+            <ExpenseTrendChart data={dailyTrend} />
+          )}
         </Card>
         <Card style={{ padding: 16 }}>
           <CardHeader>
             <Subtitle2>消费分类占比</Subtitle2>
           </CardHeader>
-          <CategoryPieChart />
+          <CategoryPieChart data={categoryDistribution} />
         </Card>
       </div>
 

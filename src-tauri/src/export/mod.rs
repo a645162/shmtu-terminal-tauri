@@ -97,11 +97,7 @@ impl ExportService {
         identity_name: &str,
         options: &ExportOptions,
     ) -> AppResult<()> {
-        let store = BillStoreImpl::new(
-            self.db_manager.clone_ref(),
-            "",
-            identity_id,
-        )?;
+        let store = BillStoreImpl::new(self.db_manager.clone_ref(), "", identity_id)?;
         let bills = store.get_all_merged_bills(identity_id)?;
 
         // 时间范围过滤
@@ -134,16 +130,8 @@ impl ExportService {
     }
 
     /// 导出账号原始数据
-    pub fn export_account_bills(
-        &self,
-        account_id: &str,
-        options: &ExportOptions,
-    ) -> AppResult<()> {
-        let store = BillStoreImpl::new(
-            self.db_manager.clone_ref(),
-            account_id,
-            0,
-        )?;
+    pub fn export_account_bills(&self, account_id: &str, options: &ExportOptions) -> AppResult<()> {
+        let store = BillStoreImpl::new(self.db_manager.clone_ref(), account_id, 0)?;
         let bills = store.get_all_original_bills(account_id)?;
 
         match options.format {
@@ -225,7 +213,9 @@ impl ExportService {
             // 尝试加载分类规则
             let rules_path = self.db_manager.data_dir().join("classification_rules.toml");
             if rules_path.exists() {
-                Some(BillClassifier::from_file(rules_path.to_str().unwrap_or(""))?)
+                Some(BillClassifier::from_file(
+                    rules_path.to_str().unwrap_or(""),
+                )?)
             } else {
                 None
             }
@@ -363,11 +353,7 @@ impl ExportService {
                     "其他支出".to_string()
                 };
 
-                let remark = format!(
-                    "{}-{}",
-                    target,
-                    b.item_type.as_deref().unwrap_or("")
-                );
+                let remark = format!("{}-{}", target, b.item_type.as_deref().unwrap_or(""));
 
                 Some(QianjiItem {
                     r#type: type_val,
@@ -493,7 +479,13 @@ impl ExportService {
         let options = zip::write::SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Deflated);
 
-        self.add_directory_to_zip(&mut zip, self.db_manager.data_dir(), "Data", &options, &["snapshot", "models", "export"])?;
+        self.add_directory_to_zip(
+            &mut zip,
+            self.db_manager.data_dir(),
+            "Data",
+            &options,
+            &["snapshot", "models", "export"],
+        )?;
 
         zip.finish()?;
 

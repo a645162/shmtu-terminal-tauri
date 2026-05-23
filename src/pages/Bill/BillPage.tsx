@@ -39,6 +39,7 @@ import {
 import { useAppStore } from '../../stores/appStore';
 import type { BillItem, BillType } from '../../types';
 import { formatMoney } from '../../hooks';
+import * as tauri from '../../services/tauri';
 
 const BILL_TYPE_OPTIONS: { key: BillType; text: string }[] = [
   { key: 'all', text: '全部' },
@@ -54,6 +55,34 @@ const DATE_RANGE_OPTIONS = [
   { key: 'month', text: '本月' },
 ];
 
+function dateRangeToParams(key: string): { start: string; end: string } {
+  const now = new Date();
+  const today = now.toISOString().split('T')[0];
+  let start: string;
+  const end = today;
+
+  switch (key) {
+    case 'today':
+      start = today;
+      break;
+    case 'week': {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 6);
+      start = d.toISOString().split('T')[0];
+      break;
+    }
+    case 'month': {
+      const d = new Date(now.getFullYear(), now.getMonth(), 1);
+      start = d.toISOString().split('T')[0];
+      break;
+    }
+    default:
+      start = '';
+  }
+
+  return { start, end };
+}
+
 export const BillPage: React.FC = () => {
   const bills = useAppStore((s) => s.bills);
   const billTotal = useAppStore((s) => s.billTotal);
@@ -66,6 +95,7 @@ export const BillPage: React.FC = () => {
   const setBillPage = useAppStore((s) => s.setBillPage);
   const setBillType = useAppStore((s) => s.setBillType);
   const setBillKeyword = useAppStore((s) => s.setBillKeyword);
+  const setBillDateRange = useAppStore((s) => s.setBillDateRange);
   const loadBills = useAppStore((s) => s.loadBills);
   const startSync = useAppStore((s) => s.startSync);
 
@@ -75,16 +105,43 @@ export const BillPage: React.FC = () => {
 
   const totalPages = Math.max(1, Math.ceil(billTotal / billPageSize));
 
-  const handleSearch = useCallback(() => {
+  const handleSearch = useCallback(async () => {
+    // Update store state and call loadBills directly with the current search keyword
+    const { billType, billDateStart, billDateEnd } = useAppStore.getState();
     setBillKeyword(searchInput);
-    loadBills();
-  }, [searchInput, setBillKeyword, loadBills]);
+    // Pass keyword directly to avoid setState timing issues
+    if (currentIdentity) {
+      const { isLoading } = useAppStore.getState();
+      useAppStore.setState({ billKeyword: searchInput, billPage: 1 });
+      useAppStore.getState().loadBills();
+    }
+  }, [searchInput, currentIdentity]);
+
+  const handleDateRangeChange = useCallback((key: string) => {
+    setDateRange(key);
+    const { start, end } = dateRangeToParams(key);
+    setBillDateRange(start, end);
+  }, [setBillDateRange]);
 
   const handleSync = useCallback(() => {
     if (currentIdentity) {
       startSync(currentIdentity.id);
     }
   }, [currentIdentity, startSync]);
+
+  const handleDeleteBill = useCallback(
+    async (bill: BillItem) => {
+      if (!currentIdentity) return;
+      if (!confirm('确定要删除这条账单记录吗？')) return;
+      try {
+        await tauri.delete_merged_bill(currentIdentity.id, bill.id);
+        loadBills();
+      } catch (e) {
+        console.error('Failed to delete bill:', e);
+      }
+    },
+    [currentIdentity, loadBills]
+  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -116,7 +173,7 @@ export const BillPage: React.FC = () => {
         <Dropdown
           value={DATE_RANGE_OPTIONS.find((o) => o.key === dateRange)?.text ?? '全部时间'}
           selectedOptions={[dateRange]}
-          onOptionSelect={(_, data) => setDateRange(data.optionValue ?? 'all')}
+          onOptionSelect={(_, data) => handleDateRangeChange(data.optionValue ?? 'all')}
           style={{ minWidth: 120 }}
         >
           {DATE_RANGE_OPTIONS.map((opt) => (
@@ -131,7 +188,15 @@ export const BillPage: React.FC = () => {
           value={searchInput}
           onChange={(e) => setSearchInput(e.currentTarget.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-          contentAfter={<Search24Regular />}
+          contentAfter={
+            <Button
+              appearance="subtle"
+              icon={<Search24Regular />}
+              onClick={handleSearch}
+              size="small"
+              style={{ pointerEvents: 'auto' }}
+            />
+          }
           style={{ minWidth: 240 }}
         />
 
@@ -222,7 +287,9 @@ export const BillPage: React.FC = () => {
                           <MenuItem icon={<Info24Regular />} onClick={() => setDetailBill(item)}>
                             查看详情
                           </MenuItem>
-                          <MenuItem icon={<Delete24Regular />}>删除</MenuItem>
+                          <MenuItem icon={<Delete24Regular />} onClick={() => handleDeleteBill(item)}>
+                            删除
+                          </MenuItem>
                         </MenuList>
                       </MenuPopover>
                     </Menu>

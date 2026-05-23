@@ -104,13 +104,13 @@ pub async fn query_bills(
         .list_merged_bills(identity_id, params.page, params.page_size)
         .map_err(|e| e.to_string())?;
 
-    // 获取总数（通过 total_pages 估算不够精确，直接查一次）
+    // 获取总数
     let total = {
-        let conn = db.open_identity_db(identity_id).map_err(|e| e.to_string())?;
-        let count: u32 = conn
-            .query_row("SELECT COUNT(*) FROM bill_merged", [], |row| row.get(0))
-            .unwrap_or(0);
-        count
+        let conn = db
+            .open_identity_db(identity_id)
+            .map_err(|e| e.to_string())?;
+        conn.query_row("SELECT COUNT(*) FROM bill_merged", [], |row| row.get(0))
+            .unwrap_or(0)
     };
 
     let items: Vec<BillItemFrontend> = bills.into_iter().map(BillItemFrontend::from).collect();

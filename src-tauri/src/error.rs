@@ -27,6 +27,14 @@ pub enum AppError {
     #[error("同步错误: {0}")]
     Sync(String),
 
+    #[error("需要验证码")]
+    CaptchaRequired {
+        /// Base64 编码的验证码图片
+        captcha_image: String,
+        /// CAS execution token
+        execution: String,
+    },
+
     #[error("分类错误: {0}")]
     Classification(String),
 
@@ -50,3 +58,9 @@ pub enum AppError {
 }
 
 pub type AppResult<T> = Result<T, AppError>;
+
+impl From<AppError> for String {
+    fn from(e: AppError) -> String {
+        e.to_string()
+    }
+}

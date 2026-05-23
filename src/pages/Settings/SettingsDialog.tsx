@@ -44,6 +44,7 @@ export const SettingsDialog: React.FC = () => {
     config?.security.enable_startup_protection ?? false
   );
   const [protectionPassword, setProtectionPassword] = useState('');
+  const [passwordChanged, setPasswordChanged] = useState(false);
 
   // Captcha settings
   const [captchaMode, setCaptchaMode] = useState<CaptchaMode>(
@@ -61,6 +62,8 @@ export const SettingsDialog: React.FC = () => {
   // Data settings
   const [dataDir, setDataDir] = useState(config?.data.data_directory ?? 'Data');
   const [snapshotKeep, setSnapshotKeep] = useState(config?.data.snapshot_keep_count ?? 10);
+  const [rulesUpdateUrl, setRulesUpdateUrl] = useState(config?.classification.rules_update_url ?? '');
+  const [rulesPath, setRulesPath] = useState(config?.classification.rules_path ?? '');
 
   const handleSave = async () => {
     setSaving(true);
@@ -92,9 +95,7 @@ export const SettingsDialog: React.FC = () => {
           language: 'zh-CN',
         },
       });
-      if (startupProtection && protectionPassword) {
-        await tauri.set_startup_password(protectionPassword);
-      }
+
       await loadConfig();
       setMessage('设置已保存');
     } catch (e) {
@@ -129,8 +130,8 @@ export const SettingsDialog: React.FC = () => {
                 <Input
                   type="password"
                   value={protectionPassword}
-                  onChange={(e) => setProtectionPassword(e.currentTarget.value)}
                   placeholder="设置保护密码"
+                  onChange={(e) => { setProtectionPassword(e.currentTarget.value); setPasswordChanged(true); }}
                   style={{ width: '100%' }}
                 />
               </div>
@@ -274,12 +275,20 @@ export const SettingsDialog: React.FC = () => {
         return (
           <div style={{ display: 'grid', gap: 16 }}>
             <Text weight="semibold" size={400}>分类规则设置</Text>
-            <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
-              分类规则文件: Data/classification_rules.toml
-            </Text>
+            <div>
+              <Label>分类规则文件路径</Label>
+              <Input
+                value={rulesPath}
+                onChange={(e) => setRulesPath(e.currentTarget.value)}
+                placeholder="Data/classification_rules.toml"
+                style={{ width: '100%' }}
+              />
+            </div>
             <div>
               <Label>规则更新源(GitHub)</Label>
               <Input
+                value={rulesUpdateUrl}
+                onChange={(e) => setRulesUpdateUrl(e.currentTarget.value)}
                 placeholder="https://github.com/..."
                 style={{ width: '100%' }}
               />

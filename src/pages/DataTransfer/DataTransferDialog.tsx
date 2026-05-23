@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Dialog,
   DialogSurface,
@@ -14,23 +14,20 @@ import {
   Label,
   Radio,
   RadioGroup,
-  Divider,
   Spinner,
   MessageBar,
   MessageBarBody,
   TabList,
   Tab,
-  SelectTabEvent,
   Table,
   TableHeader,
   TableRow,
   TableCell,
   TableBody,
   TableHeaderCell,
-  Badge,
 } from '@fluentui/react-components';
 import { useAppStore } from '../../stores/appStore';
-import type { CaptchaMode, CaptchaTestResult, ExportFormat, SnapshotInfo } from '../../types';
+import type { ExportFormat, SnapshotInfo } from '../../types';
 import * as tauri from '../../services/tauri';
 import { formatBytes } from '../../hooks';
 
@@ -54,7 +51,7 @@ export const DataTransferDialog: React.FC = () => {
 
   // Import state
   const [importPath, setImportPath] = useState('');
-  const [importIdentityId, setImportIdentityId] = useState('');
+  const [importIdentityId, setImportIdentityId] = useState(currentIdentity?.id?.toString() ?? '');
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState('');
 
@@ -63,7 +60,7 @@ export const DataTransferDialog: React.FC = () => {
   const [loadingSnapshots, setLoadingSnapshots] = useState(false);
   const [creatingSnapshot, setCreatingSnapshot] = useState(false);
 
-  const loadSnapshots = async () => {
+  const loadSnapshots = useCallback(async () => {
     setLoadingSnapshots(true);
     try {
       const list = await tauri.list_snapshots();
@@ -73,7 +70,14 @@ export const DataTransferDialog: React.FC = () => {
     } finally {
       setLoadingSnapshots(false);
     }
-  };
+  }, []);
+
+  // Load snapshots when switching to snapshot tab
+  useEffect(() => {
+    if (selectedTab === 'snapshot' && showDataTransferDialog) {
+      loadSnapshots();
+    }
+  }, [selectedTab, showDataTransferDialog, loadSnapshots]);
 
   const handleExport = async () => {
     setExporting(true);
@@ -122,6 +126,7 @@ export const DataTransferDialog: React.FC = () => {
     if (!confirm('恢复快照将覆盖当前数据，确定继续吗？')) return;
     try {
       await tauri.restore_snapshot(filename);
+      await loadSnapshots();
     } catch {
       // ignore
     }

@@ -20,11 +20,22 @@ export const AppProvider: React.FC = () => {
   const theme = useAppStore((s) => s.theme);
   const loadIdentities = useAppStore((s) => s.loadIdentities);
   const loadConfig = useAppStore((s) => s.loadConfig);
+  const setShowStartupDialog = useAppStore((s) => s.setShowStartupDialog);
+  const config = useAppStore((s) => s.config);
 
   useEffect(() => {
-    loadIdentities();
-    loadConfig();
+    const init = async () => {
+      await loadConfig();
+    };
+    init();
   }, []);
+
+  // Enable startup protection if configured
+  useEffect(() => {
+    if (config?.security?.enable_startup_protection) {
+      setShowStartupDialog(true);
+    }
+  }, [config, setShowStartupDialog]);
 
   const showStartupDialog = useAppStore((s) => s.showStartupDialog);
   const showIdentitySelectDialog = useAppStore((s) => s.showIdentitySelectDialog);

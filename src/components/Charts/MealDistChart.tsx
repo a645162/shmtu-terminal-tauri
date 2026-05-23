@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import {
   BarChart,
   Bar,
@@ -10,22 +10,30 @@ import {
   Legend,
 } from 'recharts';
 import { useAppStore } from '../../stores/appStore';
+import type { MealDistItem } from '../../types';
 
-const MOCK_DATA = [
-  { name: '早餐', amount: 45, count: 12 },
-  { name: '午餐', amount: 220, count: 28 },
-  { name: '晚餐', amount: 180, count: 24 },
-  { name: '夜宵', amount: 35, count: 5 },
-];
+interface Props {
+  data?: MealDistItem[];
+}
 
-export const MealDistChart: React.FC = () => {
+export const MealDistChart: React.FC<Props> = ({ data }) => {
   const theme = useAppStore((s) => s.theme);
+
+  const chartData = data ?? [];
   const textColor = theme === 'dark' ? '#e0e0e0' : '#333';
   const gridColor = theme === 'dark' ? '#444' : '#eee';
 
+  if (chartData.length === 0) {
+    return (
+      <div style={{ height: 250, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--colorNeutralForeground3)' }}>
+        暂无用餐数据
+      </div>
+    );
+  }
+
   return (
     <ResponsiveContainer width="100%" height={250}>
-      <BarChart data={MOCK_DATA} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+      <BarChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
         <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
         <XAxis dataKey="name" tick={{ fontSize: 12, fill: textColor }} />
         <YAxis tick={{ fontSize: 12, fill: textColor }} />

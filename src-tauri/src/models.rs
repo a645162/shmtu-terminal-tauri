@@ -128,7 +128,7 @@ impl OperationType {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_from_str(s: &str) -> Option<Self> {
         match s {
             "add" => Some(OperationType::Add),
             "delete" => Some(OperationType::Delete),

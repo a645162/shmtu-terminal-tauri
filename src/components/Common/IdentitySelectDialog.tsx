@@ -9,16 +9,14 @@ import {
   Button,
   Radio,
   RadioGroup,
-  Checkbox,
   Text,
-  Spinner,
   Card,
-  CardPreview,
   CardHeader,
 } from '@fluentui/react-components';
 import { PersonArrowRight24Regular } from '@fluentui/react-icons';
 import { useAppStore } from '../../stores/appStore';
 import type { Identity } from '../../types';
+import * as tauri from '../../services/tauri';
 
 export const IdentitySelectDialog: React.FC = () => {
   const setShowIdentitySelectDialog = useAppStore((s) => s.setShowIdentitySelectDialog);
@@ -26,14 +24,34 @@ export const IdentitySelectDialog: React.FC = () => {
   const setCurrentIdentity = useAppStore((s) => s.setCurrentIdentity);
   const loadAccounts = useAppStore((s) => s.loadAccounts);
   const loadBills = useAppStore((s) => s.loadBills);
+  const loadIdentities = useAppStore((s) => s.loadIdentities);
   const identities = useAppStore((s) => s.identities);
 
   const [selectedId, setSelectedId] = useState<string>('');
-  const [rememberDefault, setRememberDefault] = useState(false);
 
   const enabledIdentities = identities.filter((i) => i.enable);
 
-  const handleEnter = () => {
+  // Load default identity on mount
+  useEffect(() => {
+    const load = async () => {
+      await loadIdentities();
+      try {
+        const defaultId = await tauri.get_default_identity();
+        if (defaultId !== null) {
+          const currentIdentities = useAppStore.getState().identities;
+          const identity = currentIdentities.find((i) => i.id === defaultId);
+          if (identity && identity.enable) {
+            setSelectedId(defaultId.toString());
+          }
+        }
+      } catch {
+        // ignore
+      }
+    };
+    load();
+  }, []);
+
+  const handleEnter = async () => {
     const identity = identities.find((i) => i.id.toString() === selectedId);
     if (identity) {
       setCurrentIdentity(identity);
@@ -82,12 +100,6 @@ export const IdentitySelectDialog: React.FC = () => {
                 ))}
               </RadioGroup>
             )}
-            <Checkbox
-              label="记住默认选择"
-              checked={rememberDefault}
-              onChange={(_, data) => setRememberDefault(data.checked as boolean)}
-              style={{ marginTop: 16 }}
-            />
           </DialogContent>
           <DialogActions>
             <Button appearance="secondary" onClick={handleManage}>

@@ -37,11 +37,8 @@ impl DatabaseManager {
 
     /// 初始化所有数据目录和数据库
     pub fn initialize(&self) -> AppResult<()> {
-        // 创建目录结构
         self.ensure_directories()?;
-        // 初始化全局数据库
         self.init_global_db()?;
-        // 初始化会话数据库
         self.init_session_db()?;
         Ok(())
     }
@@ -58,10 +55,7 @@ impl DatabaseManager {
         ];
         for dir in dirs {
             std::fs::create_dir_all(&dir)
-                .map_err(|e| AppError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("创建目录 {:?} 失败: {}", dir, e),
-                )))?;
+                .map_err(|e| AppError::Config(format!("创建目录 {:?} 失败: {}", dir, e)))?;
         }
         Ok(())
     }
@@ -186,11 +180,13 @@ impl DatabaseManager {
     pub fn create_identity(&self, params: &CreateIdentityParams) -> AppResult<i64> {
         let conn = self.open_global_db()?;
 
-        // 检查名称是否重复
         let mut stmt = conn.prepare("SELECT COUNT(*) FROM identities WHERE name=?1")?;
         let count: i32 = stmt.query_row([&params.name], |row| row.get(0))?;
         if count > 0 {
-            return Err(AppError::Validation(format!("身份名称 '{}' 已存在", params.name)));
+            return Err(AppError::Validation(format!(
+                "身份名称 '{}' 已存在",
+                params.name
+            )));
         }
 
         let now = chrono::Utc::now().to_rfc3339();
@@ -210,10 +206,7 @@ impl DatabaseManager {
         )?;
 
         let id = conn.last_insert_rowid();
-
-        // 初始化身份数据库
         self.init_identity_db(id)?;
-
         Ok(id)
     }
 
@@ -241,24 +234,25 @@ impl DatabaseManager {
 
     /// 删除身份（同时删除身份数据库和其下所有账号数据库）
     pub fn delete_identity(&self, identity_id: i64) -> AppResult<()> {
-        // 获取该身份下的所有账号
         let accounts = self.list_accounts_by_identity(identity_id)?;
 
         let conn = self.open_global_db()?;
         conn.execute("DELETE FROM identities WHERE id=?1", [identity_id])?;
 
-        // 删除账号数据库文件
         for account in accounts {
             let db_path = self.account_db_path(&account.account_id);
             if db_path.exists() {
-                let _ = std::fs::remove_file(&db_path);
+                if let Err(e) = std::fs::remove_file(&db_path) {
+                    eprintln!("删除账号数据库失败: {}", e);
+                }
             }
         }
 
-        // 删除身份数据库文件
         let identity_db_path = self.identity_db_path(identity_id);
         if identity_db_path.exists() {
-            let _ = std::fs::remove_file(&identity_db_path);
+            if let Err(e) = std::fs::remove_file(&identity_db_path) {
+                eprintln!("删除身份数据库失败: {}", e);
+            }
         }
 
         Ok(())
@@ -292,6 +286,38 @@ impl DatabaseManager {
     }
 
     // === 账号 CRUD ===
+
+    /// 获取所有账号
+    pub fn list_all_accounts(&self) -> AppResult<Vec<Account>> {
+        let conn = self.open_global_db()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, identity_id, account_name, account_id, password, enable, enable_update,
+             expire_date, last_update_time, created_at, updated_at
+             FROM accounts ORDER BY id",
+        )?;
+
+        let rows = stmt.query_map([], |row| {
+            Ok(Account {
+                id: row.get(0)?,
+                identity_id: row.get(1)?,
+                account_name: row.get(2)?,
+                account_id: row.get(3)?,
+                password: row.get(4)?,
+                enable: row.get::<_, i32>(5)? != 0,
+                enable_update: row.get::<_, i32>(6)? != 0,
+                expire_date: row.get(7)?,
+                last_update_time: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
+            })
+        })?;
+
+        let mut accounts = Vec::new();
+        for row in rows {
+            accounts.push(row?);
+        }
+        Ok(accounts)
+    }
 
     /// 获取身份下所有账号
     pub fn list_accounts_by_identity(&self, identity_id: i64) -> AppResult<Vec<Account>> {
@@ -331,7 +357,6 @@ impl DatabaseManager {
         params: &CreateAccountParams,
         crypto: &CryptoService,
     ) -> AppResult<i64> {
-        // 验证学号格式：12位数字
         if params.account_id.len() != 12 || !params.account_id.chars().all(|c| c.is_ascii_digit()) {
             return Err(AppError::Validation("学号必须为12位数字".to_string()));
         }
@@ -362,10 +387,7 @@ impl DatabaseManager {
         )?;
 
         let id = conn.last_insert_rowid();
-
-        // 初始化账号原始数据库
         self.init_account_db(&params.account_id)?;
-
         Ok(id)
     }
 
@@ -431,26 +453,42 @@ impl DatabaseManager {
         }
     }
 
-    /// 更新账号
-    pub fn update_account(&self, account: &Account, _crypto: &CryptoService) -> AppResult<()> {
+    /// 更新账号（密码应由调用方预先加密）
+    pub fn update_account(&self, account: &Account, crypto: &CryptoService) -> AppResult<()> {
         let now = chrono::Utc::now().to_rfc3339();
         let conn = self.open_global_db()?;
 
-        // 检查密码是否已经是加密的（简单判断：加密后的字符串比原始密码长得多）
-        conn.execute(
-            "UPDATE accounts SET account_name=?1, password=?2, enable=?3, enable_update=?4,
-             expire_date=?5, last_update_time=?6, updated_at=?7 WHERE id=?8",
-            (
-                &account.account_name,
-                &account.password,
-                account.enable as i32,
-                account.enable_update as i32,
-                &account.expire_date,
-                &account.last_update_time,
-                &now,
-                account.id,
-            ),
-        )?;
+        // 空密码表示不修改密码，只更新其他字段
+        if account.password.is_empty() {
+            conn.execute(
+                "UPDATE accounts SET account_name=?1, enable=?2, enable_update=?3, expire_date=?4, last_update_time=?5, updated_at=?6 WHERE id=?7",
+                (
+                    &account.account_name,
+                    account.enable as i32,
+                    account.enable_update as i32,
+                    &account.expire_date,
+                    &account.last_update_time,
+                    &now,
+                    account.id,
+                ),
+            )?;
+        } else {
+            // 有新密码，加密后更新
+            let encrypted = crypto.encrypt_string(&account.password)?;
+            conn.execute(
+                "UPDATE accounts SET account_name=?1, password=?2, enable=?3, enable_update=?4, expire_date=?5, last_update_time=?6, updated_at=?7 WHERE id=?8",
+                (
+                    &account.account_name,
+                    &encrypted,
+                    account.enable as i32,
+                    account.enable_update as i32,
+                    &account.expire_date,
+                    &account.last_update_time,
+                    &now,
+                    account.id,
+                ),
+            )?;
+        }
 
         Ok(())
     }
@@ -486,11 +524,12 @@ impl DatabaseManager {
 
     /// 删除账号
     pub fn delete_account(&self, account_id: i64) -> AppResult<()> {
-        // 先获取账号信息以删除数据库文件
         if let Some(account) = self.get_account(account_id)? {
             let db_path = self.account_db_path(&account.account_id);
             if db_path.exists() {
-                let _ = std::fs::remove_file(&db_path);
+                if let Err(e) = std::fs::remove_file(&db_path) {
+                    eprintln!("删除账号数据库失败: {}", e);
+                }
             }
         }
 
@@ -678,7 +717,11 @@ impl DatabaseManager {
     }
 
     /// 获取会话信息
-    pub fn get_session(&self, account_id: &str, crypto: &CryptoService) -> AppResult<Option<SessionInfo>> {
+    pub fn get_session(
+        &self,
+        account_id: &str,
+        crypto: &CryptoService,
+    ) -> AppResult<Option<SessionInfo>> {
         let conn = self.open_session_db()?;
         let mut stmt = conn.prepare(
             "SELECT id, account_id, cookies, login_time, expire_time, is_valid
@@ -699,7 +742,6 @@ impl DatabaseManager {
         match rows.next() {
             Some(row) => {
                 let mut session = row?;
-                // 解密 cookies
                 let decrypted = crypto.decrypt_string(&session.cookies)?;
                 session.cookies = decrypted;
                 Ok(Some(session))
@@ -721,10 +763,7 @@ impl DatabaseManager {
     /// 删除会话
     pub fn delete_session(&self, account_id: &str) -> AppResult<()> {
         let conn = self.open_session_db()?;
-        conn.execute(
-            "DELETE FROM session_info WHERE account_id=?1",
-            [account_id],
-        )?;
+        conn.execute("DELETE FROM session_info WHERE account_id=?1", [account_id])?;
         Ok(())
     }
 
@@ -755,14 +794,15 @@ impl DatabaseManager {
     }
 
     /// 清空操作日志
-    pub fn clear_operation_logs(&self, identity_id: i64, account_id: Option<&str>) -> AppResult<()> {
+    pub fn clear_operation_logs(
+        &self,
+        identity_id: i64,
+        account_id: Option<&str>,
+    ) -> AppResult<()> {
         let conn = self.open_identity_db(identity_id)?;
         match account_id {
             Some(aid) => {
-                conn.execute(
-                    "DELETE FROM operation_log WHERE account_id=?1",
-                    [aid],
-                )?;
+                conn.execute("DELETE FROM operation_log WHERE account_id=?1", [aid])?;
             }
             None => {
                 conn.execute("DELETE FROM operation_log", [])?;

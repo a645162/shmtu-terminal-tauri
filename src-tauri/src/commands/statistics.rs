@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::db::BillStoreImpl;
 use crate::state::AppState;
 
 /// 前端统计查询参数
@@ -50,24 +49,32 @@ pub struct MealDistItem {
 
 /// 预定义颜色列表
 const CATEGORY_COLORS: &[&str] = &[
-    "#5B8FF9", "#5AD8A6", "#F6BD16", "#E86452",
-    "#6DC8EC", "#945FB9", "#FF9845", "#1E9493",
+    "#5B8FF9", "#5AD8A6", "#F6BD16", "#E86452", "#6DC8EC", "#945FB9", "#FF9845", "#1E9493",
     "#FF99C3", "#269A99",
 ];
 
-/// 时间范围过滤辅助函数
-fn date_in_range(date_str: &str, start: &Option<String>, end: &Option<String>) -> bool {
-    if let Some(ref s) = start {
-        if date_str < s.as_str() {
-            return false;
-        }
+/// 构建带日期范围过滤的 SQL WHERE 子句（使用参数化查询防注入）
+fn build_date_filter(
+    date_start: &Option<String>,
+    date_end: &Option<String>,
+) -> (String, Vec<String>) {
+    let mut conditions = Vec::new();
+    let mut params = Vec::new();
+
+    if let Some(ref start) = date_start {
+        conditions.push("date_str >= ?".to_string());
+        params.push(start.clone());
     }
-    if let Some(ref e) = end {
-        if date_str > e.as_str() {
-            return false;
-        }
+    if let Some(ref end) = date_end {
+        conditions.push("date_str <= ?".to_string());
+        params.push(end.clone());
     }
-    true
+
+    if conditions.is_empty() {
+        (String::new(), params)
+    } else {
+        (format!(" WHERE {}", conditions.join(" AND ")), params)
+    }
 }
 
 #[tauri::command]
@@ -76,40 +83,64 @@ pub async fn get_statistics_summary(
     params: StatisticsParams,
 ) -> Result<StatisticsSummary, String> {
     let db = state.db_manager.read().await;
-    let store = BillStoreImpl::new(db.clone_ref(), "", params.identity_id).map_err(|e| e.to_string())?;
-    let bills = store.get_all_merged_bills(params.identity_id).map_err(|e| e.to_string())?;
 
-    let mut total_expense = 0.0_f64;
-    let mut total_income = 0.0_f64;
-    let mut expense_count = 0u32;
-    let mut income_count = 0u32;
-    let mut date_set = std::collections::HashSet::new();
+    let conn = db
+        .open_identity_db(params.identity_id)
+        .map_err(|e| e.to_string())?;
 
-    for bill in &bills {
-        // 时间范围过滤
-        if !date_in_range(&bill.date_str, &params.date_start, &params.date_end) {
-            continue;
-        }
+    let (date_filter, filter_params) = build_date_filter(&params.date_start, &params.date_end);
 
-        let money = bill.money.unwrap_or(0.0);
-        if money < 0.0 {
-            total_expense += money.abs();
-            expense_count += 1;
-        } else if money > 0.0 {
-            total_income += money;
-            income_count += 1;
-        }
+    // 查询支出总额和支出笔数
+    let (expense, expense_count) = {
+        let sql = format!(
+            "SELECT COALESCE(SUM(ABS(money)), 0), COUNT(*) FROM bill_merged{} AND money < 0",
+            date_filter
+        );
+        let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+        stmt.query_row(rusqlite::params_from_iter(filter_params.iter()), |row| {
+            Ok((row.get::<_, f64>(0)?, row.get::<_, u32>(1)?))
+        })
+        .unwrap_or((0.0, 0))
+    };
 
-        date_set.insert(bill.date_str.clone());
-    }
+    // 查询收入总额和收入笔数
+    let (income, income_count) = {
+        let sql = format!(
+            "SELECT COALESCE(SUM(money), 0), COUNT(*) FROM bill_merged{} AND money > 0",
+            date_filter
+        );
+        let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+        stmt.query_row(rusqlite::params_from_iter(filter_params.iter()), |row| {
+            Ok((row.get::<_, f64>(0)?, row.get::<_, u32>(1)?))
+        })
+        .unwrap_or((0.0, 0))
+    };
 
-    let days = date_set.len().max(1) as f64;
+    // 计算天数
+    let days = if params.date_start.is_some() || params.date_end.is_some() {
+        let sql = format!(
+            "SELECT COUNT(DISTINCT date_str) FROM bill_merged{}",
+            date_filter
+        );
+        conn.query_row(
+            &sql,
+            rusqlite::params_from_iter(filter_params.iter()),
+            |row| row.get::<_, u32>(0),
+        )
+        .unwrap_or(1) as f64
+    } else {
+        let sql = "SELECT COUNT(DISTINCT date_str) FROM bill_merged";
+        conn.query_row(sql, [], |row| row.get::<_, u32>(0))
+            .unwrap_or(1) as f64
+    };
+
+    let days = days.max(1.0);
 
     Ok(StatisticsSummary {
-        total_expense,
-        total_income,
-        net_expense: total_expense - total_income,
-        daily_average: total_expense / days,
+        total_expense: expense,
+        total_income: income,
+        net_expense: expense - income,
+        daily_average: expense / days,
         expense_count,
         income_count,
     })
@@ -121,35 +152,38 @@ pub async fn get_daily_trend(
     params: StatisticsParams,
 ) -> Result<Vec<DailyTrendItem>, String> {
     let db = state.db_manager.read().await;
-    let store = BillStoreImpl::new(db.clone_ref(), "", params.identity_id).map_err(|e| e.to_string())?;
-    let bills = store.get_all_merged_bills(params.identity_id).map_err(|e| e.to_string())?;
+    let conn = db
+        .open_identity_db(params.identity_id)
+        .map_err(|e| e.to_string())?;
 
-    let mut daily_map: std::collections::HashMap<String, (f64, f64)> = std::collections::HashMap::new();
+    let (date_filter, filter_params) = build_date_filter(&params.date_start, &params.date_end);
 
-    for bill in &bills {
-        if !date_in_range(&bill.date_str, &params.date_start, &params.date_end) {
-            continue;
-        }
+    let sql = format!(
+        "SELECT date_str,
+                COALESCE(SUM(CASE WHEN money < 0 THEN ABS(money) ELSE 0 END), 0) as expense,
+                COALESCE(SUM(CASE WHEN money > 0 THEN money ELSE 0 END), 0) as income
+         FROM bill_merged{}
+         GROUP BY date_str
+         ORDER BY date_str",
+        date_filter
+    );
 
-        let money = bill.money.unwrap_or(0.0);
-        let entry = daily_map.entry(bill.date_str.clone()).or_insert((0.0, 0.0));
-        if money < 0.0 {
-            entry.0 += money.abs();
-        } else {
-            entry.1 += money;
-        }
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(rusqlite::params_from_iter(filter_params.iter()), |row| {
+            Ok(DailyTrendItem {
+                date: row.get(0)?,
+                expense: row.get(1)?,
+                income: row.get(2)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+
+    let mut trend = Vec::new();
+    for row in rows {
+        trend.push(row.map_err(|e| e.to_string())?);
     }
 
-    let mut trend: Vec<DailyTrendItem> = daily_map
-        .into_iter()
-        .map(|(date, (expense, income))| DailyTrendItem {
-            date,
-            expense,
-            income,
-        })
-        .collect();
-
-    trend.sort_by(|a, b| a.date.cmp(&b.date));
     Ok(trend)
 }
 
@@ -159,29 +193,41 @@ pub async fn get_category_distribution(
     params: StatisticsParams,
 ) -> Result<Vec<CategoryItem>, String> {
     let db = state.db_manager.read().await;
-    let store = BillStoreImpl::new(db.clone_ref(), "", params.identity_id).map_err(|e| e.to_string())?;
-    let bills = store.get_all_merged_bills(params.identity_id).map_err(|e| e.to_string())?;
-
     let classifier = state.classifier.read().await;
 
-    let mut category_map: std::collections::HashMap<String, (f64, u32)> = std::collections::HashMap::new();
+    let conn = db
+        .open_identity_db(params.identity_id)
+        .map_err(|e| e.to_string())?;
+    let (date_filter, filter_params) = build_date_filter(&params.date_start, &params.date_end);
 
-    for bill in &bills {
-        if !date_in_range(&bill.date_str, &params.date_start, &params.date_end) {
-            continue;
-        }
+    let sql = format!(
+        "SELECT item_type, target_user, money FROM bill_merged{} AND money < 0",
+        date_filter
+    );
 
-        let money = bill.money.unwrap_or(0.0);
-        if money >= 0.0 {
-            continue; // 只统计支出
-        }
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(rusqlite::params_from_iter(filter_params.iter()), |row| {
+            Ok((
+                row.get::<_, Option<String>>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, f64>(2)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?;
+
+    let mut category_map: std::collections::HashMap<String, (f64, u32)> =
+        std::collections::HashMap::new();
+
+    for row in rows {
+        let (item_type, target_user, money) = row.map_err(|e| e.to_string())?;
 
         let category = if let Some(ref classifier) = *classifier {
             classifier
                 .classify(
-                    bill.item_type.as_deref().unwrap_or(""),
-                    bill.target_user.as_deref().unwrap_or(""),
-                    bill.timestamp.unwrap_or(0),
+                    item_type.as_deref().unwrap_or(""),
+                    target_user.as_deref().unwrap_or(""),
+                    0,
                 )
                 .type_label
                 .clone()
@@ -206,7 +252,11 @@ pub async fn get_category_distribution(
         })
         .collect();
 
-    items.sort_by(|a, b| b.value.partial_cmp(&a.value).unwrap_or(std::cmp::Ordering::Equal));
+    items.sort_by(|a, b| {
+        b.value
+            .partial_cmp(&a.value)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     Ok(items)
 }
 
@@ -216,29 +266,42 @@ pub async fn get_meal_distribution(
     params: StatisticsParams,
 ) -> Result<Vec<MealDistItem>, String> {
     let db = state.db_manager.read().await;
-    let store = BillStoreImpl::new(db.clone_ref(), "", params.identity_id).map_err(|e| e.to_string())?;
-    let bills = store.get_all_merged_bills(params.identity_id).map_err(|e| e.to_string())?;
-
     let classifier = state.classifier.read().await;
 
-    let mut meal_map: std::collections::HashMap<String, (u32, f64)> = std::collections::HashMap::new();
+    let conn = db
+        .open_identity_db(params.identity_id)
+        .map_err(|e| e.to_string())?;
+    let (date_filter, filter_params) = build_date_filter(&params.date_start, &params.date_end);
 
-    for bill in &bills {
-        if !date_in_range(&bill.date_str, &params.date_start, &params.date_end) {
-            continue;
-        }
+    let sql = format!(
+        "SELECT item_type, target_user, money, timestamp FROM bill_merged{} AND money < 0",
+        date_filter
+    );
 
-        let money = bill.money.unwrap_or(0.0);
-        if money >= 0.0 {
-            continue;
-        }
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(rusqlite::params_from_iter(filter_params.iter()), |row| {
+            Ok((
+                row.get::<_, Option<String>>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, f64>(2)?,
+                row.get::<_, Option<i64>>(3)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?;
+
+    let mut meal_map: std::collections::HashMap<String, (u32, f64)> =
+        std::collections::HashMap::new();
+
+    for row in rows {
+        let (item_type, target_user, money, timestamp) = row.map_err(|e| e.to_string())?;
 
         let meal = if let Some(ref classifier) = *classifier {
             classifier
                 .classify(
-                    bill.item_type.as_deref().unwrap_or(""),
-                    bill.target_user.as_deref().unwrap_or(""),
-                    bill.timestamp.unwrap_or(0),
+                    item_type.as_deref().unwrap_or(""),
+                    target_user.as_deref().unwrap_or(""),
+                    timestamp.unwrap_or(0),
                 )
                 .meal
                 .clone()
@@ -261,6 +324,10 @@ pub async fn get_meal_distribution(
         })
         .collect();
 
-    items.sort_by(|a, b| b.amount.partial_cmp(&a.amount).unwrap_or(std::cmp::Ordering::Equal));
+    items.sort_by(|a, b| {
+        b.amount
+            .partial_cmp(&a.amount)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     Ok(items)
 }

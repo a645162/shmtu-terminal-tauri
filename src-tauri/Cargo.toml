@@ -47,10 +47,14 @@ thiserror = "1"
 anyhow = "1"
 
 # HTTP client (for remote rule updates)
-reqwest = { version = "0.12", features = ["cookies"] }
+reqwest = { version = "0.12", features = ["cookies", "json"] }
 
 # ZIP (for snapshots)
 zip = "2"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

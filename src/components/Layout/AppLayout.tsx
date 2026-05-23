@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   TabList,
   Tab,
@@ -28,17 +28,24 @@ import { HomePage } from '../../pages/Home/HomePage';
 import { BillPage } from '../../pages/Bill/BillPage';
 import { FeaturesPage } from '../../pages/Features/FeaturesPage';
 import { useTheme } from '../../hooks';
+import * as tauri from '../../services/tauri';
 
 type TabValue = 'home' | 'bill' | 'features';
 
 export const AppLayout: React.FC = () => {
   const [selectedTab, setSelectedTab] = useState<TabValue>('home');
+  const [appVersion, setAppVersion] = useState('');
   const currentIdentity = useAppStore((s) => s.currentIdentity);
   const setShowSettingsDialog = useAppStore((s) => s.setShowSettingsDialog);
   const setShowAboutDialog = useAppStore((s) => s.setShowAboutDialog);
   const setShowIdentityManagerDialog = useAppStore((s) => s.setShowIdentityManagerDialog);
   const setShowIdentitySelectDialog = useAppStore((s) => s.setShowIdentitySelectDialog);
   const { theme, toggleTheme } = useTheme();
+
+  // Load app version on mount
+  useEffect(() => {
+    tauri.get_app_version().then(setAppVersion).catch(() => {});
+  }, []);
 
   const onTabSelect = (_: unknown, data: any) => {
     const val = data?.value as string;
@@ -157,7 +164,7 @@ export const AppLayout: React.FC = () => {
           {currentIdentity ? `当前身份: ${currentIdentity.name}` : '未选择身份'}
         </Text>
         <Text size={200}>
-          SHMTU Terminal v0.1.0 | Tauri + React
+          SHMTU Terminal v{appVersion} | Tauri + React
         </Text>
       </div>
     </div>

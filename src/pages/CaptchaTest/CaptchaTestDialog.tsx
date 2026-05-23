@@ -42,7 +42,9 @@ export const CaptchaTestDialog: React.FC = () => {
   const handleRefreshCaptcha = async () => {
     try {
       const image = await tauri.get_captcha_image();
-      setCaptchaImage(image);
+      // Handle both plain base64 and pre-prefixed base64
+      const normalized = image.startsWith('data:') ? image : `data:image/png;base64,${image}`;
+      setCaptchaImage(normalized);
     } catch {
       setCaptchaImage('');
     }
@@ -51,7 +53,7 @@ export const CaptchaTestDialog: React.FC = () => {
   const handleTest = async () => {
     setTesting(true);
     try {
-      const result = await tauri.test_captcha(mode);
+      const result = await tauri.test_captcha(mode, mode === 'manual' ? manualInput : undefined);
       setTestResults((prev) => [result, ...prev]);
     } catch (e) {
       setTestResults((prev) => [
@@ -76,14 +78,17 @@ export const CaptchaTestDialog: React.FC = () => {
     try {
       const results = await tauri.batch_test_captcha(mode, 10);
       setTestResults((prev) => [...results, ...prev]);
-    } catch {
-      // ignore
+    } catch (e) {
+      console.error('Batch test failed:', e);
     } finally {
       setBatchTesting(false);
     }
   };
 
   const modeLabel = mode === 'manual' ? '手动输入' : mode === 'remote_ocr' ? '远程OCR' : '本地ONNX';
+
+  // Normalize captcha image src
+  const imgSrc = captchaImage.startsWith('data:') ? captchaImage : `data:image/png;base64,${captchaImage}`;
 
   return (
     <Dialog open={showCaptchaTestDialog} onOpenChange={(_, data) => !data.open && setShowCaptchaTestDialog(false)}>
@@ -125,7 +130,7 @@ export const CaptchaTestDialog: React.FC = () => {
               >
                 {captchaImage ? (
                   <img
-                    src={`data:image/png;base64,${captchaImage}`}
+                    src={imgSrc}
                     alt="验证码"
                     style={{ maxWidth: 150, height: 50 }}
                   />

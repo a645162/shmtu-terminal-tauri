@@ -16,19 +16,30 @@ use commands::{
     sync as cmd_sync,
 };
 use tauri::Manager;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 初始化日志
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
+    tracing::info!("海大终端启动中...");
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir().expect("Failed to resolve app data dir");
+            tracing::info!("数据目录: {:?}", data_dir);
 
             // 迁移旧数据：如果 app_data_dir 下没有数据但 src-tauri/Data 存在，则迁移
             let legacy_data = std::path::Path::new("Data");
             if !data_dir.exists() && legacy_data.exists() {
                 if let Err(e) = std::fs::create_dir_all(&data_dir) {
-                    eprintln!("Failed to create app data dir: {}", e);
+                    tracing::error!("创建数据目录失败: {}", e);
                 } else {
                     // 移动旧数据文件和目录
                     if let Ok(entries) = std::fs::read_dir(legacy_data) {
@@ -36,7 +47,7 @@ pub fn run() {
                             let src = entry.path();
                             let dst = data_dir.join(entry.file_name());
                             if let Err(e) = std::fs::rename(&src, &dst) {
-                                eprintln!("Failed to migrate {:?}: {}", src, e);
+                                tracing::error!("迁移数据失败 {:?}: {}", src, e);
                             }
                         }
                     }
@@ -47,6 +58,7 @@ pub fn run() {
             let app_state = runtime.block_on(state::AppState::init(data_dir.to_str().unwrap_or("Data")))
                 .expect("Failed to initialize app state");
 
+            tracing::info!("应用状态初始化完成");
             app.manage(app_state);
             Ok(())
         })

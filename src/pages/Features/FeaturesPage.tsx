@@ -2,7 +2,6 @@ import React from 'react';
 import {
   Card,
   CardHeader,
-  CardPreview,
   Text,
   Title3,
   Subtitle2,
@@ -20,6 +19,7 @@ import {
   Water24Regular,
 } from '@fluentui/react-icons';
 import { useAppStore } from '../../stores/appStore';
+import * as tauri from '../../services/tauri';
 
 interface FeatureItem {
   title: string;
@@ -90,7 +90,18 @@ export const FeaturesPage: React.FC = () => {
       title: '检查更新',
       description: '检查是否有新版本',
       icon: <ArrowSync24Regular />,
-      action: () => { /* TODO: check for updates */ },
+      action: async () => {
+        try {
+          const result = await tauri.check_for_updates();
+          if (result) {
+            alert(`发现新版本: ${result}`);
+          } else {
+            alert('当前已是最新版本');
+          }
+        } catch {
+          alert('检查更新失败，请稍后重试');
+        }
+      },
     },
     {
       title: '热水查询',

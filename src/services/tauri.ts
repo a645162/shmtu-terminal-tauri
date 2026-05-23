@@ -160,8 +160,8 @@ export async function get_captcha_image(): Promise<string> {
   return invoke<string>('get_captcha_image');
 }
 
-export async function test_captcha(mode: CaptchaMode): Promise<CaptchaTestResult> {
-  return invoke<CaptchaTestResult>('test_captcha', { mode });
+export async function test_captcha(mode: CaptchaMode, manualInput?: string): Promise<CaptchaTestResult> {
+  return invoke<CaptchaTestResult>('test_captcha', { mode, manualInput });
 }
 
 export async function batch_test_captcha(mode: CaptchaMode, count: number): Promise<CaptchaTestResult[]> {
@@ -243,4 +243,20 @@ export async function get_app_version(): Promise<string> {
 
 export async function check_for_updates(): Promise<string | null> {
   return invoke<string | null>('check_for_updates');
+}
+
+// ========== Default Identity ==========
+
+export async function set_default_identity(identityId: number): Promise<void> {
+  return invoke('set_default_identity', { identityId });
+}
+
+export async function get_default_identity(): Promise<number | null> {
+  return invoke<number | null>('get_default_identity');
+}
+
+// ========== Card Balance ==========
+
+export async function get_card_balance(identityId: number): Promise<import('../types').CardBalance> {
+  return invoke<import('../types').CardBalance>('get_card_balance', { identityId });
 }

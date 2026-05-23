@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::{AppError, AppResult};
 
 /// 分类结果
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ClassificationResult {
     /// 消费类型（充值/电费/洗澡/热水/蛋糕/食堂/其他）
     pub type_label: Option<String>,
@@ -15,19 +15,8 @@ pub struct ClassificationResult {
     pub meal: Option<String>,
 }
 
-impl Default for ClassificationResult {
-    fn default() -> Self {
-        Self {
-            type_label: None,
-            building: None,
-            room: None,
-            meal: None,
-        }
-    }
-}
-
 /// 类型分类规则
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TypeRule {
     pub name: String,
     pub match_field: String,
@@ -38,7 +27,7 @@ pub struct TypeRule {
 }
 
 /// 位置映射关键词规则
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PositionKeyword {
     pub building: String,
     pub room: String,
@@ -53,7 +42,7 @@ pub struct PositionConfig {
 }
 
 /// 用餐时段规则
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MealSlot {
     pub name: String,
     pub start_time: String,
@@ -61,7 +50,7 @@ pub struct MealSlot {
 }
 
 /// 用餐时段时间表
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Timetable {
     #[serde(default)]
     pub breakfast: Option<MealSlot>,
@@ -94,21 +83,21 @@ impl Timetable {
 }
 
 /// 日期有效期
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ValidDate {
     pub start_date: String,
     pub end_date: String,
 }
 
 /// 日程规则
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ScheduleRule {
     pub valid_date: ValidDate,
     pub timetable: Timetable,
 }
 
 /// 完整的分类规则配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ClassificationRules {
     /// 类型分类规则
     #[serde(rename = "type", default)]
@@ -119,19 +108,6 @@ pub struct ClassificationRules {
     /// 用餐时段规则
     #[serde(default)]
     pub schedule: Vec<ScheduleRule>,
-}
-
-impl Default for ClassificationRules {
-    fn default() -> Self {
-        Self {
-            type_rules: std::collections::HashMap::new(),
-            position: PositionConfig {
-                field: "target_user".to_string(),
-                keywords: std::collections::HashMap::new(),
-            },
-            schedule: Vec::new(),
-        }
-    }
 }
 
 /// 账单分类引擎
@@ -158,7 +134,12 @@ impl BillClassifier {
     }
 
     /// 对一条账单进行分类
-    pub fn classify(&self, item_type: &str, target_user: &str, timestamp: i64) -> ClassificationResult {
+    pub fn classify(
+        &self,
+        item_type: &str,
+        target_user: &str,
+        timestamp: i64,
+    ) -> ClassificationResult {
         ClassificationResult {
             type_label: self.classify_type(item_type, target_user),
             building: None,
@@ -170,10 +151,12 @@ impl BillClassifier {
 
     /// 类型分类：按规则定义顺序匹配，首次匹配即返回
     fn classify_type(&self, item_type: &str, target_user: &str) -> Option<String> {
-        for (_key, rule) in &self.rules.type_rules {
+        for rule in self.rules.type_rules.values() {
             let matched = match rule.match_field.as_str() {
                 "item_type" => rule.match_names.iter().any(|n| item_type.contains(n)),
-                "target_user" | "target" => rule.match_targets.iter().any(|t| target_user.contains(t)),
+                "target_user" | "target" => {
+                    rule.match_targets.iter().any(|t| target_user.contains(t))
+                }
                 _ => false,
             };
             if matched {
@@ -273,7 +256,7 @@ impl ClassificationResult {
 }
 
 /// 将 BillMerged 转换为带分类信息的结果
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ClassifiedBill {
     pub date_time_formatted: Option<String>,
     pub end_date_time_formatted: Option<String>,
@@ -361,10 +344,7 @@ end_time = "18:15"
             classifier.classify_type("消费", "海馨1楼食堂"),
             Some("食堂".to_string())
         );
-        assert_eq!(
-            classifier.classify_type("未知", "未知位置"),
-            None
-        );
+        assert_eq!(classifier.classify_type("未知", "未知位置"), None);
     }
 
     #[test]

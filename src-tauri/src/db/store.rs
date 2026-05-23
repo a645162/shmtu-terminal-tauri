@@ -41,13 +41,14 @@ impl BillStoreImpl {
         // 从账号原始数据库加载
         if let Ok(conn) = db_manager.open_account_db(account_id) {
             let mut stmt = conn.prepare("SELECT number_list FROM bill_original")?;
-            let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-            for row in rows {
-                if let Ok(json_str) = row {
-                    if let Ok(list) = serde_json::from_str::<Vec<String>>(&json_str) {
-                        for n in list {
-                            numbers.insert(n);
-                        }
+            let rows = stmt.query_map([], |row| {
+                let s: String = row.get(0)?;
+                Ok(s)
+            })?;
+            for json_str in rows.flatten() {
+                if let Ok(list) = serde_json::from_str::<Vec<String>>(&json_str) {
+                    for n in list {
+                        numbers.insert(n);
                     }
                 }
             }
@@ -56,13 +57,14 @@ impl BillStoreImpl {
         // 从身份数据库合并表加载
         if let Ok(conn) = db_manager.open_identity_db(identity_id) {
             let mut stmt = conn.prepare("SELECT number_list FROM bill_merged")?;
-            let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-            for row in rows {
-                if let Ok(json_str) = row {
-                    if let Ok(list) = serde_json::from_str::<Vec<String>>(&json_str) {
-                        for n in list {
-                            numbers.insert(n);
-                        }
+            let rows = stmt.query_map([], |row| {
+                let s: String = row.get(0)?;
+                Ok(s)
+            })?;
+            for json_str in rows.flatten() {
+                if let Ok(list) = serde_json::from_str::<Vec<String>>(&json_str) {
+                    for n in list {
+                        numbers.insert(n);
                     }
                 }
             }
@@ -72,7 +74,12 @@ impl BillStoreImpl {
     }
 
     /// 将 BillItem 写入账号原始数据库
-    pub fn save_bill_original(&self, conn: &Connection, bill: &BillItem, now: &str) -> AppResult<()> {
+    pub fn save_bill_original(
+        &self,
+        conn: &Connection,
+        bill: &BillItem,
+        now: &str,
+    ) -> AppResult<()> {
         let number_list_json = serde_json::to_string(&bill.number_list)?;
         conn.execute(
             "INSERT INTO bill_original (
@@ -155,13 +162,10 @@ impl BillStoreImpl {
         let conn = self.db_manager.open_account_db(account_id)?;
         let offset = (page - 1) * page_size;
 
-        // 获取总数
-        let total: u32 = conn.query_row(
-            "SELECT COUNT(*) FROM bill_original", [],
-            |row| row.get(0),
-        )?;
+        let total: u32 =
+            conn.query_row("SELECT COUNT(*) FROM bill_original", [], |row| row.get(0))?;
 
-        let total_pages = (total + page_size - 1) / page_size;
+        let total_pages = total.div_ceil(page_size);
 
         let mut stmt = conn.prepare(
             "SELECT id, date_str, time_str, time_str_formatted, date_time_formatted,
@@ -213,12 +217,14 @@ impl BillStoreImpl {
         let conn = self.db_manager.open_identity_db(identity_id)?;
         let offset = (page - 1) * page_size;
 
-        let total: u32 = conn.query_row(
-            "SELECT COUNT(*) FROM bill_merged", [],
-            |row| row.get(0),
-        )?;
+        let total: u32 =
+            conn.query_row("SELECT COUNT(*) FROM bill_merged", [], |row| row.get(0))?;
 
-        let total_pages = if page_size > 0 { (total + page_size - 1) / page_size } else { 1 };
+        let total_pages = if page_size > 0 {
+            total.div_ceil(page_size)
+        } else {
+            1
+        };
 
         let mut stmt = conn.prepare(
             "SELECT id, date_str, time_str, time_str_formatted, date_time_formatted,
@@ -300,12 +306,14 @@ impl BillStoreImpl {
 
         let id = conn.last_insert_rowid();
 
-        // 记录操作日志
         self.log_operation(
             &conn,
             "add",
             &number_list_json,
-            &format!("手动添加账单: {} {}", bill.date_time_formatted, bill.item_type),
+            &format!(
+                "手动添加账单: {} {}",
+                bill.date_time_formatted, bill.item_type
+            ),
             None,
         )?;
 
@@ -316,16 +324,16 @@ impl BillStoreImpl {
     pub fn delete_merged_bill(&self, identity_id: i64, bill_id: i64) -> AppResult<()> {
         let conn = self.db_manager.open_identity_db(identity_id)?;
 
-        // 获取要删除的记录信息用于日志
-        let number_list: Option<String> = conn.query_row(
-            "SELECT number_list FROM bill_merged WHERE id=?1",
-            [bill_id],
-            |row| row.get(0),
-        ).ok();
+        let number_list: Option<String> = conn
+            .query_row(
+                "SELECT number_list FROM bill_merged WHERE id=?1",
+                [bill_id],
+                |row| row.get(0),
+            )
+            .ok();
 
         conn.execute("DELETE FROM bill_merged WHERE id=?1", [bill_id])?;
 
-        // 记录操作日志
         if let Some(nl) = number_list {
             self.log_operation(
                 &conn,
@@ -476,30 +484,36 @@ impl shmtu_cas::sync::BillStore for BillStoreImpl {
     }
 
     fn merge(&mut self, new_bills: Vec<BillItem>) {
+        if new_bills.is_empty() {
+            return;
+        }
+
         let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
-        // 打开两个数据库连接
         let account_conn = match self.db_manager.open_account_db(&self.account_id) {
             Ok(c) => c,
-            Err(_) => return,
+            Err(e) => {
+                eprintln!("打开账号数据库失败: {}", e);
+                return;
+            }
         };
         let identity_conn = match self.db_manager.open_identity_db(self.identity_id) {
             Ok(c) => c,
-            Err(_) => return,
+            Err(e) => {
+                eprintln!("打开身份数据库失败: {}", e);
+                return;
+            }
         };
 
         for bill in &new_bills {
-            // 更新已知交易号集合
             for n in &bill.number_list {
                 self.known_numbers.insert(n.clone());
             }
 
-            // 写入账号原始数据库
             if let Err(e) = self.save_bill_original(&account_conn, bill, &now) {
                 eprintln!("写入原始账单失败: {}", e);
             }
 
-            // 追加到身份合并数据库
             if let Err(e) = self.append_to_merged(&identity_conn, bill, &now) {
                 eprintln!("追加合并账单失败: {}", e);
             }

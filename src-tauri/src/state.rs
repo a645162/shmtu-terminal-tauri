@@ -6,6 +6,7 @@ use crate::classification::BillClassifier;
 use crate::config::TomlConfig;
 use crate::crypto::CryptoService;
 use crate::db::DatabaseManager;
+use crate::error::AppResult;
 use crate::export::ExportService;
 use crate::sync::BillSyncService;
 
@@ -21,7 +22,7 @@ pub struct AppState {
 
 impl AppState {
     /// 初始化应用状态
-    pub async fn init(data_dir: &str) -> crate::error::AppResult<Self> {
+    pub async fn init(data_dir: &str) -> AppResult<Self> {
         let db_manager = DatabaseManager::new(data_dir);
         db_manager.initialize()?;
 
@@ -29,7 +30,10 @@ impl AppState {
 
         let config = TomlConfig::load(data_dir)?;
 
-        let sync_service = BillSyncService::new(db_manager.clone_ref(), CryptoService::from_device_id("shmtu-terminal-device-key"));
+        let sync_service = BillSyncService::new(
+            db_manager.clone_ref(),
+            CryptoService::from_device_id("shmtu-terminal-device-key"),
+        );
 
         let export_service = ExportService::new(db_manager.clone_ref());
 
@@ -54,11 +58,13 @@ impl AppState {
     }
 
     /// 重新加载分类器（规则文件变更后调用）
-    pub async fn reload_classifier(&self) -> crate::error::AppResult<()> {
+    pub async fn reload_classifier(&self) -> AppResult<()> {
         let config = self.config.read().await;
         let rules_path = config.classification_rules_path();
         let new_classifier = if rules_path.exists() {
-            Some(BillClassifier::from_file(rules_path.to_str().unwrap_or(""))?)
+            Some(BillClassifier::from_file(
+                rules_path.to_str().unwrap_or(""),
+            )?)
         } else {
             None
         };
