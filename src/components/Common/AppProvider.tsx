@@ -15,6 +15,7 @@ import { AboutDialog } from '../../pages/About/AboutDialog';
 import { CaptchaTestDialog } from '../../pages/CaptchaTest/CaptchaTestDialog';
 import { DataTransferDialog } from '../../pages/DataTransfer/DataTransferDialog';
 import { StatisticsDialog } from '../../pages/Statistics/StatisticsDialog';
+import { ManualCaptchaDialog } from './ManualCaptchaDialog';
 
 export const AppProvider: React.FC = () => {
   const theme = useAppStore((s) => s.theme);
@@ -45,6 +46,10 @@ export const AppProvider: React.FC = () => {
   const showCaptchaTestDialog = useAppStore((s) => s.showCaptchaTestDialog);
   const showDataTransferDialog = useAppStore((s) => s.showDataTransferDialog);
   const showStatisticsDialog = useAppStore((s) => s.showStatisticsDialog);
+  const showManualCaptchaDialog = useAppStore((s) => s.showManualCaptchaDialog);
+  const captchaImage = useAppStore((s) => s.captchaImage);
+  const captchaExecution = useAppStore((s) => s.captchaExecution);
+  const setShowManualCaptchaDialog = useAppStore((s) => s.setShowManualCaptchaDialog);
 
   const fluentTheme = theme === 'dark' ? webDarkTheme : webLightTheme;
 
@@ -62,6 +67,14 @@ export const AppProvider: React.FC = () => {
       {showCaptchaTestDialog && <CaptchaTestDialog />}
       {showDataTransferDialog && <DataTransferDialog />}
       {showStatisticsDialog && <StatisticsDialog />}
+      {showManualCaptchaDialog && captchaImage && captchaExecution && (
+        <ManualCaptchaDialog
+          captchaImage={captchaImage}
+          execution={captchaExecution}
+          onSuccess={() => setShowManualCaptchaDialog(false)}
+          onCancel={() => setShowManualCaptchaDialog(false)}
+        />
+      )}
     </FluentProvider>
   );
 };

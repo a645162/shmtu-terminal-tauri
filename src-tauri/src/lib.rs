@@ -84,6 +84,7 @@ pub fn run() {
             cmd_sync::get_sync_progress,
             cmd_sync::cas_login,
             cmd_sync::check_login_status,
+            cmd_sync::sync_with_captcha,
             // Captcha
             captcha::get_captcha_image,
             captcha::test_captcha,

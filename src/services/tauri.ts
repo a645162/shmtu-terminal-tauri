@@ -260,3 +260,13 @@ export async function get_default_identity(): Promise<number | null> {
 export async function get_card_balance(identityId: number): Promise<import('../types').CardBalance> {
   return invoke<import('../types').CardBalance>('get_card_balance', { identityId });
 }
+
+// ========== Manual Captcha Sync ==========
+
+export async function sync_with_captcha(
+  identityId: number,
+  captchaCode: string,
+  execution: string
+): Promise<SyncProgress> {
+  return invoke<SyncProgress>('sync_with_captcha', { identityId, captchaCode, execution });
+}

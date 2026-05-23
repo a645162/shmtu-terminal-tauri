@@ -33,9 +33,19 @@ export default defineConfig(async () => ({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          'fluent-ui': ['@fluentui/react-components', '@fluentui/react-icons'],
-          'recharts': ['recharts'],
+        manualChunks(id) {
+          if (
+            id.includes("@fluentui/react-components") ||
+            id.includes("@fluentui/react-icons")
+          ) {
+            return "fluent-ui";
+          }
+
+          if (id.includes("/recharts/")) {
+            return "recharts";
+          }
+
+          return undefined;
         },
       },
     },

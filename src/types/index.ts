@@ -95,6 +95,9 @@ export interface CaptchaTestResult {
   duration_ms: number;
   mode: CaptchaMode;
   error?: string;
+  captcha_required?: boolean;
+  captcha_image?: string;
+  execution?: string;
 }
 
 // Sync progress
@@ -104,8 +107,11 @@ export interface SyncProgress {
   total_pages: number;
   new_items: number;
   is_running: boolean;
-  status: 'idle' | 'running' | 'completed' | 'error';
+  status: 'idle' | 'running' | 'completed' | 'error' | 'captcha_required';
   error?: string;
+  captcha_required?: boolean;
+  captcha_image?: string;
+  execution?: string;
 }
 
 // Snapshot info

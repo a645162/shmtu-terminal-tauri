@@ -119,6 +119,10 @@ impl ConfigAccess {
 }
 
 impl BillSyncService {
+    fn should_request_manual_captcha(error: &AppError) -> bool {
+        matches!(error, AppError::Sync(message) if message.contains("手动模式需要前端交互"))
+    }
+
     /// 创建同步服务
     pub fn new(db_manager: DatabaseManager, crypto: CryptoService) -> Self {
         Self { db_manager, crypto }
@@ -180,6 +184,10 @@ impl BillSyncService {
                 e
             }
             Err(e) => {
+                if Self::should_request_manual_captcha(&e) {
+                    tracing::info!("账号 {}: 需要前端手动输入验证码", account.account_id);
+                    return Err(e);
+                }
                 result.error = Some(format!("登录失败: {}", e));
                 tracing::error!("账号 {}: 登录失败 - {}", account.account_id, e);
                 return Ok(result);
@@ -531,5 +539,116 @@ impl BillSyncService {
         self.db_manager
             .save_session(account_id, &cookies_json, &self.crypto)?;
         Ok(())
+    }
+
+    /// 获取验证码图片和 execution（用于手动模式）
+    pub async fn get_captcha_for_manual_login(&self) -> AppResult<(String, String)> {
+        use shmtu_cas::cas::epay::EpayAuth;
+        use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+
+        let mut epay = EpayAuth::new()?;
+        epay.probe_login().await?;
+        let challenge = epay.prepare_challenge().await?;
+
+        let base64_image = BASE64.encode(&challenge.captcha_image);
+        Ok((base64_image, challenge.execution))
+    }
+
+    /// 使用手动输入的验证码完成登录并同步
+    pub async fn sync_with_captcha(
+        &self,
+        identity_id: i64,
+        captcha_code: &str,
+        execution: &str,
+    ) -> AppResult<IdentitySyncResult> {
+        use shmtu_cas::sync::SyncOptions;
+        use shmtu_cas::cas::epay::{EpayAuth, LoginSubmitResult};
+
+        let accounts = self.get_enabled_accounts_for_identity(identity_id)?;
+        let mut total_new = 0;
+        let mut results = Vec::new();
+
+        for account in accounts {
+            let mut epay = EpayAuth::new()?;
+            epay.probe_login().await?;
+
+            let password = self.db_manager.decrypt_account_password(&account, &self.crypto)?;
+
+            match epay.submit_login(&account.account_id, &password, captcha_code, execution).await? {
+                LoginSubmitResult::Success => {
+                    self.save_session(&epay, &account.account_id).await?;
+
+                    let mut store = BillStoreImpl::new(
+                        self.db_manager.clone_ref(),
+                        &account.account_id,
+                        account.identity_id,
+                    )?;
+
+                    let sync_options = SyncOptions {
+                        start_page: 1,
+                        max_pages: 100,
+                        bill_type: BillType::All,
+                        early_stop_threshold: 10,
+                    };
+
+                    match shmtu_cas::sync::incremental_sync(&epay, &mut store, &sync_options).await {
+                        Ok(sync_result) => {
+                            let _ = self.db_manager.update_account_last_sync(account.id);
+                            total_new += sync_result.new_count;
+                            results.push(AccountSyncResult {
+                                account_id: account.account_id.clone(),
+                                account_name: account.account_name.clone(),
+                                new_count: sync_result.new_count,
+                                pages_fetched: sync_result.pages_fetched,
+                                early_stopped: sync_result.early_stopped,
+                                error: None,
+                            });
+                        }
+                        Err(e) => {
+                            results.push(AccountSyncResult {
+                                account_id: account.account_id.clone(),
+                                account_name: account.account_name.clone(),
+                                new_count: 0,
+                                pages_fetched: 0,
+                                early_stopped: false,
+                                error: Some(format!("同步失败: {}", e)),
+                            });
+                        }
+                    }
+                }
+                LoginSubmitResult::ValidateCodeError => {
+                    return Err(AppError::Sync("验证码错误".to_string()));
+                }
+                LoginSubmitResult::PasswordError => {
+                    return Err(AppError::Sync("用户名或密码错误".to_string()));
+                }
+                LoginSubmitResult::Failure(msg) => {
+                    return Err(AppError::Sync(format!("登录失败: {}", msg)));
+                }
+            }
+        }
+
+        Ok(IdentitySyncResult {
+            results,
+            total_new_count: total_new,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BillSyncService;
+    use crate::error::AppError;
+
+    #[test]
+    fn detects_manual_captcha_sync_errors() {
+        let err = AppError::Sync("手动模式需要前端交互，请在应用中手动输入验证码".to_string());
+        assert!(BillSyncService::should_request_manual_captcha(&err));
+    }
+
+    #[test]
+    fn ignores_non_captcha_sync_errors() {
+        let err = AppError::Sync("用户名或密码错误".to_string());
+        assert!(!BillSyncService::should_request_manual_captcha(&err));
     }
 }

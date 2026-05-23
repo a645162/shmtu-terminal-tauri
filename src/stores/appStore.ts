@@ -58,6 +58,9 @@ interface AppState {
   showCaptchaTestDialog: boolean;
   showDataTransferDialog: boolean;
   showStatisticsDialog: boolean;
+  showManualCaptchaDialog: boolean;
+  captchaImage: string | null;
+  captchaExecution: string | null;
 
   // Actions
   setCurrentIdentity: (identity: Identity | null) => void;
@@ -80,6 +83,8 @@ interface AppState {
   setShowCaptchaTestDialog: (show: boolean) => void;
   setShowDataTransferDialog: (show: boolean) => void;
   setShowStatisticsDialog: (show: boolean) => void;
+  setShowManualCaptchaDialog: (show: boolean) => void;
+  setCaptchaForManualLogin: (image: string | null, execution: string | null) => void;
   loadStatisticsSummary: (params: tauri.StatisticsParams) => Promise<void>;
   loadTodaySummary: (params: tauri.StatisticsParams) => Promise<void>;
   loadMonthSummary: (params: tauri.StatisticsParams) => Promise<void>;
@@ -125,6 +130,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   showCaptchaTestDialog: false,
   showDataTransferDialog: false,
   showStatisticsDialog: false,
+  showManualCaptchaDialog: false,
+  captchaImage: null,
+  captchaExecution: null,
 
   setCurrentIdentity: (identity) => set({ currentIdentity: identity }),
 
@@ -212,6 +220,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   startSync: async (identityId) => {
     try {
       const progress = await tauri.incremental_sync(identityId);
+      // 检查是否需要手动输入验证码
+      if (progress.captcha_required && progress.captcha_image && progress.execution) {
+        set({
+          syncProgress: { ...progress, status: 'captcha_required' },
+          captchaImage: progress.captcha_image,
+          captchaExecution: progress.execution,
+          showManualCaptchaDialog: true,
+        });
+        return;
+      }
       set({ syncProgress: progress });
       get().loadBills();
     } catch (e) {
@@ -227,6 +245,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   setShowCaptchaTestDialog: (show) => set({ showCaptchaTestDialog: show }),
   setShowDataTransferDialog: (show) => set({ showDataTransferDialog: show }),
   setShowStatisticsDialog: (show) => set({ showStatisticsDialog: show }),
+  setShowManualCaptchaDialog: (show) =>
+    set(
+      show
+        ? { showManualCaptchaDialog: true }
+        : {
+            showManualCaptchaDialog: false,
+            captchaImage: null,
+            captchaExecution: null,
+          }
+    ),
+  setCaptchaForManualLogin: (image, execution) => set({ captchaImage: image, captchaExecution: execution, showManualCaptchaDialog: true }),
 
   loadStatisticsSummary: async (params) => {
     set({ isLoadingStatistics: true });
