@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Card,
   CardHeader,
@@ -6,15 +6,18 @@ import {
   Title3,
   Subtitle2,
   Spinner,
+  Button,
 } from '@fluentui/react-components';
 import {
   Money24Regular,
   SubtractCircle24Regular,
   AddCircle24Regular,
+  ArrowSync24Regular,
 } from '@fluentui/react-icons';
 import { useAppStore } from '../../stores/appStore';
 import { ExpenseTrendChart } from '../../components/Charts/ExpenseTrendChart';
 import { CategoryPieChart } from '../../components/Charts/CategoryPieChart';
+import { formatBillMoney } from '../../hooks';
 import * as tauri from '../../services/tauri';
 
 function getDateRangeParams(rangeKey: string, identityId: number): tauri.StatisticsParams {
@@ -60,6 +63,9 @@ export const HomePage: React.FC = () => {
   const loadMonthSummary = useAppStore((s) => s.loadMonthSummary);
   const loadDailyTrend = useAppStore((s) => s.loadDailyTrend);
   const loadCategoryDistribution = useAppStore((s) => s.loadCategoryDistribution);
+  const refreshStatistics = useAppStore((s) => s.refreshStatistics);
+
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
     if (!currentIdentity) return;
@@ -70,6 +76,15 @@ export const HomePage: React.FC = () => {
     loadDailyTrend(todayParams);
     loadCategoryDistribution(todayParams);
   }, [currentIdentity]);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await refreshStatistics();
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   const recentBills = bills.slice(0, 5);
 
@@ -85,6 +100,20 @@ export const HomePage: React.FC = () => {
 
   return (
     <div style={{ padding: 20, maxWidth: 1200, margin: '0 auto' }}>
+      {/* Header with Refresh Button */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+        <Title3>首页统计</Title3>
+        <Button
+          icon={<ArrowSync24Regular />}
+          appearance="secondary"
+          size="small"
+          onClick={handleRefresh}
+          disabled={isRefreshing || !currentIdentity}
+        >
+          {isRefreshing ? '刷新中...' : '刷新统计'}
+        </Button>
+      </div>
+
       {/* Summary Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 20 }}>
         <StatCard
@@ -165,9 +194,9 @@ export const HomePage: React.FC = () => {
                 </div>
                 <Text
                   weight="semibold"
-                  style={{ color: bill.money >= 0 ? 'var(--colorPaletteGreenForeground3)' : 'var(--colorPaletteRedForeground3)' }}
+                  style={{ color: bill.item_type?.includes('充值') || bill.item_type?.includes('冲正') || bill.item_type?.includes('退款') ? 'var(--colorPaletteGreenForeground3)' : 'var(--colorPaletteRedForeground3)' }}
                 >
-                  {bill.money >= 0 ? '+' : ''}{bill.money.toFixed(2)}
+                  {formatBillMoney(bill.money, bill.item_type || '')}
                 </Text>
               </div>
             ))}

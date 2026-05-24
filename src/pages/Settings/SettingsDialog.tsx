@@ -18,12 +18,14 @@ import {
   MessageBarBody,
   TabList,
   Tab,
+  Textarea,
 } from '@fluentui/react-components';
 import { useAppStore } from '../../stores/appStore';
+import { ErrorCircle24Regular } from '@fluentui/react-icons';
 import type { CaptchaMode, AppTheme } from '../../types';
 import * as tauri from '../../services/tauri';
 
-type SettingsTab = 'security' | 'identity' | 'captcha' | 'sync' | 'data' | 'ui' | 'classification' | 'update';
+type SettingsTab = 'security' | 'identity' | 'captcha' | 'sync' | 'data' | 'ui' | 'classification' | 'update' | 'debug';
 type IdentityStartupMode = 'last_used' | 'configured_default';
 
 export const SettingsDialog: React.FC = () => {
@@ -69,6 +71,13 @@ export const SettingsDialog: React.FC = () => {
   const [snapshotKeep, setSnapshotKeep] = useState(config?.data.snapshot_keep_count ?? 10);
   const [rulesUpdateUrl, setRulesUpdateUrl] = useState(config?.classification.rules_update_url ?? '');
   const [rulesPath, setRulesPath] = useState(config?.classification.rules_path ?? '');
+
+  // Debug settings
+  const [debugMessage, setDebugMessage] = useState('');
+  const [debugResponse, setDebugResponse] = useState('');
+  const [debugTesting, setDebugTesting] = useState(false);
+  const showError = useAppStore((s) => s.showError);
+
   const currentDefaultIdentity =
     identities.find((identity) => identity.id === config?.identity.default_identity_id) ?? null;
 
@@ -376,6 +385,65 @@ export const SettingsDialog: React.FC = () => {
             </div>
           </div>
         );
+
+      case 'debug':
+        return (
+          <div style={{ display: 'grid', gap: 16 }}>
+            <Text weight="semibold" size={400}>调试面板</Text>
+            <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+              测试错误上报功能。输入错误信息后点击"触发错误"，错误会被发送到后端并显示错误对话框。
+            </Text>
+            <div>
+              <Label>错误信息</Label>
+              <Textarea
+                value={debugMessage}
+                onChange={(_, data) => setDebugMessage(data.value)}
+                placeholder="输入要测试的错误信息..."
+                style={{ width: '100%', minHeight: 80 }}
+              />
+            </div>
+            <Button
+              appearance="primary"
+              onClick={async () => {
+                if (!debugMessage.trim()) {
+                  setDebugResponse('请输入错误信息');
+                  return;
+                }
+                setDebugTesting(true);
+                setDebugResponse('');
+                try {
+                  await tauri.log_error(debugMessage);
+                  setDebugResponse('✓ 错误已发送到后端');
+                  showError(debugMessage);
+                } catch (e) {
+                  setDebugResponse(`✗ 发送失败: ${e}`);
+                } finally {
+                  setDebugTesting(false);
+                }
+              }}
+              disabled={debugTesting}
+            >
+              {debugTesting ? '发送中...' : '触发错误'}
+            </Button>
+            {debugResponse && (
+              <MessageBar intent={debugResponse.startsWith('✓') ? 'success' : 'error'}>
+                <MessageBarBody>{debugResponse}</MessageBarBody>
+              </MessageBar>
+            )}
+            <div
+              style={{
+                marginTop: 16,
+                padding: 12,
+                borderRadius: 8,
+                background: 'var(--colorNeutralBackground4)',
+              }}
+            >
+              <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                提示：错误日志保存在 ~/.local/share/cn.edu.shmtu.terminal.tauri/frontend_errors.log
+              </Text>
+            </div>
+          </div>
+        );
     }
   };
 
@@ -401,6 +469,7 @@ export const SettingsDialog: React.FC = () => {
                   <Tab value="ui">界面</Tab>
                   <Tab value="classification">分类规则</Tab>
                   <Tab value="update">更新</Tab>
+                  <Tab value="debug"><ErrorCircle24Regular style={{ marginRight: 4 }} />调试</Tab>
                 </TabList>
               </div>
 

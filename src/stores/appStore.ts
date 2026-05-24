@@ -10,6 +10,8 @@ import type {
   DailyTrendItem,
   CategoryItem,
   MealDistItem,
+  ConsumptionBucketItem,
+  MerchantRankingItem,
 } from '../types';
 import type { AppConfig } from '../services/tauri';
 import * as tauri from '../services/tauri';
@@ -46,6 +48,8 @@ interface AppState {
   dailyTrend: DailyTrendItem[];
   categoryDistribution: CategoryItem[];
   mealDistribution: MealDistItem[];
+  consumptionDistribution: ConsumptionBucketItem[];
+  merchantRanking: MerchantRankingItem[];
   isLoadingStatistics: boolean;
 
   // UI state
@@ -97,6 +101,9 @@ interface AppState {
   loadDailyTrend: (params: tauri.StatisticsParams) => Promise<void>;
   loadCategoryDistribution: (params: tauri.StatisticsParams) => Promise<void>;
   loadMealDistribution: (params: tauri.StatisticsParams) => Promise<void>;
+  loadConsumptionDistribution: (params: tauri.StatisticsParams) => Promise<void>;
+  loadMerchantRanking: (params: tauri.StatisticsParams) => Promise<void>;
+  refreshStatistics: () => Promise<void>;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -125,6 +132,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   dailyTrend: [],
   categoryDistribution: [],
   mealDistribution: [],
+  consumptionDistribution: [],
+  merchantRanking: [],
   isLoadingStatistics: false,
 
   isLoading: false,
@@ -264,8 +273,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
       set({ syncProgress: progress });
       get().loadBills();
+      // 同步完成后刷新统计数据
+      get().refreshStatistics();
     } catch (e) {
-      console.error('Sync failed:', e);
+      get().showError(`同步失败: ${e}`);
     }
   },
 
@@ -354,6 +365,100 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (e) {
       console.error('Failed to load meal distribution:', e);
       set({ mealDistribution: [] });
+    }
+  },
+
+  loadConsumptionDistribution: async (params) => {
+    try {
+      const distribution = await tauri.get_consumption_distribution(params);
+      set({ consumptionDistribution: distribution });
+    } catch (e) {
+      console.error('Failed to load consumption distribution:', e);
+      set({ consumptionDistribution: [] });
+    }
+  },
+
+  loadMerchantRanking: async (params) => {
+    try {
+      const ranking = await tauri.get_merchant_ranking(params);
+      set({ merchantRanking: ranking });
+    } catch (e) {
+      console.error('Failed to load merchant ranking:', e);
+      set({ merchantRanking: [] });
+    }
+  },
+
+  refreshStatistics: async () => {
+    const { currentIdentity } = get();
+    if (!currentIdentity) return;
+    const params = { identityId: currentIdentity.id };
+
+    try {
+      const summary = await tauri.get_statistics_summary(params);
+      set({ statisticsSummary: summary });
+    } catch (e) {
+      console.error('Failed to refresh statistics summary:', e);
+    }
+
+    // 今日统计
+    const today = new Date().toISOString().split('T')[0];
+    try {
+      const todaySummary = await tauri.get_statistics_summary({ identityId: currentIdentity.id, dateStart: today, dateEnd: today });
+      set({ todaySummary });
+    } catch (e) {
+      console.error('Failed to refresh today summary:', e);
+    }
+
+    // 本月统计
+    const now = new Date();
+    const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    try {
+      const monthSummary = await tauri.get_statistics_summary({ identityId: currentIdentity.id, dateStart: monthStart });
+      set({ monthSummary });
+    } catch (e) {
+      console.error('Failed to refresh month summary:', e);
+    }
+
+    // 每日趋势（最近30天）
+    const trendEnd = today;
+    const trendStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    try {
+      const dailyTrend = await tauri.get_daily_trend({ identityId: currentIdentity.id, dateStart: trendStart, dateEnd: trendEnd });
+      set({ dailyTrend });
+    } catch (e) {
+      console.error('Failed to refresh daily trend:', e);
+    }
+
+    // 分类分布
+    try {
+      const categoryDistribution = await tauri.get_category_distribution(params);
+      set({ categoryDistribution });
+    } catch (e) {
+      console.error('Failed to refresh category distribution:', e);
+    }
+
+    // 餐饮分布
+    try {
+      const mealDistribution = await tauri.get_meal_distribution(params);
+      set({ mealDistribution });
+    } catch (e) {
+      console.error('Failed to refresh meal distribution:', e);
+    }
+
+    // 消费分布
+    try {
+      const consumptionDistribution = await tauri.get_consumption_distribution(params);
+      set({ consumptionDistribution });
+    } catch (e) {
+      console.error('Failed to refresh consumption distribution:', e);
+    }
+
+    // 商户排行
+    try {
+      const merchantRanking = await tauri.get_merchant_ranking(params);
+      set({ merchantRanking });
+    } catch (e) {
+      console.error('Failed to refresh merchant ranking:', e);
     }
   },
 }));

@@ -49,6 +49,18 @@ export function formatMoney(money: number): string {
   return formatted;
 }
 
+// 根据 item_type 判断是否是充值/退款（这些才是+）
+const RECHARGE_KEYWORDS = ['充值', '冲正', '退款', '返还', '补偿'];
+const isRecharge = (itemType: string): boolean => {
+  return RECHARGE_KEYWORDS.some(k => itemType.includes(k));
+};
+
+export function formatBillMoney(money: number, itemType: string): string {
+  const formatted = Math.abs(money).toFixed(2);
+  // 根据类型判断：充值显示+，消费显示-
+  return isRecharge(itemType) ? `+${formatted}` : `-${formatted}`;
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
   const k = 1024;

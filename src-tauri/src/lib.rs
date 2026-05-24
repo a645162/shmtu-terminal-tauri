@@ -102,6 +102,8 @@ pub fn run() {
             statistics::get_daily_trend,
             statistics::get_category_distribution,
             statistics::get_meal_distribution,
+            statistics::get_consumption_distribution,
+            statistics::get_merchant_ranking,
             error_cmd::log_error,
         ])
         .run(tauri::generate_context!())

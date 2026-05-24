@@ -38,7 +38,7 @@ import {
 } from '@fluentui/react-icons';
 import { useAppStore } from '../../stores/appStore';
 import type { BillItem, BillType } from '../../types';
-import { formatMoney } from '../../hooks';
+import { formatBillMoney } from '../../hooks';
 import * as tauri from '../../services/tauri';
 
 const BILL_TYPE_OPTIONS: { key: BillType; text: string }[] = [
@@ -255,9 +255,9 @@ export const BillPage: React.FC = () => {
                     <Text
                       size={200}
                       weight="semibold"
-                      style={{ color: item.money >= 0 ? 'var(--colorPaletteGreenForeground3)' : 'var(--colorPaletteRedForeground3)' }}
+                      style={{ color: item.item_type?.includes('充值') || item.item_type?.includes('冲正') || item.item_type?.includes('退款') ? 'var(--colorPaletteGreenForeground3)' : 'var(--colorPaletteRedForeground3)' }}
                     >
-                      {formatMoney(item.money)}
+                      {formatBillMoney(item.money, item.item_type || '')}
                     </Text>
                   </TableCell>
                   <TableCell>
@@ -362,7 +362,7 @@ const BillDetail: React.FC<{ bill: BillItem }> = ({ bill }) => {
     { label: '交易名称', value: bill.item_type },
     { label: '交易号', value: bill.number },
     { label: '对方账户', value: bill.target_user || '—' },
-    { label: '金额', value: formatMoney(bill.money) },
+    { label: '金额', value: formatBillMoney(bill.money, bill.item_type || '') },
     { label: '支付方式', value: bill.method },
     { label: '状态', value: bill.status_str },
     { label: '是否合并', value: bill.is_combined ? '是' : '否' },

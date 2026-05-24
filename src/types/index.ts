@@ -164,6 +164,20 @@ export interface MealDistItem {
   amount: number;
 }
 
+// Consumption bucket item (histogram data)
+export interface ConsumptionBucketItem {
+  range: string;
+  count: number;
+  amount: number;
+}
+
+// Merchant ranking item
+export interface MerchantRankingItem {
+  merchant: string;
+  count: number;
+  amount: number;
+}
+
 // Card balance
 export interface CardBalance {
   account_id: string;

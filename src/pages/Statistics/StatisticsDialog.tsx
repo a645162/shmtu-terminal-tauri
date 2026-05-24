@@ -21,6 +21,8 @@ import { useAppStore } from '../../stores/appStore';
 import { ExpenseTrendChart } from '../../components/Charts/ExpenseTrendChart';
 import { CategoryPieChart } from '../../components/Charts/CategoryPieChart';
 import { MealDistChart } from '../../components/Charts/MealDistChart';
+import { ConsumptionDistributionChart } from '../../components/Charts/ConsumptionDistributionChart';
+import { MerchantRankingChart } from '../../components/Charts/MerchantRankingChart';
 import * as tauri from '../../services/tauri';
 
 function buildParams(identityId: number, rangeKey: string): tauri.StatisticsParams {
@@ -64,11 +66,15 @@ export const StatisticsDialog: React.FC = () => {
   const dailyTrend = useAppStore((s) => s.dailyTrend);
   const categoryDistribution = useAppStore((s) => s.categoryDistribution);
   const mealDistribution = useAppStore((s) => s.mealDistribution);
+  const consumptionDistribution = useAppStore((s) => s.consumptionDistribution);
+  const merchantRanking = useAppStore((s) => s.merchantRanking);
   const isLoadingStatistics = useAppStore((s) => s.isLoadingStatistics);
   const loadStatisticsSummary = useAppStore((s) => s.loadStatisticsSummary);
   const loadDailyTrend = useAppStore((s) => s.loadDailyTrend);
   const loadCategoryDistribution = useAppStore((s) => s.loadCategoryDistribution);
   const loadMealDistribution = useAppStore((s) => s.loadMealDistribution);
+  const loadConsumptionDistribution = useAppStore((s) => s.loadConsumptionDistribution);
+  const loadMerchantRanking = useAppStore((s) => s.loadMerchantRanking);
 
   const [selectedIdentityId, setSelectedIdentityId] = useState<string>(
     currentIdentity?.id?.toString() ?? ''
@@ -84,8 +90,10 @@ export const StatisticsDialog: React.FC = () => {
       loadDailyTrend(params);
       loadCategoryDistribution(params);
       loadMealDistribution(params);
+      loadConsumptionDistribution(params);
+      loadMerchantRanking(params);
     },
-    [loadStatisticsSummary, loadDailyTrend, loadCategoryDistribution, loadMealDistribution]
+    [loadStatisticsSummary, loadDailyTrend, loadCategoryDistribution, loadMealDistribution, loadConsumptionDistribution, loadMerchantRanking]
   );
 
   // Sync default identity
@@ -165,6 +173,21 @@ export const StatisticsDialog: React.FC = () => {
                   <Subtitle2>用餐时段分布</Subtitle2>
                 </CardHeader>
                 <MealDistChart data={mealDistribution} />
+              </Card>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+              <Card style={{ padding: 16 }}>
+                <CardHeader>
+                  <Subtitle2>消费金额分布</Subtitle2>
+                </CardHeader>
+                <ConsumptionDistributionChart data={consumptionDistribution} />
+              </Card>
+              <Card style={{ padding: 16 }}>
+                <CardHeader>
+                  <Subtitle2>商户消费排行</Subtitle2>
+                </CardHeader>
+                <MerchantRankingChart data={merchantRanking} />
               </Card>
             </div>
 

@@ -226,6 +226,14 @@ export async function get_meal_distribution(params: StatisticsParams): Promise<M
   return invoke<MealDistItem[]>('get_meal_distribution', { params });
 }
 
+export async function get_consumption_distribution(params: StatisticsParams): Promise<import('../types').ConsumptionBucketItem[]> {
+  return invoke<import('../types').ConsumptionBucketItem[]>('get_consumption_distribution', { params });
+}
+
+export async function get_merchant_ranking(params: StatisticsParams): Promise<import('../types').MerchantRankingItem[]> {
+  return invoke<import('../types').MerchantRankingItem[]>('get_merchant_ranking', { params });
+}
+
 // ========== Startup Protection ==========
 
 export async function verify_startup_password(password: string): Promise<boolean> {
