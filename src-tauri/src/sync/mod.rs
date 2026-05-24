@@ -592,6 +592,7 @@ impl BillSyncService {
 
         match shmtu_cas::sync::incremental_sync(epay, &mut store, sync_options).await {
             Ok(sync_result) => {
+                store.flush_pending_bills().await?;
                 result.new_count = sync_result.new_count;
                 result.pages_fetched = sync_result.pages_fetched;
                 result.early_stopped = sync_result.early_stopped;

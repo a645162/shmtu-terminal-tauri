@@ -123,6 +123,11 @@ export interface BillQueryResult {
   page_size: number;
 }
 
+export interface DedupeResult {
+  backfilled_count: number;
+  removed_count: number;
+}
+
 export async function query_bills(params: BillQueryParams): Promise<BillQueryResult> {
   return invoke<BillQueryResult>('query_bills', { params });
 }
@@ -133,6 +138,14 @@ export async function delete_merged_bill(identityId: number, billId: number): Pr
 
 export async function update_bill_notes(identityId: number, billId: number, notes: string | null): Promise<void> {
   return invoke('update_bill_notes', { identityId, billId, notes });
+}
+
+export async function dedupe_identity_bills(identityId: number): Promise<DedupeResult> {
+  return invoke<DedupeResult>('dedupe_identity_bills', { identityId });
+}
+
+export async function dedupe_account_bills(identityId: number, accountId: string): Promise<DedupeResult> {
+  return invoke<DedupeResult>('dedupe_account_bills', { identityId, accountId });
 }
 
 // ========== Sync ==========

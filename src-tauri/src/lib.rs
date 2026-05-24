@@ -80,6 +80,8 @@ pub fn run() {
             bill::query_bills,
             bill::delete_merged_bill,
             bill::update_bill_notes,
+            bill::dedupe_identity_bills,
+            bill::dedupe_account_bills,
             cmd_sync::incremental_sync,
             cmd_sync::full_sync,
             cmd_sync::get_sync_progress,

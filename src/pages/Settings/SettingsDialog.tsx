@@ -36,6 +36,10 @@ export const SettingsDialog: React.FC = () => {
   const setTheme = useAppStore((s) => s.setTheme);
   const loadConfig = useAppStore((s) => s.loadConfig);
   const identities = useAppStore((s) => s.identities);
+  const currentIdentity = useAppStore((s) => s.currentIdentity);
+  const accounts = useAppStore((s) => s.accounts);
+  const loadBills = useAppStore((s) => s.loadBills);
+  const loadAccounts = useAppStore((s) => s.loadAccounts);
 
   const [selectedTab, setSelectedTab] = useState<SettingsTab>('security');
   const [saving, setSaving] = useState(false);
@@ -76,6 +80,9 @@ export const SettingsDialog: React.FC = () => {
   const [debugMessage, setDebugMessage] = useState('');
   const [debugResponse, setDebugResponse] = useState('');
   const [debugTesting, setDebugTesting] = useState(false);
+  const [selectedAccountId, setSelectedAccountId] = useState('');
+  const [repairingIdentity, setRepairingIdentity] = useState(false);
+  const [repairingAccount, setRepairingAccount] = useState(false);
   const showError = useAppStore((s) => s.showError);
 
   const currentDefaultIdentity =
@@ -322,6 +329,80 @@ export const SettingsDialog: React.FC = () => {
                 value={snapshotKeep}
                 onChange={(_, data) => setSnapshotKeep(data.value)}
               />
+            </div>
+            <div
+              style={{
+                padding: 14,
+                borderRadius: 10,
+                border: '1px solid var(--colorNeutralStroke2)',
+                background: 'var(--colorNeutralBackground2)',
+                display: 'grid',
+                gap: 12,
+              }}
+            >
+              <Text weight="semibold">数据修复</Text>
+              <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                使用交易号去重，修复因历史同步 Bug 导致的重复账单。身份级去重针对合并账单，账号级去重针对原始账单。
+              </Text>
+              <div style={{ display: 'grid', gap: 8 }}>
+                <Button
+                  appearance="primary"
+                  disabled={!currentIdentity || repairingIdentity}
+                  onClick={async () => {
+                    if (!currentIdentity) return;
+                    setRepairingIdentity(true);
+                    setMessage('');
+                    try {
+                      const result = await tauri.dedupe_identity_bills(currentIdentity.id);
+                      await loadBills();
+                      setMessage(`身份级去重完成：补正 ${result.backfilled_count} 条，删除 ${result.removed_count} 条重复记录`);
+                    } catch (e) {
+                      setMessage(`身份级去重失败: ${e}`);
+                    } finally {
+                      setRepairingIdentity(false);
+                    }
+                  }}
+                >
+                  {repairingIdentity ? '身份级去重中...' : '身份级别去重'}
+                </Button>
+                <Dropdown
+                  value={selectedAccountId || '选择账号后执行账号级去重'}
+                  selectedOptions={selectedAccountId ? [selectedAccountId] : []}
+                  onOptionSelect={(_, data) => setSelectedAccountId(data.optionValue ?? '')}
+                  disabled={!currentIdentity || accounts.length === 0 || repairingAccount}
+                  style={{ width: '100%' }}
+                >
+                  {accounts.map((account) => {
+                    const label = `${account.account_name}（${account.account_id}）`;
+                    return (
+                      <Option key={account.account_id} value={account.account_id} text={label}>
+                        {label}
+                      </Option>
+                    );
+                  })}
+                </Dropdown>
+                <Button
+                  appearance="secondary"
+                  disabled={!currentIdentity || !selectedAccountId || repairingAccount}
+                  onClick={async () => {
+                    if (!currentIdentity || !selectedAccountId) return;
+                    setRepairingAccount(true);
+                    setMessage('');
+                    try {
+                      const result = await tauri.dedupe_account_bills(currentIdentity.id, selectedAccountId);
+                      await loadAccounts(currentIdentity.id);
+                      await loadBills();
+                      setMessage(`账号级去重完成：补正 ${result.backfilled_count} 条，删除 ${result.removed_count} 条重复记录`);
+                    } catch (e) {
+                      setMessage(`账号级去重失败: ${e}`);
+                    } finally {
+                      setRepairingAccount(false);
+                    }
+                  }}
+                >
+                  {repairingAccount ? '账号级去重中...' : '账号级别去重'}
+                </Button>
+              </div>
             </div>
           </div>
         );

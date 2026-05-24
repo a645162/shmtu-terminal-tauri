@@ -29,6 +29,12 @@ pub struct BillQueryResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DedupeResult {
+    pub backfilled_count: usize,
+    pub removed_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BillItemFrontend {
     pub id: i64,
     pub date_str: String,
@@ -110,6 +116,14 @@ pub async fn query_bills(
         .await
         .map_err(|e| e.to_string())?;
 
+    if let Err(e) = store.backfill_merged_metadata(identity_id).await {
+        tracing::warn!(
+            "[Bill] backfill_merged_metadata failed for identity {}: {}",
+            identity_id,
+            e
+        );
+    }
+
     let (bills, _total_pages) = store
         .list_merged_bills(identity_id, params.page, params.page_size)
         .await
@@ -166,4 +180,59 @@ pub async fn update_bill_notes(
         .update_bill_notes(bill_id, notes)
         .await
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn dedupe_identity_bills(
+    state: State<'_, AppState>,
+    identity_id: i64,
+) -> Result<DedupeResult, String> {
+    let db = state.db_manager.read().await;
+    let db_conn = db.db().clone();
+    let translator = state.db_file_manager.create_position_translator();
+    let store = BillStoreImpl::new(db_conn, "", identity_id, translator)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let backfilled_count = store
+        .backfill_merged_metadata(identity_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    let removed_count = store
+        .dedupe_merged_by_identity(identity_id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(DedupeResult {
+        backfilled_count,
+        removed_count,
+    })
+}
+
+#[tauri::command]
+pub async fn dedupe_account_bills(
+    state: State<'_, AppState>,
+    identity_id: i64,
+    account_id: String,
+) -> Result<DedupeResult, String> {
+    let db = state.db_manager.read().await;
+    let db_conn = db.db().clone();
+    let translator = state.db_file_manager.create_position_translator();
+    let store = BillStoreImpl::new(db_conn, &account_id, identity_id, translator)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let backfilled_count = store
+        .backfill_original_metadata(&account_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    let removed_count = store
+        .dedupe_original_by_account(&account_id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(DedupeResult {
+        backfilled_count,
+        removed_count,
+    })
 }

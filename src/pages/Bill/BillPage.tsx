@@ -29,6 +29,7 @@ import {
 } from '@fluentui/react-components';
 import {
   ArrowSync24Regular,
+  ArrowClockwise24Regular,
   Search24Regular,
   Delete24Regular,
   Copy24Regular,
@@ -56,6 +57,45 @@ const DATE_RANGE_OPTIONS = [
   { key: 'week', text: '本周' },
   { key: 'month', text: '本月' },
 ];
+
+function normalizeTransactionName(bill: BillItem): string {
+  const raw = (bill.item_type || '').replace(/\s+/g, ' ').trim();
+  if (!raw) return '—';
+  const markerIndex = raw.indexOf('交易号');
+  if (markerIndex >= 0) {
+    return raw.slice(0, markerIndex).replace(/[：:]\s*$/, '').trim() || '—';
+  }
+  return raw;
+}
+
+function normalizeTransactionNumber(bill: BillItem): string {
+  const direct = (bill.number || '').replace(/\D/g, '');
+  if (direct) return direct;
+
+  const fromName = ((bill.item_type || '').match(/交易号[：:\s]*([0-9]+)/)?.[1] || '').trim();
+  if (fromName) return fromName;
+
+  try {
+    const parsed = JSON.parse(bill.number_list || '[]');
+    if (Array.isArray(parsed)) {
+      const first = parsed
+        .map((item) => String(item ?? '').replace(/\D/g, ''))
+        .find((item) => item.length > 0);
+      if (first) return first;
+    }
+  } catch {
+    // ignore malformed legacy number_list payloads
+  }
+
+  return '—';
+}
+
+function formatBillLocation(bill: BillItem): string {
+  if (bill.position && bill.room && bill.position !== bill.room) {
+    return `${bill.position} / ${bill.room}`;
+  }
+  return bill.room || bill.position || '—';
+}
 
 function dateRangeToParams(key: string): { start: string; end: string } {
   const now = new Date();
@@ -131,6 +171,12 @@ export const BillPage: React.FC = () => {
     }
   }, [currentIdentity, startSync]);
 
+  const handleRefresh = useCallback(() => {
+    if (currentIdentity) {
+      loadBills();
+    }
+  }, [currentIdentity, loadBills]);
+
   const handleDeleteBill = useCallback(
     async (bill: BillItem) => {
       if (!currentIdentity) return;
@@ -205,6 +251,9 @@ export const BillPage: React.FC = () => {
         <Button appearance="primary" icon={<ArrowSync24Regular />} onClick={handleSync}>
           同步
         </Button>
+        <Button appearance="secondary" icon={<ArrowClockwise24Regular />} onClick={handleRefresh}>
+          刷新
+        </Button>
 
         <Text size={200} style={{ marginLeft: 'auto', color: 'var(--colorNeutralForeground3)' }}>
           共 {billTotal} 条
@@ -246,7 +295,7 @@ export const BillPage: React.FC = () => {
                   <TableCell>
                     <TableCellLayout>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <Text size={200}>{item.item_type}</Text>
+                        <Text size={200}>{normalizeTransactionName(item)}</Text>
                         {item.is_combined && <Badge appearance="outline" size="small">合并</Badge>}
                       </div>
                     </TableCellLayout>
@@ -255,7 +304,7 @@ export const BillPage: React.FC = () => {
                     <Text size={200}>{item.target_user || '—'}</Text>
                   </TableCell>
                   <TableCell>
-                    <Text size={200}>{item.room || '—'}</Text>
+                    <Text size={200}>{formatBillLocation(item)}</Text>
                   </TableCell>
                   <TableCell>
                     <Text
@@ -282,9 +331,9 @@ export const BillPage: React.FC = () => {
                       <MenuTrigger>
                         <Button appearance="subtle" icon={<MoreVertical24Regular />} size="small" />
                       </MenuTrigger>
-                      <MenuPopover>
-                        <MenuList>
-                          <MenuItem icon={<Copy24Regular />} onClick={() => navigator.clipboard.writeText(item.number)}>
+                        <MenuPopover>
+                          <MenuList>
+                          <MenuItem icon={<Copy24Regular />} onClick={() => navigator.clipboard.writeText(normalizeTransactionNumber(item))}>
                             复制交易号
                           </MenuItem>
                           <MenuItem icon={<Copy24Regular />} onClick={() => navigator.clipboard.writeText(item.money_str)}>
@@ -381,8 +430,8 @@ const BillDetail: React.FC<{ bill: BillItem }> = ({ bill }) => {
 
   const fields = [
     { label: '日期时间', value: bill.date_time_formatted },
-    { label: '交易名称', value: bill.item_type },
-    { label: '交易号', value: bill.number },
+    { label: '交易名称', value: normalizeTransactionName(bill) },
+    { label: '交易号', value: normalizeTransactionNumber(bill) },
     { label: '对方账户', value: bill.target_user || '—' },
     { label: '位置', value: bill.position || '—' },
     { label: '房间/窗口', value: bill.room || '—' },
