@@ -26,7 +26,8 @@ serde_json = "1"
 shmtu-cas = { path = "vendor/shmtu-cas-rs/Core/shmtu-cas" }
 
 # Database
-rusqlite = { version = "0.31", features = ["bundled"] }
+sea-orm = { version = "1", features = ["sqlx-sqlite", "runtime-tokio-rustls", "macros", "with-chrono"] }
+sea-orm-migration = { version = "1", features = ["sqlx-sqlite", "runtime-tokio-rustls"] }
 
 # Encryption
 aes-gcm = "0.10"

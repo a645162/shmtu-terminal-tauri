@@ -7,7 +7,7 @@ use crate::state::AppState;
 pub async fn list_identities(state: State<'_, AppState>) -> Result<Vec<Identity>, String> {
     tracing::debug!("[Identity] list_identities called");
     let db = state.db_manager.read().await;
-    db.list_identities().map_err(|e| e.to_string())
+    db.list_identities().await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -20,22 +20,22 @@ pub async fn create_identity(state: State<'_, AppState>, name: String) -> Result
         birthday: None,
         default_remember: Some(false),
     };
-    let id = db.create_identity(&params).map_err(|e| e.to_string())?;
-    let identity = db.get_identity(id).map_err(|e| e.to_string())?;
+    let id = db.create_identity(&params).await.map_err(|e| e.to_string())?;
+    let identity = db.get_identity(id).await.map_err(|e| e.to_string())?;
     identity.ok_or_else(|| "创建身份后未找到".to_string())
 }
 
 #[tauri::command]
 pub async fn update_identity(state: State<'_, AppState>, identity: Identity) -> Result<(), String> {
     let db = state.db_manager.read().await;
-    db.update_identity(&identity).map_err(|e| e.to_string())
+    db.update_identity(&identity).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn delete_identity(state: State<'_, AppState>, id: i64) -> Result<(), String> {
     tracing::warn!("[Identity] delete_identity called, id={}", id);
     let db = state.db_manager.read().await;
-    db.delete_identity(id).map_err(|e| e.to_string())
+    db.delete_identity(id).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]

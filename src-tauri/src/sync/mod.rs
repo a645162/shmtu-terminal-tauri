@@ -117,8 +117,8 @@ impl BillSyncService {
         }
     }
 
-    pub fn get_enabled_accounts_for_identity(&self, identity_id: i64) -> AppResult<Vec<Account>> {
-        let accounts = self.db_manager.list_accounts_by_identity(identity_id)?;
+    pub async fn get_enabled_accounts_for_identity(&self, identity_id: i64) -> AppResult<Vec<Account>> {
+        let accounts = self.db_manager.list_accounts_by_identity(identity_id).await?;
         Ok(accounts
             .into_iter()
             .filter(|a| a.enable && a.enable_update)
@@ -152,7 +152,7 @@ impl BillSyncService {
         sync_options: &SyncOptions,
         progress_callback: Option<&SyncProgressCallback>,
     ) -> AppResult<IdentitySyncResult> {
-        let accounts = self.get_enabled_accounts_for_identity(identity_id)?;
+        let accounts = self.get_enabled_accounts_for_identity(identity_id).await?;
         let mut results = Vec::new();
         let mut total_new = 0;
 
@@ -209,7 +209,7 @@ impl BillSyncService {
         sync_options: SyncOptions,
         progress_callback: Option<&SyncProgressCallback>,
     ) -> AppResult<IdentitySyncResult> {
-        let accounts = self.get_enabled_accounts_for_identity(identity_id)?;
+        let accounts = self.get_enabled_accounts_for_identity(identity_id).await?;
         let total_accounts = accounts.len();
         let mut remaining_accounts: VecDeque<Account> = accounts.into();
         let mut results = Vec::new();
@@ -454,8 +454,7 @@ impl BillSyncService {
 
     async fn save_session(&self, epay: &EpayAuth, account_id: &str) -> AppResult<()> {
         let cookies_json = epay.extract_session()?;
-        self.db_manager
-            .save_session(account_id, &cookies_json, &self.crypto)?;
+        self.db_manager.save_session(account_id, &cookies_json, &self.crypto).await?;
         Ok(())
     }
 
@@ -465,14 +464,14 @@ impl BillSyncService {
         progress_callback: Option<&SyncProgressCallback>,
     ) -> AppResult<IdentitySyncResult> {
         tracing::info!("[Sync] full_sync_identity, identity_id={}", identity_id);
-        self.db_manager.clear_merged_non_manual(identity_id)?;
-        let _ = self.db_manager.clear_operation_logs(identity_id, None);
-        let accounts = self.get_enabled_accounts_for_identity(identity_id)?;
+        self.db_manager.clear_merged_non_manual(identity_id).await?;
+        let _ = self.db_manager.clear_operation_logs(identity_id, None).await;
+        let accounts = self.get_enabled_accounts_for_identity(identity_id).await?;
         let mut results = Vec::new();
         let mut total_new = 0;
 
         for (idx, account) in accounts.iter().enumerate() {
-            let _ = self.db_manager.clear_account_original(&account.account_id);
+            let _ = self.db_manager.clear_account_original(&account.account_id).await;
             if let Some(cb) = progress_callback {
                 cb(SyncProgress {
                     current_account: account.account_name.clone(),
@@ -551,9 +550,7 @@ impl BillSyncService {
         account: &Account,
         sync_options: &SyncOptions,
     ) -> AppResult<Option<AccountSyncResult>> {
-        if let Some(session) = self
-            .db_manager
-            .get_session(&account.account_id, &self.crypto)?
+        if let Some(session) = self.db_manager.get_session(&account.account_id, &self.crypto).await?
         {
             let mut epay = EpayAuth::new()?;
             epay.restore_session(&session.cookies)?;
@@ -576,10 +573,10 @@ impl BillSyncService {
         sync_options: &SyncOptions,
     ) -> AppResult<AccountSyncResult> {
         let mut store = BillStoreImpl::new(
-            self.db_manager.clone_ref(),
+            self.db_manager.db().clone(),
             &account.account_id,
             account.identity_id,
-        )?;
+        ).await?;
         let mut result = AccountSyncResult {
             account_id: account.account_id.clone(),
             account_name: account.account_name.clone(),
@@ -594,7 +591,7 @@ impl BillSyncService {
                 result.new_count = sync_result.new_count;
                 result.pages_fetched = sync_result.pages_fetched;
                 result.early_stopped = sync_result.early_stopped;
-                let _ = self.db_manager.update_account_last_sync(account.id);
+                let _ = self.db_manager.update_account_last_sync(account.id).await;
             }
             Err(e) => {
                 result.error = Some(format!("同步失败: {}", e));

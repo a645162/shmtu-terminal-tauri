@@ -91,14 +91,14 @@ impl ExportService {
     }
 
     /// 导出身份合并数据
-    pub fn export_identity_bills(
+    pub async fn export_identity_bills(
         &self,
         identity_id: i64,
         identity_name: &str,
         options: &ExportOptions,
     ) -> AppResult<()> {
-        let store = BillStoreImpl::new(self.db_manager.clone_ref(), "", identity_id)?;
-        let bills = store.get_all_merged_bills(identity_id)?;
+        let store = BillStoreImpl::new(self.db_manager.db().clone(), "", identity_id).await?;
+        let bills = store.get_all_merged_bills(identity_id).await?;
 
         // 时间范围过滤
         let filtered: Vec<&BillMerged> = bills
@@ -130,9 +130,9 @@ impl ExportService {
     }
 
     /// 导出账号原始数据
-    pub fn export_account_bills(&self, account_id: &str, options: &ExportOptions) -> AppResult<()> {
-        let store = BillStoreImpl::new(self.db_manager.clone_ref(), account_id, 0)?;
-        let bills = store.get_all_original_bills(account_id)?;
+    pub async fn export_account_bills(&self, account_id: &str, options: &ExportOptions) -> AppResult<()> {
+        let store = BillStoreImpl::new(self.db_manager.db().clone(), account_id, 0).await?;
+        let bills = store.get_all_original_bills(account_id).await?;
 
         match options.format {
             ExportFormat::Csv => self.export_original_csv(&bills, &options.output_path)?,
@@ -418,11 +418,12 @@ impl ExportService {
     }
 
     /// 从 JSON 文件导入数据到身份合并数据库
-    pub fn import_json(&self, identity_id: i64, json_path: &str) -> AppResult<usize> {
+    pub async fn import_json(&self, identity_id: i64, json_path: &str) -> AppResult<usize> {
+        use sea_orm::{EntityTrait, Set};
+
         let content = std::fs::read_to_string(json_path)?;
         let import: JsonImport = serde_json::from_str(&content)?;
 
-        let conn = self.db_manager.open_identity_db(identity_id)?;
         let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let mut count = 0;
 
@@ -433,29 +434,30 @@ impl ExportService {
                 .map(|l| serde_json::to_string(l).unwrap_or_default())
                 .unwrap_or_default();
 
-            conn.execute(
-                "INSERT INTO bill_merged (
-                    date_str, time_str, time_str_formatted, date_time_formatted,
-                    end_date_time_formatted, timestamp, end_timestamp, item_type,
-                    number, number_list, target_user, money_str, money, method,
-                    status_str, is_combined, source_account_id, is_manual, synced_at
-                ) VALUES ('', '', ?1, ?2, NULL, ?3, NULL, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, NULL, 1, ?13)",
-                (
-                    bill.time_str_formatted.as_deref().unwrap_or(""),
-                    bill.date_time_formatted.as_deref().unwrap_or(""),
-                    0i64,
-                    bill.item_type.as_deref().unwrap_or(""),
-                    bill.number.as_deref().unwrap_or(""),
-                    &number_list_json,
-                    bill.target_user.as_deref().unwrap_or(""),
-                    bill.money_str.as_deref().unwrap_or(""),
-                    bill.money.unwrap_or(0.0),
-                    bill.method.as_deref().unwrap_or(""),
-                    bill.status_str.as_deref().unwrap_or(""),
-                    bill.is_combined as i32,
-                    &now,
-                ),
-            )?;
+            let model = crate::entity::bill_merged::ActiveModel {
+                identity_id: Set(identity_id),
+                date_str: Set(String::new()),
+                time_str: Set(String::new()),
+                time_str_formatted: Set(Some(bill.time_str_formatted.clone().unwrap_or_default())),
+                date_time_formatted: Set(bill.date_time_formatted.clone()),
+                timestamp: Set(Some(0)),
+                item_type: Set(Some(bill.item_type.clone().unwrap_or_default())),
+                number: Set(bill.number.clone()),
+                number_list: Set(if number_list_json.is_empty() { None } else { Some(number_list_json) }),
+                target_user: Set(bill.target_user.clone()),
+                money_str: Set(bill.money_str.clone()),
+                money: Set(bill.money),
+                method: Set(bill.method.clone()),
+                status_str: Set(bill.status_str.clone()),
+                is_combined: Set(bill.is_combined),
+                source_account_id: Set(None),
+                is_manual: Set(true),
+                synced_at: Set(Some(now.clone())),
+                ..Default::default()
+            };
+            crate::entity::bill_merged::Entity::insert(model)
+                .exec(self.db_manager.db())
+                .await?;
             count += 1;
         }
 

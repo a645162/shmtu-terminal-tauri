@@ -1,9 +1,10 @@
 use serde::{Deserialize, Serialize};
+use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
 use tauri::State;
 
+use crate::entity::bill_merged;
 use crate::state::AppState;
 
-/// 前端统计查询参数
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StatisticsParams {
@@ -12,7 +13,6 @@ pub struct StatisticsParams {
     pub date_end: Option<String>,
 }
 
-/// 统计摘要（与前端 StatisticsSummary 对齐）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StatisticsSummary {
     pub total_expense: f64,
@@ -23,7 +23,6 @@ pub struct StatisticsSummary {
     pub income_count: u32,
 }
 
-/// 日消费趋势条目（与前端 DailyTrendItem 对齐）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DailyTrendItem {
     pub date: String,
@@ -31,7 +30,6 @@ pub struct DailyTrendItem {
     pub income: f64,
 }
 
-/// 分类分布条目（与前端 CategoryItem 对齐）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CategoryItem {
     pub name: String,
@@ -40,7 +38,6 @@ pub struct CategoryItem {
     pub color: String,
 }
 
-/// 用餐时段分布条目（与前端 MealDistItem 对齐）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MealDistItem {
     pub name: String,
@@ -48,7 +45,6 @@ pub struct MealDistItem {
     pub amount: f64,
 }
 
-/// 消费金额分布条目（直方图数据）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConsumptionBucketItem {
     pub range: String,
@@ -56,7 +52,6 @@ pub struct ConsumptionBucketItem {
     pub amount: f64,
 }
 
-/// 商户消费排行条目
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MerchantRankingItem {
     pub merchant: String,
@@ -64,34 +59,34 @@ pub struct MerchantRankingItem {
     pub amount: f64,
 }
 
-/// 预定义颜色列表
 const CATEGORY_COLORS: &[&str] = &[
     "#5B8FF9", "#5AD8A6", "#F6BD16", "#E86452", "#6DC8EC", "#945FB9", "#FF9845", "#1E9493",
     "#FF99C3", "#269A99",
 ];
 
-/// 构建带日期范围过滤的 SQL WHERE 子句（使用参数化查询防注入）
-fn build_date_filter(
+fn apply_date_filter(
+    mut query: sea_orm::Select<bill_merged::Entity>,
     date_start: &Option<String>,
     date_end: &Option<String>,
-) -> (String, Vec<String>) {
-    let mut conditions = Vec::new();
-    let mut params = Vec::new();
-
+) -> sea_orm::Select<bill_merged::Entity> {
     if let Some(ref start) = date_start {
-        conditions.push("date_str >= ?".to_string());
-        params.push(start.clone());
+        tracing::debug!("[Statistics] date filter: start={}", start);
+        query = query.filter(bill_merged::Column::DateStr.gte(start));
     }
     if let Some(ref end) = date_end {
-        conditions.push("date_str <= ?".to_string());
-        params.push(end.clone());
+        tracing::debug!("[Statistics] date filter: end={}", end);
+        query = query.filter(bill_merged::Column::DateStr.lte(end));
     }
+    query
+}
 
-    if conditions.is_empty() {
-        (String::new(), params)
-    } else {
-        (format!(" WHERE {}", conditions.join(" AND ")), params)
-    }
+fn success_query(identity_id: i64, date_start: &Option<String>, date_end: &Option<String>) -> sea_orm::Select<bill_merged::Entity> {
+    tracing::debug!("[Statistics] success_query: identity_id={}, date_start={:?}, date_end={:?}",
+        identity_id, date_start, date_end);
+    let query = bill_merged::Entity::find()
+        .filter(bill_merged::Column::IdentityId.eq(identity_id))
+        .filter(bill_merged::Column::StatusStr.eq("交易成功"));
+    apply_date_filter(query, date_start, date_end)
 }
 
 #[tauri::command]
@@ -99,49 +94,42 @@ pub async fn get_statistics_summary(
     state: State<'_, AppState>,
     params: StatisticsParams,
 ) -> Result<StatisticsSummary, String> {
+    tracing::info!(
+        "[Statistics] get_statistics_summary: identity_id={}, date_start={:?}, date_end={:?}",
+        params.identity_id, params.date_start, params.date_end
+    );
+
     let db = state.db_manager.read().await;
+    let db_conn = db.db();
 
-    let conn = db
-        .open_identity_db(params.identity_id)
-        .map_err(|e| e.to_string())?;
+    let total_count = bill_merged::Entity::find()
+        .filter(bill_merged::Column::IdentityId.eq(params.identity_id))
+        .count(db_conn)
+        .await
+        .unwrap_or(0);
+    tracing::info!("[Statistics] bill_merged total records for identity {}: {}", params.identity_id, total_count);
 
-    let (date_filter, filter_params) = build_date_filter(&params.date_start, &params.date_end);
+    let models = success_query(params.identity_id, &params.date_start, &params.date_end)
+        .all(db_conn)
+        .await
+        .map_err(|e| {
+            tracing::error!("[Statistics] summary fetch failed: {}", e);
+            e.to_string()
+        })?;
 
-    // 查询支出总额和支出笔数（所有交易成功记录都视为支出）
-    let (expense, expense_count) = {
-        let sql = format!(
-            "SELECT COALESCE(SUM(ABS(money)), 0), COUNT(*) FROM bill_merged{} AND status_str = '交易成功'",
-            date_filter
-        );
-        let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-        stmt.query_row(rusqlite::params_from_iter(filter_params.iter()), |row| {
-            Ok((row.get::<_, f64>(0)?, row.get::<_, u32>(1)?))
-        })
-        .unwrap_or((0.0, 0))
-    };
-
-    // 收入暂时设为0（如果后续需要区分充值退款等，再扩展）
+    let expense: f64 = models.iter().map(|m| m.money.unwrap_or(0.0).abs()).sum();
+    let expense_count = models.len() as u32;
     let (income, income_count) = (0.0, 0);
 
-    // 计算天数
-    let days = if params.date_start.is_some() || params.date_end.is_some() {
-        let sql = format!(
-            "SELECT COUNT(DISTINCT date_str) FROM bill_merged{}",
-            date_filter
-        );
-        conn.query_row(
-            &sql,
-            rusqlite::params_from_iter(filter_params.iter()),
-            |row| row.get::<_, u32>(0),
-        )
-        .unwrap_or(1) as f64
-    } else {
-        let sql = "SELECT COUNT(DISTINCT date_str) FROM bill_merged";
-        conn.query_row(sql, [], |row| row.get::<_, u32>(0))
-            .unwrap_or(1) as f64
+    let days = {
+        let unique_dates: std::collections::HashSet<&str> = models.iter()
+            .map(|m| m.date_str.as_str())
+            .collect();
+        (unique_dates.len() as f64).max(1.0)
     };
 
-    let days = days.max(1.0);
+    tracing::info!("[Statistics] expense={}, expense_count={}, days={}, daily_average={}",
+        expense, expense_count, days, expense / days);
 
     Ok(StatisticsSummary {
         total_expense: expense,
@@ -158,41 +146,40 @@ pub async fn get_daily_trend(
     state: State<'_, AppState>,
     params: StatisticsParams,
 ) -> Result<Vec<DailyTrendItem>, String> {
-    let db = state.db_manager.read().await;
-    let conn = db
-        .open_identity_db(params.identity_id)
-        .map_err(|e| e.to_string())?;
-
-    let (date_filter, filter_params) = build_date_filter(&params.date_start, &params.date_end);
-
-    let sql = format!(
-        "SELECT date_str,
-                COALESCE(SUM(ABS(money)), 0) as expense,
-                0 as income
-         FROM bill_merged{}
-         WHERE status_str = '交易成功'
-         GROUP BY date_str
-         ORDER BY date_str",
-        date_filter
+    tracing::info!(
+        "[Statistics] get_daily_trend: identity_id={}, date_start={:?}, date_end={:?}",
+        params.identity_id, params.date_start, params.date_end
     );
 
-    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-    let rows = stmt
-        .query_map(rusqlite::params_from_iter(filter_params.iter()), |row| {
-            Ok(DailyTrendItem {
-                date: row.get(0)?,
-                expense: row.get(1)?,
-                income: row.get(2)?,
-            })
-        })
-        .map_err(|e| e.to_string())?;
+    let db = state.db_manager.read().await;
+    let db_conn = db.db();
 
-    let mut trend = Vec::new();
-    for row in rows {
-        trend.push(row.map_err(|e| e.to_string())?);
+    let models = success_query(params.identity_id, &params.date_start, &params.date_end)
+        .all(db_conn)
+        .await
+        .map_err(|e| {
+            tracing::error!("[Statistics] daily_trend fetch failed: {}", e);
+            e.to_string()
+        })?;
+
+    let mut daily_map: std::collections::BTreeMap<String, f64> = std::collections::BTreeMap::new();
+    for m in &models {
+        *daily_map.entry(m.date_str.clone()).or_default() += m.money.unwrap_or(0.0).abs();
     }
 
-    Ok(trend)
+    tracing::info!("[Statistics] daily_trend: {} days computed", daily_map.len());
+    for (date, expense) in &daily_map {
+        tracing::debug!("[Statistics]   {} -> {}", date, expense);
+    }
+
+    Ok(daily_map
+        .into_iter()
+        .map(|(date, expense)| DailyTrendItem {
+            date,
+            expense,
+            income: 0.0,
+        })
+        .collect())
 }
 
 #[tauri::command]
@@ -200,41 +187,37 @@ pub async fn get_category_distribution(
     state: State<'_, AppState>,
     params: StatisticsParams,
 ) -> Result<Vec<CategoryItem>, String> {
-    let db = state.db_manager.read().await;
-    let classifier = state.classifier.read().await;
-
-    let conn = db
-        .open_identity_db(params.identity_id)
-        .map_err(|e| e.to_string())?;
-    let (date_filter, filter_params) = build_date_filter(&params.date_start, &params.date_end);
-
-    let sql = format!(
-        "SELECT item_type, target_user, money FROM bill_merged{} AND status_str = '交易成功'",
-        date_filter
+    tracing::info!(
+        "[Statistics] get_category_distribution: identity_id={}, date_start={:?}, date_end={:?}",
+        params.identity_id, params.date_start, params.date_end
     );
 
-    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-    let rows = stmt
-        .query_map(rusqlite::params_from_iter(filter_params.iter()), |row| {
-            Ok((
-                row.get::<_, Option<String>>(0)?,
-                row.get::<_, Option<String>>(1)?,
-                row.get::<_, f64>(2)?,
-            ))
-        })
-        .map_err(|e| e.to_string())?;
+    let db = state.db_manager.read().await;
+    let classifier = state.classifier.read().await;
+    let db_conn = db.db();
+
+    let has_classifier = classifier.is_some();
+    tracing::info!("[Statistics] classifier loaded: {}", has_classifier);
+
+    let models = success_query(params.identity_id, &params.date_start, &params.date_end)
+        .all(db_conn)
+        .await
+        .map_err(|e| {
+            tracing::error!("[Statistics] category fetch failed: {}", e);
+            e.to_string()
+        })?;
+
+    tracing::info!("[Statistics] category: {} success records fetched", models.len());
 
     let mut category_map: std::collections::HashMap<String, (f64, u32)> =
         std::collections::HashMap::new();
 
-    for row in rows {
-        let (item_type, target_user, money) = row.map_err(|e| e.to_string())?;
-
+    for m in &models {
         let category = if let Some(ref classifier) = *classifier {
             classifier
                 .classify(
-                    item_type.as_deref().unwrap_or(""),
-                    target_user.as_deref().unwrap_or(""),
+                    m.item_type.as_deref().unwrap_or(""),
+                    m.target_user.as_deref().unwrap_or(""),
                     0,
                 )
                 .type_label
@@ -244,9 +227,22 @@ pub async fn get_category_distribution(
             "其他".to_string()
         };
 
+        let money = m.money.unwrap_or(0.0);
         let entry = category_map.entry(category).or_insert((0.0, 0));
         entry.0 += money.abs();
         entry.1 += 1;
+    }
+
+    for (i, m) in models.iter().take(5).enumerate() {
+        tracing::debug!(
+            "[Statistics] sample[{}]: item_type={:?}, target_user={:?}, money={:?}, status={:?}",
+            i, m.item_type, m.target_user, m.money, m.status_str
+        );
+    }
+
+    tracing::info!("[Statistics] category distribution: {} categories", category_map.len());
+    for (name, (value, count)) in &category_map {
+        tracing::debug!("[Statistics]   {} -> value={}, count={}", name, value, count);
     }
 
     let mut items: Vec<CategoryItem> = category_map
@@ -260,11 +256,7 @@ pub async fn get_category_distribution(
         })
         .collect();
 
-    items.sort_by(|a, b| {
-        b.value
-            .partial_cmp(&a.value)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    items.sort_by(|a, b| b.value.partial_cmp(&a.value).unwrap_or(std::cmp::Ordering::Equal));
     Ok(items)
 }
 
@@ -273,43 +265,35 @@ pub async fn get_meal_distribution(
     state: State<'_, AppState>,
     params: StatisticsParams,
 ) -> Result<Vec<MealDistItem>, String> {
-    let db = state.db_manager.read().await;
-    let classifier = state.classifier.read().await;
-
-    let conn = db
-        .open_identity_db(params.identity_id)
-        .map_err(|e| e.to_string())?;
-    let (date_filter, filter_params) = build_date_filter(&params.date_start, &params.date_end);
-
-    let sql = format!(
-        "SELECT item_type, target_user, money, timestamp FROM bill_merged{} AND status_str = '交易成功'",
-        date_filter
+    tracing::info!(
+        "[Statistics] get_meal_distribution: identity_id={}, date_start={:?}, date_end={:?}",
+        params.identity_id, params.date_start, params.date_end
     );
 
-    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-    let rows = stmt
-        .query_map(rusqlite::params_from_iter(filter_params.iter()), |row| {
-            Ok((
-                row.get::<_, Option<String>>(0)?,
-                row.get::<_, Option<String>>(1)?,
-                row.get::<_, f64>(2)?,
-                row.get::<_, Option<i64>>(3)?,
-            ))
-        })
-        .map_err(|e| e.to_string())?;
+    let db = state.db_manager.read().await;
+    let classifier = state.classifier.read().await;
+    let db_conn = db.db();
+
+    let models = success_query(params.identity_id, &params.date_start, &params.date_end)
+        .all(db_conn)
+        .await
+        .map_err(|e| {
+            tracing::error!("[Statistics] meal fetch failed: {}", e);
+            e.to_string()
+        })?;
+
+    tracing::info!("[Statistics] meal: {} success records fetched", models.len());
 
     let mut meal_map: std::collections::HashMap<String, (u32, f64)> =
         std::collections::HashMap::new();
 
-    for row in rows {
-        let (item_type, target_user, money, timestamp) = row.map_err(|e| e.to_string())?;
-
+    for m in &models {
         let meal = if let Some(ref classifier) = *classifier {
             classifier
                 .classify(
-                    item_type.as_deref().unwrap_or(""),
-                    target_user.as_deref().unwrap_or(""),
-                    timestamp.unwrap_or(0),
+                    m.item_type.as_deref().unwrap_or(""),
+                    m.target_user.as_deref().unwrap_or(""),
+                    m.timestamp.unwrap_or(0),
                 )
                 .meal
                 .clone()
@@ -318,9 +302,15 @@ pub async fn get_meal_distribution(
             "非用餐时段".to_string()
         };
 
+        let money = m.money.unwrap_or(0.0);
         let entry = meal_map.entry(meal).or_insert((0, 0.0));
         entry.0 += 1;
         entry.1 += money.abs();
+    }
+
+    tracing::info!("[Statistics] meal distribution: {} periods", meal_map.len());
+    for (name, (count, amount)) in &meal_map {
+        tracing::debug!("[Statistics]   {} -> count={}, amount={}", name, count, amount);
     }
 
     let mut items: Vec<MealDistItem> = meal_map
@@ -332,40 +322,33 @@ pub async fn get_meal_distribution(
         })
         .collect();
 
-    items.sort_by(|a, b| {
-        b.amount
-            .partial_cmp(&a.amount)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    items.sort_by(|a, b| b.amount.partial_cmp(&a.amount).unwrap_or(std::cmp::Ordering::Equal));
     Ok(items)
 }
 
-/// 消费金额分布（直方图数据）
 #[tauri::command]
 pub async fn get_consumption_distribution(
     state: State<'_, AppState>,
     params: StatisticsParams,
 ) -> Result<Vec<ConsumptionBucketItem>, String> {
-    let db = state.db_manager.read().await;
-
-    let conn = db
-        .open_identity_db(params.identity_id)
-        .map_err(|e| e.to_string())?;
-    let (date_filter, filter_params) = build_date_filter(&params.date_start, &params.date_end);
-
-    let sql = format!(
-        "SELECT ABS(money) as abs_money FROM bill_merged{} AND status_str = '交易成功'",
-        date_filter
+    tracing::info!(
+        "[Statistics] get_consumption_distribution: identity_id={}, date_start={:?}, date_end={:?}",
+        params.identity_id, params.date_start, params.date_end
     );
 
-    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-    let rows = stmt
-        .query_map(rusqlite::params_from_iter(filter_params.iter()), |row| {
-            Ok(row.get::<_, f64>(0)?)
-        })
-        .map_err(|e| e.to_string())?;
+    let db = state.db_manager.read().await;
+    let db_conn = db.db();
 
-    // 统计各金额区间
+    let models = success_query(params.identity_id, &params.date_start, &params.date_end)
+        .all(db_conn)
+        .await
+        .map_err(|e| {
+            tracing::error!("[Statistics] consumption fetch failed: {}", e);
+            e.to_string()
+        })?;
+
+    tracing::info!("[Statistics] consumption: {} success records fetched", models.len());
+
     let mut buckets = [
         ("<10元", 0u32, 0.0_f64),
         ("10-20元", 0u32, 0.0_f64),
@@ -374,8 +357,8 @@ pub async fn get_consumption_distribution(
         (">100元", 0u32, 0.0_f64),
     ];
 
-    for row in rows {
-        let money = row.map_err(|e| e.to_string())?;
+    for m in &models {
+        let money = m.money.unwrap_or(0.0).abs();
         let idx = match money {
             m if m < 10.0 => 0,
             m if m < 20.0 => 1,
@@ -385,6 +368,11 @@ pub async fn get_consumption_distribution(
         };
         buckets[idx].1 += 1;
         buckets[idx].2 += money;
+    }
+
+    tracing::info!("[Statistics] consumption buckets:");
+    for (range, count, amount) in &buckets {
+        tracing::info!("[Statistics]   {} -> count={}, amount={}", range, count, amount);
     }
 
     Ok(buckets
@@ -397,44 +385,59 @@ pub async fn get_consumption_distribution(
         .collect())
 }
 
-/// 商户消费排行（按 target_user 分组，取 TOP10）
 #[tauri::command]
 pub async fn get_merchant_ranking(
     state: State<'_, AppState>,
     params: StatisticsParams,
 ) -> Result<Vec<MerchantRankingItem>, String> {
-    let db = state.db_manager.read().await;
-
-    let conn = db
-        .open_identity_db(params.identity_id)
-        .map_err(|e| e.to_string())?;
-    let (date_filter, filter_params) = build_date_filter(&params.date_start, &params.date_end);
-
-    let sql = format!(
-        "SELECT target_user, SUM(ABS(money)) as total_amount, COUNT(*) as cnt
-         FROM bill_merged{}
-         WHERE status_str = '交易成功' AND target_user IS NOT NULL AND target_user != ''
-         GROUP BY target_user
-         ORDER BY total_amount DESC
-         LIMIT 10",
-        date_filter
+    tracing::info!(
+        "[Statistics] get_merchant_ranking: identity_id={}, date_start={:?}, date_end={:?}",
+        params.identity_id, params.date_start, params.date_end
     );
 
-    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-    let rows = stmt
-        .query_map(rusqlite::params_from_iter(filter_params.iter()), |row| {
-            Ok(MerchantRankingItem {
-                merchant: row.get::<_, Option<String>>(0)?.unwrap_or_default(),
-                amount: row.get::<_, f64>(1)?,
-                count: row.get::<_, u32>(2)?,
-            })
-        })
-        .map_err(|e| e.to_string())?;
+    let db = state.db_manager.read().await;
+    let db_conn = db.db();
 
-    let mut items = Vec::new();
-    for row in rows {
-        items.push(row.map_err(|e| e.to_string())?);
+    let models = success_query(params.identity_id, &params.date_start, &params.date_end)
+        .all(db_conn)
+        .await
+        .map_err(|e| {
+            tracing::error!("[Statistics] merchant_ranking fetch failed: {}", e);
+            e.to_string()
+        })?;
+
+    let mut merchant_map: std::collections::HashMap<String, (f64, u32)> =
+        std::collections::HashMap::new();
+
+    for m in &models {
+        let target = match m.target_user.as_ref() {
+            Some(t) if !t.is_empty() => t,
+            _ => continue,
+        };
+        let money = m.money.unwrap_or(0.0).abs();
+        let entry = merchant_map.entry(target.clone()).or_insert((0.0, 0));
+        entry.0 += money;
+        entry.1 += 1;
     }
 
-    Ok(items)
+    let mut items: Vec<(String, f64, u32)> = merchant_map
+        .into_iter()
+        .map(|(name, (amount, count))| (name, amount, count))
+        .collect();
+    items.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    items.truncate(10);
+
+    tracing::info!("[Statistics] merchant ranking: {} merchants returned", items.len());
+    for (merchant, amount, count) in &items {
+        tracing::info!("[Statistics]   {} -> amount={}, count={}", merchant, amount, count);
+    }
+
+    Ok(items
+        .into_iter()
+        .map(|(merchant, amount, count)| MerchantRankingItem {
+            merchant,
+            amount,
+            count,
+        })
+        .collect())
 }

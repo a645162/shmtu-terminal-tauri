@@ -77,18 +77,18 @@ pub async fn export_data(
         // 导出原始数据需要找到账号ID
         let db = state.db_manager.read().await;
         let accounts = db
-            .list_accounts_by_identity(params.identity_id)
+            .list_accounts_by_identity(params.identity_id).await
             .map_err(|e| e.to_string())?;
         if let Some(account) = accounts.first() {
             export_service
-                .export_account_bills(&account.account_id, &options)
+                .export_account_bills(&account.account_id, &options).await
                 .map_err(|e| e.to_string())?;
         }
     } else {
         // 获取身份名称
         let db = state.db_manager.read().await;
         let identity = db
-            .get_identity(params.identity_id)
+            .get_identity(params.identity_id).await
             .map_err(|e| e.to_string())?;
         let identity_name = identity
             .as_ref()
@@ -96,7 +96,7 @@ pub async fn export_data(
             .unwrap_or("unknown");
 
         export_service
-            .export_identity_bills(params.identity_id, identity_name, &options)
+            .export_identity_bills(params.identity_id, identity_name, &options).await
             .map_err(|e| e.to_string())?;
     }
 
@@ -111,7 +111,7 @@ pub async fn import_data(
 ) -> Result<usize, String> {
     let export_service = state.export_service.read().await;
     export_service
-        .import_json(identity_id, &file_path)
+        .import_json(identity_id, &file_path).await
         .map_err(|e| e.to_string())
 }
 

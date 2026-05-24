@@ -4,7 +4,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum AppError {
     #[error("数据库错误: {0}")]
-    Database(#[from] rusqlite::Error),
+    Database(String),
 
     #[error("IO错误: {0}")]
     Io(#[from] std::io::Error),
@@ -29,9 +29,7 @@ pub enum AppError {
 
     #[error("需要验证码")]
     CaptchaRequired {
-        /// Base64 编码的验证码图片
         captcha_image: String,
-        /// CAS execution token
         execution: String,
     },
 
@@ -57,10 +55,16 @@ pub enum AppError {
     Zip(#[from] zip::result::ZipError),
 }
 
-pub type AppResult<T> = Result<T, AppError>;
+impl From<sea_orm::DbErr> for AppError {
+    fn from(e: sea_orm::DbErr) -> Self {
+        AppError::Database(e.to_string())
+    }
+}
 
 impl From<AppError> for String {
     fn from(e: AppError) -> String {
         e.to_string()
     }
 }
+
+pub type AppResult<T> = Result<T, AppError>;

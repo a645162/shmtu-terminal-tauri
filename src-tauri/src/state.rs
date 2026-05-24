@@ -23,8 +23,7 @@ pub struct AppState {
 impl AppState {
     /// 初始化应用状态
     pub async fn init(data_dir: &str) -> AppResult<Self> {
-        let db_manager = DatabaseManager::new(data_dir);
-        db_manager.initialize()?;
+        let db_manager = DatabaseManager::connect(data_dir).await?;
 
         let crypto = CryptoService::from_device_id("shmtu-terminal-device-key");
 

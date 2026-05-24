@@ -247,7 +247,7 @@ pub async fn cas_login(
 
     let db = state.db_manager.read().await;
     let account = db
-        .get_account_by_student_id(&account_id)
+        .get_account_by_student_id(&account_id).await
         .map_err(|e| {
             tracing::error!("[Command] cas_login: account not found: {}", e);
             e.to_string()
@@ -282,7 +282,7 @@ pub async fn check_login_status(
 
     let db = state.db_manager.read().await;
     let crypto = state.crypto.read().await;
-    let session = db.get_session(&account_id, &crypto).map_err(|e| {
+    let session = db.get_session(&account_id, &crypto).await.map_err(|e| {
         tracing::error!("[Command] check_login_status: get_session failed: {}", e);
         e.to_string()
     })?;

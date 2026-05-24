@@ -1,52 +1,55 @@
 use std::collections::HashSet;
 
-use rusqlite::Connection;
+use sea_orm::{
+    ColumnTrait, DatabaseConnection, EntityTrait,
+    PaginatorTrait, QueryFilter, QueryOrder, Set,
+};
 use shmtu_cas::datatype::bill::BillItem;
+use tokio::sync::Mutex;
 
-use crate::db::DatabaseManager;
+use crate::db::init::{
+    bill_merged_model_to_app, bill_original_model_to_app, operation_log_model_to_app,
+};
+use crate::entity::*;
 use crate::error::AppResult;
 use crate::models::{BillMerged, BillOriginal, OperationLog};
 
-/// 实现 shmtu-cas-rs 的 BillStore trait，用于增量同步
 pub struct BillStoreImpl {
-    db_manager: DatabaseManager,
-    /// 当前账号的学号
+    db: DatabaseConnection,
     account_id: String,
-    /// 当前身份 ID
     identity_id: i64,
-    /// 已缓存的交易号集合，用于快速去重
-    known_numbers: HashSet<String>,
+    known_numbers: Mutex<HashSet<String>>,
 }
 
 impl BillStoreImpl {
-    /// 创建账号级别的 BillStore
-    pub fn new(db_manager: DatabaseManager, account_id: &str, identity_id: i64) -> AppResult<Self> {
-        let known_numbers = Self::load_known_numbers(&db_manager, account_id, identity_id)?;
+    pub async fn new(
+        db: DatabaseConnection,
+        account_id: &str,
+        identity_id: i64,
+    ) -> AppResult<Self> {
+        let known_numbers = Self::load_known_numbers(&db, account_id, identity_id).await?;
         Ok(Self {
-            db_manager,
+            db,
             account_id: account_id.to_string(),
             identity_id,
-            known_numbers,
+            known_numbers: Mutex::new(known_numbers),
         })
     }
 
-    /// 从数据库加载已存在的交易号
-    fn load_known_numbers(
-        db_manager: &DatabaseManager,
+    async fn load_known_numbers(
+        db: &DatabaseConnection,
         account_id: &str,
         identity_id: i64,
     ) -> AppResult<HashSet<String>> {
         let mut numbers = HashSet::new();
 
-        // 从账号原始数据库加载
-        if let Ok(conn) = db_manager.open_account_db(account_id) {
-            let mut stmt = conn.prepare("SELECT number_list FROM bill_original")?;
-            let rows = stmt.query_map([], |row| {
-                let s: String = row.get(0)?;
-                Ok(s)
-            })?;
-            for json_str in rows.flatten() {
-                if let Ok(list) = serde_json::from_str::<Vec<String>>(&json_str) {
+        let rows = bill_original::Entity::find()
+            .filter(bill_original::Column::AccountId.eq(account_id))
+            .all(db)
+            .await?;
+        for row in rows {
+            if let Some(ref nl) = row.number_list {
+                if let Ok(list) = serde_json::from_str::<Vec<String>>(nl) {
                     for n in list {
                         numbers.insert(n);
                     }
@@ -54,15 +57,13 @@ impl BillStoreImpl {
             }
         }
 
-        // 从身份数据库合并表加载
-        if let Ok(conn) = db_manager.open_identity_db(identity_id) {
-            let mut stmt = conn.prepare("SELECT number_list FROM bill_merged")?;
-            let rows = stmt.query_map([], |row| {
-                let s: String = row.get(0)?;
-                Ok(s)
-            })?;
-            for json_str in rows.flatten() {
-                if let Ok(list) = serde_json::from_str::<Vec<String>>(&json_str) {
+        let rows = bill_merged::Entity::find()
+            .filter(bill_merged::Column::IdentityId.eq(identity_id))
+            .all(db)
+            .await?;
+        for row in rows {
+            if let Some(ref nl) = row.number_list {
+                if let Ok(list) = serde_json::from_str::<Vec<String>>(nl) {
                     for n in list {
                         numbers.insert(n);
                     }
@@ -73,241 +74,144 @@ impl BillStoreImpl {
         Ok(numbers)
     }
 
-    /// 将 BillItem 写入账号原始数据库
-    pub fn save_bill_original(
-        &self,
-        conn: &Connection,
-        bill: &BillItem,
-        now: &str,
-    ) -> AppResult<()> {
+    pub async fn save_bill_original(&self, bill: &BillItem, now: &str) -> AppResult<()> {
         let number_list_json = serde_json::to_string(&bill.number_list)?;
-        conn.execute(
-            "INSERT INTO bill_original (
-                date_str, time_str, time_str_formatted, date_time_formatted,
-                end_date_time_formatted, timestamp, end_timestamp, item_type,
-                number, number_list, target_user, money_str, money, method,
-                status_str, is_combined, account_id, synced_at
-            ) VALUES (:date_str, :time_str, :time_str_formatted, :date_time_formatted,
-                :end_date_time_formatted, :timestamp, :end_timestamp, :item_type,
-                :number, :number_list, :target_user, :money_str, :money, :method,
-                :status_str, :is_combined, :account_id, :synced_at)",
-            rusqlite::named_params! {
-                ":date_str": bill.date_str,
-                ":time_str": bill.time_str,
-                ":time_str_formatted": bill.time_str_formatted,
-                ":date_time_formatted": bill.date_time_formatted,
-                ":end_date_time_formatted": bill.end_date_time_formatted,
-                ":timestamp": bill.timestamp,
-                ":end_timestamp": bill.end_timestamp,
-                ":item_type": bill.item_type,
-                ":number": bill.number,
-                ":number_list": number_list_json,
-                ":target_user": bill.target_user,
-                ":money_str": bill.money_str,
-                ":money": bill.money as f64,
-                ":method": bill.method,
-                ":status_str": bill.status_str,
-                ":is_combined": bill.is_combined as i32,
-                ":account_id": self.account_id,
-                ":synced_at": now,
-            },
-        )?;
+        let model = bill_original::ActiveModel {
+            date_str: Set(bill.date_str.clone()),
+            time_str: Set(bill.time_str.clone()),
+            time_str_formatted: Set(Some(bill.time_str_formatted.clone())),
+            date_time_formatted: Set(Some(bill.date_time_formatted.clone())),
+            end_date_time_formatted: Set(Some(bill.end_date_time_formatted.clone())),
+            timestamp: Set(Some(bill.timestamp)),
+            end_timestamp: Set(Some(bill.end_timestamp)),
+            item_type: Set(Some(bill.item_type.clone())),
+            number: Set(Some(bill.number.clone())),
+            number_list: Set(Some(number_list_json)),
+            target_user: Set(Some(bill.target_user.clone())),
+            money_str: Set(Some(bill.money_str.clone())),
+            money: Set(Some(bill.money as f64)),
+            method: Set(Some(bill.method.clone())),
+            status_str: Set(Some(bill.status_str.clone())),
+            is_combined: Set(bill.is_combined),
+            account_id: Set(self.account_id.clone()),
+            synced_at: Set(Some(now.to_string())),
+            ..Default::default()
+        };
+        bill_original::Entity::insert(model).exec(&self.db).await?;
         Ok(())
     }
 
-    /// 将 BillItem 追加到身份合并数据库
-    pub fn append_to_merged(&self, conn: &Connection, bill: &BillItem, now: &str) -> AppResult<()> {
+    pub async fn append_to_merged(&self, bill: &BillItem, now: &str) -> AppResult<()> {
         let number_list_json = serde_json::to_string(&bill.number_list)?;
-        conn.execute(
-            "INSERT INTO bill_merged (
-                date_str, time_str, time_str_formatted, date_time_formatted,
-                end_date_time_formatted, timestamp, end_timestamp, item_type,
-                number, number_list, target_user, money_str, money, method,
-                status_str, is_combined, source_account_id, is_manual, synced_at
-            ) VALUES (:date_str, :time_str, :time_str_formatted, :date_time_formatted,
-                :end_date_time_formatted, :timestamp, :end_timestamp, :item_type,
-                :number, :number_list, :target_user, :money_str, :money, :method,
-                :status_str, :is_combined, :source_account_id, 0, :synced_at)",
-            rusqlite::named_params! {
-                ":date_str": bill.date_str,
-                ":time_str": bill.time_str,
-                ":time_str_formatted": bill.time_str_formatted,
-                ":date_time_formatted": bill.date_time_formatted,
-                ":end_date_time_formatted": bill.end_date_time_formatted,
-                ":timestamp": bill.timestamp,
-                ":end_timestamp": bill.end_timestamp,
-                ":item_type": bill.item_type,
-                ":number": bill.number,
-                ":number_list": number_list_json,
-                ":target_user": bill.target_user,
-                ":money_str": bill.money_str,
-                ":money": bill.money as f64,
-                ":method": bill.method,
-                ":status_str": bill.status_str,
-                ":is_combined": bill.is_combined as i32,
-                ":source_account_id": self.account_id,
-                ":synced_at": now,
-            },
-        )?;
+        let model = bill_merged::ActiveModel {
+            identity_id: Set(self.identity_id),
+            date_str: Set(bill.date_str.clone()),
+            time_str: Set(bill.time_str.clone()),
+            time_str_formatted: Set(Some(bill.time_str_formatted.clone())),
+            date_time_formatted: Set(Some(bill.date_time_formatted.clone())),
+            end_date_time_formatted: Set(Some(bill.end_date_time_formatted.clone())),
+            timestamp: Set(Some(bill.timestamp)),
+            end_timestamp: Set(Some(bill.end_timestamp)),
+            item_type: Set(Some(bill.item_type.clone())),
+            number: Set(Some(bill.number.clone())),
+            number_list: Set(Some(number_list_json)),
+            target_user: Set(Some(bill.target_user.clone())),
+            money_str: Set(Some(bill.money_str.clone())),
+            money: Set(Some(bill.money as f64)),
+            method: Set(Some(bill.method.clone())),
+            status_str: Set(Some(bill.status_str.clone())),
+            is_combined: Set(bill.is_combined),
+            source_account_id: Set(Some(self.account_id.clone())),
+            is_manual: Set(false),
+            synced_at: Set(Some(now.to_string())),
+            ..Default::default()
+        };
+        bill_merged::Entity::insert(model).exec(&self.db).await?;
         Ok(())
     }
 
-    /// 获取账号原始账单列表（分页）
-    pub fn list_original_bills(
+    pub async fn list_original_bills(
         &self,
         account_id: &str,
         page: u32,
         page_size: u32,
     ) -> AppResult<(Vec<BillOriginal>, u32)> {
-        let conn = self.db_manager.open_account_db(account_id)?;
-        let offset = (page - 1) * page_size;
+        let paginator = bill_original::Entity::find()
+            .filter(bill_original::Column::AccountId.eq(account_id))
+            .order_by_desc(bill_original::Column::Timestamp)
+            .paginate(&self.db, page_size as u64);
 
-        let total: u32 =
-            conn.query_row("SELECT COUNT(*) FROM bill_original", [], |row| row.get(0))?;
-
+        let total = paginator.num_items().await? as u32;
         let total_pages = total.div_ceil(page_size);
 
-        let mut stmt = conn.prepare(
-            "SELECT id, date_str, time_str, time_str_formatted, date_time_formatted,
-             end_date_time_formatted, timestamp, end_timestamp, item_type, number,
-             number_list, target_user, money_str, money, method, status_str,
-             is_combined, account_id, synced_at
-             FROM bill_original ORDER BY timestamp DESC LIMIT ?1 OFFSET ?2",
-        )?;
-
-        let rows = stmt.query_map((page_size, offset), |row| {
-            Ok(BillOriginal {
-                id: row.get(0)?,
-                date_str: row.get(1)?,
-                time_str: row.get(2)?,
-                time_str_formatted: row.get(3)?,
-                date_time_formatted: row.get(4)?,
-                end_date_time_formatted: row.get(5)?,
-                timestamp: row.get(6)?,
-                end_timestamp: row.get(7)?,
-                item_type: row.get(8)?,
-                number: row.get(9)?,
-                number_list: row.get(10)?,
-                target_user: row.get(11)?,
-                money_str: row.get(12)?,
-                money: row.get(13)?,
-                method: row.get(14)?,
-                status_str: row.get(15)?,
-                is_combined: row.get::<_, i32>(16)? != 0,
-                account_id: row.get(17)?,
-                synced_at: row.get(18)?,
-            })
-        })?;
-
-        let mut bills = Vec::new();
-        for row in rows {
-            bills.push(row?);
-        }
+        let models = paginator.fetch_page(page as u64).await?;
+        let bills: Vec<BillOriginal> = models
+            .into_iter()
+            .map(bill_original_model_to_app)
+            .collect();
 
         Ok((bills, total_pages))
     }
 
-    /// 获取身份合并账单列表（分页）
-    pub fn list_merged_bills(
+    pub async fn list_merged_bills(
         &self,
         identity_id: i64,
         page: u32,
         page_size: u32,
     ) -> AppResult<(Vec<BillMerged>, u32)> {
-        let conn = self.db_manager.open_identity_db(identity_id)?;
-        let offset = (page - 1) * page_size;
+        let paginator = bill_merged::Entity::find()
+            .filter(bill_merged::Column::IdentityId.eq(identity_id))
+            .order_by_desc(bill_merged::Column::Timestamp)
+            .paginate(&self.db, page_size as u64);
 
-        let total: u32 =
-            conn.query_row("SELECT COUNT(*) FROM bill_merged", [], |row| row.get(0))?;
-
+        let total = paginator.num_items().await? as u32;
         let total_pages = if page_size > 0 {
             total.div_ceil(page_size)
         } else {
             1
         };
 
-        let mut stmt = conn.prepare(
-            "SELECT id, date_str, time_str, time_str_formatted, date_time_formatted,
-             end_date_time_formatted, timestamp, end_timestamp, item_type, number,
-             number_list, target_user, money_str, money, method, status_str,
-             is_combined, source_account_id, is_manual, synced_at
-             FROM bill_merged ORDER BY timestamp DESC LIMIT ?1 OFFSET ?2",
-        )?;
-
-        let rows = stmt.query_map((page_size, offset), |row| {
-            Ok(BillMerged {
-                id: row.get(0)?,
-                date_str: row.get(1)?,
-                time_str: row.get(2)?,
-                time_str_formatted: row.get(3)?,
-                date_time_formatted: row.get(4)?,
-                end_date_time_formatted: row.get(5)?,
-                timestamp: row.get(6)?,
-                end_timestamp: row.get(7)?,
-                item_type: row.get(8)?,
-                number: row.get(9)?,
-                number_list: row.get(10)?,
-                target_user: row.get(11)?,
-                money_str: row.get(12)?,
-                money: row.get(13)?,
-                method: row.get(14)?,
-                status_str: row.get(15)?,
-                is_combined: row.get::<_, i32>(16)? != 0,
-                source_account_id: row.get(17)?,
-                is_manual: row.get::<_, i32>(18)? != 0,
-                synced_at: row.get(19)?,
-            })
-        })?;
-
-        let mut bills = Vec::new();
-        for row in rows {
-            bills.push(row?);
-        }
+        let models = paginator.fetch_page(page as u64).await?;
+        let bills: Vec<BillMerged> = models
+            .into_iter()
+            .map(bill_merged_model_to_app)
+            .collect();
 
         Ok((bills, total_pages))
     }
 
-    /// 手动添加合并账单记录
-    pub fn add_manual_bill(&self, identity_id: i64, bill: &BillItem) -> AppResult<i64> {
-        let conn = self.db_manager.open_identity_db(identity_id)?;
+    pub async fn add_manual_bill(&self, identity_id: i64, bill: &BillItem) -> AppResult<i64> {
         let number_list_json = serde_json::to_string(&bill.number_list)?;
         let now = chrono::Local::now().to_rfc3339();
 
-        conn.execute(
-            "INSERT INTO bill_merged (
-                date_str, time_str, time_str_formatted, date_time_formatted,
-                end_date_time_formatted, timestamp, end_timestamp, item_type,
-                number, number_list, target_user, money_str, money, method,
-                status_str, is_combined, source_account_id, is_manual, synced_at
-            ) VALUES (:date_str, :time_str, :time_str_formatted, :date_time_formatted,
-                :end_date_time_formatted, :timestamp, :end_timestamp, :item_type,
-                :number, :number_list, :target_user, :money_str, :money, :method,
-                :status_str, :is_combined, NULL, 1, :synced_at)",
-            rusqlite::named_params! {
-                ":date_str": bill.date_str,
-                ":time_str": bill.time_str,
-                ":time_str_formatted": bill.time_str_formatted,
-                ":date_time_formatted": bill.date_time_formatted,
-                ":end_date_time_formatted": bill.end_date_time_formatted,
-                ":timestamp": bill.timestamp,
-                ":end_timestamp": bill.end_timestamp,
-                ":item_type": bill.item_type,
-                ":number": bill.number,
-                ":number_list": number_list_json,
-                ":target_user": bill.target_user,
-                ":money_str": bill.money_str,
-                ":money": bill.money as f64,
-                ":method": bill.method,
-                ":status_str": bill.status_str,
-                ":is_combined": bill.is_combined as i32,
-                ":synced_at": now,
-            },
-        )?;
+        let model = bill_merged::ActiveModel {
+            identity_id: Set(identity_id),
+            date_str: Set(bill.date_str.clone()),
+            time_str: Set(bill.time_str.clone()),
+            time_str_formatted: Set(Some(bill.time_str_formatted.clone())),
+            date_time_formatted: Set(Some(bill.date_time_formatted.clone())),
+            end_date_time_formatted: Set(Some(bill.end_date_time_formatted.clone())),
+            timestamp: Set(Some(bill.timestamp)),
+            end_timestamp: Set(Some(bill.end_timestamp)),
+            item_type: Set(Some(bill.item_type.clone())),
+            number: Set(Some(bill.number.clone())),
+            number_list: Set(Some(number_list_json.clone())),
+            target_user: Set(Some(bill.target_user.clone())),
+            money_str: Set(Some(bill.money_str.clone())),
+            money: Set(Some(bill.money as f64)),
+            method: Set(Some(bill.method.clone())),
+            status_str: Set(Some(bill.status_str.clone())),
+            is_combined: Set(bill.is_combined),
+            source_account_id: Set(None),
+            is_manual: Set(true),
+            synced_at: Set(Some(now.clone())),
+            ..Default::default()
+        };
 
-        let id = conn.last_insert_rowid();
+        let result = bill_merged::Entity::insert(model).exec(&self.db).await?;
+        let id = result.last_insert_id;
 
         self.log_operation(
-            &conn,
             "add",
             &number_list_json,
             &format!(
@@ -315,172 +219,90 @@ impl BillStoreImpl {
                 bill.date_time_formatted, bill.item_type
             ),
             None,
-        )?;
+        )
+        .await?;
 
         Ok(id)
     }
 
-    /// 手动删除合并账单记录
-    pub fn delete_merged_bill(&self, identity_id: i64, bill_id: i64) -> AppResult<()> {
-        let conn = self.db_manager.open_identity_db(identity_id)?;
+    pub async fn delete_merged_bill(&self, _identity_id: i64, bill_id: i64) -> AppResult<()> {
+        let number_list = bill_merged::Entity::find_by_id(bill_id)
+            .one(&self.db)
+            .await?
+            .and_then(|m| m.number_list);
 
-        let number_list: Option<String> = conn
-            .query_row(
-                "SELECT number_list FROM bill_merged WHERE id=?1",
-                [bill_id],
-                |row| row.get(0),
-            )
-            .ok();
-
-        conn.execute("DELETE FROM bill_merged WHERE id=?1", [bill_id])?;
+        bill_merged::Entity::delete_by_id(bill_id)
+            .exec(&self.db)
+            .await?;
 
         if let Some(nl) = number_list {
             self.log_operation(
-                &conn,
                 "delete",
                 &nl,
                 &format!("手动删除账单 ID={}", bill_id),
                 None,
-            )?;
+            )
+            .await?;
         }
 
         Ok(())
     }
 
-    /// 记录操作日志
-    fn log_operation(
+    async fn log_operation(
         &self,
-        conn: &Connection,
         operation_type: &str,
         record_numbers: &str,
         description: &str,
         account_id: Option<&str>,
     ) -> AppResult<()> {
         let now = chrono::Local::now().to_rfc3339();
-        conn.execute(
-            "INSERT INTO operation_log (operation_type, record_numbers, operation_time, description, account_id)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            (operation_type, record_numbers, &now, description, account_id),
-        )?;
+        let model = operation_log::ActiveModel {
+            identity_id: Set(self.identity_id),
+            operation_type: Set(operation_type.to_string()),
+            record_numbers: Set(Some(record_numbers.to_string())),
+            operation_time: Set(now),
+            description: Set(Some(description.to_string())),
+            account_id: Set(account_id.map(|s| s.to_string())),
+            ..Default::default()
+        };
+        operation_log::Entity::insert(model).exec(&self.db).await?;
         Ok(())
     }
 
-    /// 获取操作日志列表
-    pub fn list_operation_logs(&self, identity_id: i64) -> AppResult<Vec<OperationLog>> {
-        let conn = self.db_manager.open_identity_db(identity_id)?;
-        let mut stmt = conn.prepare(
-            "SELECT id, operation_type, record_numbers, operation_time, description, account_id
-             FROM operation_log ORDER BY id DESC",
-        )?;
+    pub async fn list_operation_logs(&self, identity_id: i64) -> AppResult<Vec<OperationLog>> {
+        let models = operation_log::Entity::find()
+            .filter(operation_log::Column::IdentityId.eq(identity_id))
+            .order_by_desc(operation_log::Column::Id)
+            .all(&self.db)
+            .await?;
 
-        let rows = stmt.query_map([], |row| {
-            Ok(OperationLog {
-                id: row.get(0)?,
-                operation_type: row.get(1)?,
-                record_numbers: row.get(2)?,
-                operation_time: row.get(3)?,
-                description: row.get(4)?,
-                account_id: row.get(5)?,
-            })
-        })?;
-
-        let mut logs = Vec::new();
-        for row in rows {
-            logs.push(row?);
-        }
-        Ok(logs)
+        Ok(models.into_iter().map(operation_log_model_to_app).collect())
     }
 
-    /// 获取所有合并账单（用于导出）
-    pub fn get_all_merged_bills(&self, identity_id: i64) -> AppResult<Vec<BillMerged>> {
-        let conn = self.db_manager.open_identity_db(identity_id)?;
-        let mut stmt = conn.prepare(
-            "SELECT id, date_str, time_str, time_str_formatted, date_time_formatted,
-             end_date_time_formatted, timestamp, end_timestamp, item_type, number,
-             number_list, target_user, money_str, money, method, status_str,
-             is_combined, source_account_id, is_manual, synced_at
-             FROM bill_merged ORDER BY timestamp ASC",
-        )?;
+    pub async fn get_all_merged_bills(&self, identity_id: i64) -> AppResult<Vec<BillMerged>> {
+        let models = bill_merged::Entity::find()
+            .filter(bill_merged::Column::IdentityId.eq(identity_id))
+            .order_by_asc(bill_merged::Column::Timestamp)
+            .all(&self.db)
+            .await?;
 
-        let rows = stmt.query_map([], |row| {
-            Ok(BillMerged {
-                id: row.get(0)?,
-                date_str: row.get(1)?,
-                time_str: row.get(2)?,
-                time_str_formatted: row.get(3)?,
-                date_time_formatted: row.get(4)?,
-                end_date_time_formatted: row.get(5)?,
-                timestamp: row.get(6)?,
-                end_timestamp: row.get(7)?,
-                item_type: row.get(8)?,
-                number: row.get(9)?,
-                number_list: row.get(10)?,
-                target_user: row.get(11)?,
-                money_str: row.get(12)?,
-                money: row.get(13)?,
-                method: row.get(14)?,
-                status_str: row.get(15)?,
-                is_combined: row.get::<_, i32>(16)? != 0,
-                source_account_id: row.get(17)?,
-                is_manual: row.get::<_, i32>(18)? != 0,
-                synced_at: row.get(19)?,
-            })
-        })?;
-
-        let mut bills = Vec::new();
-        for row in rows {
-            bills.push(row?);
-        }
-        Ok(bills)
+        Ok(models.into_iter().map(bill_merged_model_to_app).collect())
     }
 
-    /// 获取所有原始账单（用于导出）
-    pub fn get_all_original_bills(&self, account_id: &str) -> AppResult<Vec<BillOriginal>> {
-        let conn = self.db_manager.open_account_db(account_id)?;
-        let mut stmt = conn.prepare(
-            "SELECT id, date_str, time_str, time_str_formatted, date_time_formatted,
-             end_date_time_formatted, timestamp, end_timestamp, item_type, number,
-             number_list, target_user, money_str, money, method, status_str,
-             is_combined, account_id, synced_at
-             FROM bill_original ORDER BY timestamp ASC",
-        )?;
+    pub async fn get_all_original_bills(&self, account_id: &str) -> AppResult<Vec<BillOriginal>> {
+        let models = bill_original::Entity::find()
+            .filter(bill_original::Column::AccountId.eq(account_id))
+            .order_by_asc(bill_original::Column::Timestamp)
+            .all(&self.db)
+            .await?;
 
-        let rows = stmt.query_map([], |row| {
-            Ok(BillOriginal {
-                id: row.get(0)?,
-                date_str: row.get(1)?,
-                time_str: row.get(2)?,
-                time_str_formatted: row.get(3)?,
-                date_time_formatted: row.get(4)?,
-                end_date_time_formatted: row.get(5)?,
-                timestamp: row.get(6)?,
-                end_timestamp: row.get(7)?,
-                item_type: row.get(8)?,
-                number: row.get(9)?,
-                number_list: row.get(10)?,
-                target_user: row.get(11)?,
-                money_str: row.get(12)?,
-                money: row.get(13)?,
-                method: row.get(14)?,
-                status_str: row.get(15)?,
-                is_combined: row.get::<_, i32>(16)? != 0,
-                account_id: row.get(17)?,
-                synced_at: row.get(18)?,
-            })
-        })?;
-
-        let mut bills = Vec::new();
-        for row in rows {
-            bills.push(row?);
-        }
-        Ok(bills)
+        Ok(models.into_iter().map(bill_original_model_to_app).collect())
     }
 }
 
-/// 实现 shmtu-cas-rs 的 BillStore trait
 impl shmtu_cas::sync::BillStore for BillStoreImpl {
     fn contains(&self, number: &str) -> bool {
-        self.known_numbers.contains(number)
+        self.known_numbers.blocking_lock().contains(number)
     }
 
     fn merge(&mut self, new_bills: Vec<BillItem>) {
@@ -489,34 +311,15 @@ impl shmtu_cas::sync::BillStore for BillStoreImpl {
         }
 
         let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-
-        let account_conn = match self.db_manager.open_account_db(&self.account_id) {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("打开账号数据库失败: {}", e);
-                return;
-            }
-        };
-        let identity_conn = match self.db_manager.open_identity_db(self.identity_id) {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("打开身份数据库失败: {}", e);
-                return;
-            }
-        };
+        let handle = tokio::runtime::Handle::current();
 
         for bill in &new_bills {
             for n in &bill.number_list {
-                self.known_numbers.insert(n.clone());
+                self.known_numbers.blocking_lock().insert(n.clone());
             }
 
-            if let Err(e) = self.save_bill_original(&account_conn, bill, &now) {
-                eprintln!("写入原始账单失败: {}", e);
-            }
-
-            if let Err(e) = self.append_to_merged(&identity_conn, bill, &now) {
-                eprintln!("追加合并账单失败: {}", e);
-            }
+            let _ = handle.block_on(self.save_bill_original(bill, &now));
+            let _ = handle.block_on(self.append_to_merged(bill, &now));
         }
     }
 }

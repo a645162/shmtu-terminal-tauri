@@ -1,11 +1,12 @@
 use serde::{Deserialize, Serialize};
+use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
 use tauri::State;
 
 use crate::db::BillStoreImpl;
+use crate::entity::bill_merged;
 use crate::models::BillMerged;
 use crate::state::AppState;
 
-/// 前端账单查询参数（与 tauri.ts 中的 BillQueryParams 对齐）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BillQueryParams {
@@ -19,7 +20,6 @@ pub struct BillQueryParams {
     pub date_end: Option<String>,
 }
 
-/// 前端账单查询结果（与 tauri.ts 中的 BillQueryResult 对齐）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BillQueryResult {
     pub items: Vec<BillItemFrontend>,
@@ -28,7 +28,6 @@ pub struct BillQueryResult {
     pub page_size: u32,
 }
 
-/// 前端账单条目（统一 BillOriginal 和 BillMerged 的展示格式）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BillItemFrontend {
     pub id: i64,
@@ -99,20 +98,21 @@ pub async fn query_bills(
         });
     }
 
-    let store = BillStoreImpl::new(db.clone_ref(), "", identity_id).map_err(|e| e.to_string())?;
+    let db_conn = db.db().clone();
+    let store = BillStoreImpl::new(db_conn, "", identity_id)
+        .await
+        .map_err(|e| e.to_string())?;
 
     let (bills, _total_pages) = store
         .list_merged_bills(identity_id, params.page, params.page_size)
+        .await
         .map_err(|e| e.to_string())?;
 
-    // 获取总数
-    let total = {
-        let conn = db
-            .open_identity_db(identity_id)
-            .map_err(|e| e.to_string())?;
-        conn.query_row("SELECT COUNT(*) FROM bill_merged", [], |row| row.get(0))
-            .unwrap_or(0)
-    };
+    let total = bill_merged::Entity::find()
+        .filter(bill_merged::Column::IdentityId.eq(identity_id))
+        .count(db.db())
+        .await
+        .unwrap_or(0) as u32;
 
     let items: Vec<BillItemFrontend> = bills.into_iter().map(BillItemFrontend::from).collect();
 
@@ -131,8 +131,12 @@ pub async fn delete_merged_bill(
     bill_id: i64,
 ) -> Result<(), String> {
     let db = state.db_manager.read().await;
-    let store = BillStoreImpl::new(db.clone_ref(), "", identity_id).map_err(|e| e.to_string())?;
+    let db_conn = db.db().clone();
+    let store = BillStoreImpl::new(db_conn, "", identity_id)
+        .await
+        .map_err(|e| e.to_string())?;
     store
         .delete_merged_bill(identity_id, bill_id)
+        .await
         .map_err(|e| e.to_string())
 }
