@@ -270,6 +270,12 @@ export async function get_card_balance(identityId: number): Promise<import('../t
   return invoke<import('../types').CardBalance>('get_card_balance', { identityId });
 }
 
+// ========== Error Logging ==========
+
+export async function log_error(message: string): Promise<void> {
+  return invoke('log_error', { message });
+}
+
 // ========== Manual Captcha Sync ==========
 
 export async function sync_with_captcha(

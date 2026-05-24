@@ -3,6 +3,7 @@ pub mod bill;
 pub mod captcha;
 pub mod config;
 pub mod data;
+pub mod error;
 pub mod identity;
 pub mod statistics;
 pub mod sync;

@@ -61,6 +61,9 @@ interface AppState {
   showManualCaptchaDialog: boolean;
   captchaImage: string | null;
   captchaExecution: string | null;
+  // Error dialog state
+  showErrorDialog: boolean;
+  errorMessage: string;
 
   // Actions
   setCurrentIdentity: (identity: Identity | null) => void;
@@ -86,6 +89,8 @@ interface AppState {
   setShowStatisticsDialog: (show: boolean) => void;
   setShowManualCaptchaDialog: (show: boolean) => void;
   setCaptchaForManualLogin: (image: string | null, execution: string | null) => void;
+  showError: (message: string) => void;
+  setShowErrorDialog: (show: boolean) => void;
   loadStatisticsSummary: (params: tauri.StatisticsParams) => Promise<void>;
   loadTodaySummary: (params: tauri.StatisticsParams) => Promise<void>;
   loadMonthSummary: (params: tauri.StatisticsParams) => Promise<void>;
@@ -134,6 +139,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   showManualCaptchaDialog: false,
   captchaImage: null,
   captchaExecution: null,
+  showErrorDialog: false,
+  errorMessage: '',
 
   setCurrentIdentity: (identity) => set({ currentIdentity: identity }),
 
@@ -281,6 +288,15 @@ export const useAppStore = create<AppState>((set, get) => ({
           }
     ),
   setCaptchaForManualLogin: (image, execution) => set({ captchaImage: image, captchaExecution: execution, showManualCaptchaDialog: true }),
+
+  showError: (message) => {
+    console.error('[App Error]', message);
+    set({ showErrorDialog: true, errorMessage: message });
+    // 发送错误到后端记录
+    tauri.log_error(message).catch(console.error);
+  },
+
+  setShowErrorDialog: (show) => set({ showErrorDialog: show }),
 
   loadStatisticsSummary: async (params) => {
     set({ isLoadingStatistics: true });

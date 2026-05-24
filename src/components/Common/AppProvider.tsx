@@ -16,6 +16,7 @@ import { CaptchaTestDialog } from '../../pages/CaptchaTest/CaptchaTestDialog';
 import { DataTransferDialog } from '../../pages/DataTransfer/DataTransferDialog';
 import { StatisticsDialog } from '../../pages/Statistics/StatisticsDialog';
 import { ManualCaptchaDialog } from './ManualCaptchaDialog';
+import { ErrorDialog } from './ErrorDialog';
 
 export const AppProvider: React.FC = () => {
   const theme = useAppStore((s) => s.theme);
@@ -133,6 +134,7 @@ export const AppProvider: React.FC = () => {
           onCancel={() => setShowManualCaptchaDialog(false)}
         />
       )}
+      <ErrorDialog />
     </FluentProvider>
   );
 };

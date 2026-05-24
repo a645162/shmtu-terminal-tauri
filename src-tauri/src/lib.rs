@@ -10,7 +10,7 @@ pub mod state;
 pub mod sync;
 
 use commands::{
-    account, bill, captcha, config as cmd_config, data, identity, statistics, sync as cmd_sync,
+    account, bill, captcha, config as cmd_config, data, error as error_cmd, identity, statistics, sync as cmd_sync,
 };
 use tauri::Manager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -102,6 +102,7 @@ pub fn run() {
             statistics::get_daily_trend,
             statistics::get_category_distribution,
             statistics::get_meal_distribution,
+            error_cmd::log_error,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
