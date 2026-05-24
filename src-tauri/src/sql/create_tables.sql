@@ -48,6 +48,9 @@ CREATE TABLE IF NOT EXISTS bill_merged (
     is_combined             INTEGER NOT NULL DEFAULT 0,
     source_account_id       TEXT,
     is_manual               INTEGER NOT NULL DEFAULT 0,
+    position                TEXT,
+    room                    TEXT,
+    notes                   TEXT,
     synced_at               TEXT
 );
 

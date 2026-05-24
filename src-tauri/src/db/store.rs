@@ -4,6 +4,7 @@ use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait,
     PaginatorTrait, QueryFilter, QueryOrder, Set,
 };
+use shmtu_cas::classifier::PositionTranslator;
 use shmtu_cas::datatype::bill::BillItem;
 use tokio::sync::Mutex;
 
@@ -19,6 +20,7 @@ pub struct BillStoreImpl {
     account_id: String,
     identity_id: i64,
     known_numbers: Mutex<HashSet<String>>,
+    translator: PositionTranslator,
 }
 
 impl BillStoreImpl {
@@ -26,6 +28,7 @@ impl BillStoreImpl {
         db: DatabaseConnection,
         account_id: &str,
         identity_id: i64,
+        translator: PositionTranslator,
     ) -> AppResult<Self> {
         let known_numbers = Self::load_known_numbers(&db, account_id, identity_id).await?;
         Ok(Self {
@@ -33,6 +36,7 @@ impl BillStoreImpl {
             account_id: account_id.to_string(),
             identity_id,
             known_numbers: Mutex::new(known_numbers),
+            translator,
         })
     }
 
@@ -103,6 +107,16 @@ impl BillStoreImpl {
 
     pub async fn append_to_merged(&self, bill: &BillItem, now: &str) -> AppResult<()> {
         let number_list_json = serde_json::to_string(&bill.number_list)?;
+
+        // 自动翻译 target_user → (position, room)
+        let (position, room) = self
+            .translator
+            .translate(&bill.target_user)
+            .unwrap_or_else(|| {
+                // 模糊匹配：尝试用 target_user 整体作为关键词
+                self.translator.translate_or_raw(&bill.target_user)
+            });
+
         let model = bill_merged::ActiveModel {
             identity_id: Set(self.identity_id),
             date_str: Set(bill.date_str.clone()),
@@ -123,6 +137,9 @@ impl BillStoreImpl {
             is_combined: Set(bill.is_combined),
             source_account_id: Set(Some(self.account_id.clone())),
             is_manual: Set(false),
+            position: Set(Some(position)),
+            room: Set(Some(room)),
+            notes: Set(None),
             synced_at: Set(Some(now.to_string())),
             ..Default::default()
         };
@@ -204,6 +221,9 @@ impl BillStoreImpl {
             is_combined: Set(bill.is_combined),
             source_account_id: Set(None),
             is_manual: Set(true),
+            position: Set(None),
+            room: Set(None),
+            notes: Set(None),
             synced_at: Set(Some(now.clone())),
             ..Default::default()
         };
@@ -223,6 +243,18 @@ impl BillStoreImpl {
         .await?;
 
         Ok(id)
+    }
+
+    pub async fn update_bill_notes(&self, bill_id: i64, notes: Option<String>) -> AppResult<()> {
+        use sea_orm::{ActiveModelTrait, IntoActiveModel};
+        let model = bill_merged::Entity::find_by_id(bill_id)
+            .one(&self.db)
+            .await?
+            .ok_or_else(|| crate::error::AppError::Database("账单不存在".to_string()))?;
+        let mut active = model.into_active_model();
+        active.notes = Set(notes);
+        active.update(&self.db).await?;
+        Ok(())
     }
 
     pub async fn delete_merged_bill(&self, _identity_id: i64, bill_id: i64) -> AppResult<()> {

@@ -25,6 +25,7 @@ import {
   DialogBody,
   DialogContent,
   DialogActions,
+  Textarea,
 } from '@fluentui/react-components';
 import {
   ArrowSync24Regular,
@@ -35,6 +36,7 @@ import {
   MoreVertical24Regular,
   ChevronLeft24Regular,
   ChevronRight24Regular,
+  Edit24Regular,
 } from '@fluentui/react-icons';
 import { useAppStore } from '../../stores/appStore';
 import type { BillItem, BillType } from '../../types';
@@ -228,6 +230,7 @@ export const BillPage: React.FC = () => {
                 <TableHeaderCell style={{ minWidth: 160 }}>日期时间</TableHeaderCell>
                 <TableHeaderCell style={{ minWidth: 120 }}>交易名称</TableHeaderCell>
                 <TableHeaderCell style={{ minWidth: 140 }}>对方账户</TableHeaderCell>
+                <TableHeaderCell style={{ minWidth: 120 }}>位置</TableHeaderCell>
                 <TableHeaderCell style={{ minWidth: 100 }}>金额</TableHeaderCell>
                 <TableHeaderCell style={{ minWidth: 100 }}>支付方式</TableHeaderCell>
                 <TableHeaderCell style={{ minWidth: 80 }}>状态</TableHeaderCell>
@@ -250,6 +253,9 @@ export const BillPage: React.FC = () => {
                   </TableCell>
                   <TableCell>
                     <Text size={200}>{item.target_user || '—'}</Text>
+                  </TableCell>
+                  <TableCell>
+                    <Text size={200}>{item.room || '—'}</Text>
                   </TableCell>
                   <TableCell>
                     <Text
@@ -357,11 +363,29 @@ export const BillPage: React.FC = () => {
 
 // Bill detail view
 const BillDetail: React.FC<{ bill: BillItem }> = ({ bill }) => {
+  const currentIdentity = useAppStore((s) => s.currentIdentity);
+  const loadBills = useAppStore((s) => s.loadBills);
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [notesValue, setNotesValue] = useState(bill.notes || '');
+
+  const handleSaveNotes = useCallback(async () => {
+    if (!currentIdentity) return;
+    try {
+      await tauri.update_bill_notes(currentIdentity.id, bill.id, notesValue || null);
+      setEditingNotes(false);
+      loadBills();
+    } catch (e) {
+      console.error('Failed to update notes:', e);
+    }
+  }, [currentIdentity, bill.id, notesValue, loadBills]);
+
   const fields = [
     { label: '日期时间', value: bill.date_time_formatted },
     { label: '交易名称', value: bill.item_type },
     { label: '交易号', value: bill.number },
     { label: '对方账户', value: bill.target_user || '—' },
+    { label: '位置', value: bill.position || '—' },
+    { label: '房间/窗口', value: bill.room || '—' },
     { label: '金额', value: formatBillMoney(bill.money, bill.item_type || '') },
     { label: '支付方式', value: bill.method },
     { label: '状态', value: bill.status_str },
@@ -371,15 +395,47 @@ const BillDetail: React.FC<{ bill: BillItem }> = ({ bill }) => {
   ];
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '8px 16px' }}>
-      {fields.map((f) => (
-        <React.Fragment key={f.label}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '8px 16px' }}>
+        {fields.map((f) => (
+          <React.Fragment key={f.label}>
+            <Text size={200} weight="semibold" style={{ color: 'var(--colorNeutralForeground3)' }}>
+              {f.label}
+            </Text>
+            <Text size={200}>{f.value}</Text>
+          </React.Fragment>
+        ))}
+      </div>
+      <div style={{ borderTop: '1px solid var(--colorNeutralStroke2)', paddingTop: 8, marginTop: 4 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
           <Text size={200} weight="semibold" style={{ color: 'var(--colorNeutralForeground3)' }}>
-            {f.label}
+            备注
           </Text>
-          <Text size={200}>{f.value}</Text>
-        </React.Fragment>
-      ))}
+          {!editingNotes && (
+            <Button appearance="subtle" icon={<Edit24Regular />} size="small" onClick={() => { setEditingNotes(true); setNotesValue(bill.notes || ''); }}>
+              编辑
+            </Button>
+          )}
+        </div>
+        {editingNotes ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <Textarea
+              value={notesValue}
+              onChange={(e) => setNotesValue(e.currentTarget.value)}
+              placeholder="添加备注..."
+              rows={3}
+            />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Button appearance="primary" size="small" onClick={handleSaveNotes}>保存</Button>
+              <Button appearance="secondary" size="small" onClick={() => setEditingNotes(false)}>取消</Button>
+            </div>
+          </div>
+        ) : (
+          <Text size={200} style={{ color: bill.notes ? 'inherit' : 'var(--colorNeutralForeground3)' }}>
+            {bill.notes || '暂无备注'}
+          </Text>
+        )}
+      </div>
     </div>
   );
 };

@@ -2,6 +2,7 @@ pub mod classification;
 pub mod commands;
 pub mod config;
 pub mod crypto;
+pub mod database;
 pub mod db;
 pub mod entity;
 pub mod error;
@@ -11,7 +12,7 @@ pub mod state;
 pub mod sync;
 
 use commands::{
-    account, bill, captcha, config as cmd_config, data, error as error_cmd, identity, statistics, sync as cmd_sync,
+    account, bill, captcha, classify, config as cmd_config, data, error as error_cmd, identity, statistics, sync as cmd_sync,
 };
 use tauri::Manager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -78,6 +79,7 @@ pub fn run() {
             account::delete_account,
             bill::query_bills,
             bill::delete_merged_bill,
+            bill::update_bill_notes,
             cmd_sync::incremental_sync,
             cmd_sync::full_sync,
             cmd_sync::get_sync_progress,
@@ -106,6 +108,11 @@ pub fn run() {
             statistics::get_meal_distribution,
             statistics::get_consumption_distribution,
             statistics::get_merchant_ranking,
+            statistics::get_category_summary,
+            classify::translate_target,
+            classify::classify_bill,
+            classify::get_bill_statistics,
+            classify::get_classification_rules,
             error_cmd::log_error,
         ])
         .run(tauri::generate_context!())

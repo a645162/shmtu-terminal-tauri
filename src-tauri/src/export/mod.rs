@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use shmtu_cas::classifier::PositionTranslator;
 
 use crate::classification::{BillClassifier, ClassificationResult};
 use crate::db::{BillStoreImpl, DatabaseManager};
@@ -83,11 +84,12 @@ pub struct JsonImport {
 /// 数据导入导出服务
 pub struct ExportService {
     db_manager: DatabaseManager,
+    translator: PositionTranslator,
 }
 
 impl ExportService {
-    pub fn new(db_manager: DatabaseManager) -> Self {
-        Self { db_manager }
+    pub fn new(db_manager: DatabaseManager, translator: PositionTranslator) -> Self {
+        Self { db_manager, translator }
     }
 
     /// 导出身份合并数据
@@ -97,7 +99,7 @@ impl ExportService {
         identity_name: &str,
         options: &ExportOptions,
     ) -> AppResult<()> {
-        let store = BillStoreImpl::new(self.db_manager.db().clone(), "", identity_id).await?;
+        let store = BillStoreImpl::new(self.db_manager.db().clone(), "", identity_id, self.translator.clone()).await?;
         let bills = store.get_all_merged_bills(identity_id).await?;
 
         // 时间范围过滤
@@ -131,7 +133,7 @@ impl ExportService {
 
     /// 导出账号原始数据
     pub async fn export_account_bills(&self, account_id: &str, options: &ExportOptions) -> AppResult<()> {
-        let store = BillStoreImpl::new(self.db_manager.db().clone(), account_id, 0).await?;
+        let store = BillStoreImpl::new(self.db_manager.db().clone(), account_id, 0, self.translator.clone()).await?;
         let bills = store.get_all_original_bills(account_id).await?;
 
         match options.format {

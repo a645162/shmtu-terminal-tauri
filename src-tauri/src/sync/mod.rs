@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 
 use shmtu_cas::captcha::CaptchaResolver;
 use shmtu_cas::cas::epay::{EpayAuth, LoginProbe, LoginSubmitResult};
+use shmtu_cas::classifier::PositionTranslator;
 use shmtu_cas::datatype::bill::BillType;
 use shmtu_cas::sync::SyncOptions;
 use tokio::sync::Mutex;
@@ -51,6 +52,7 @@ pub struct BillSyncService {
     db_manager: DatabaseManager,
     crypto: CryptoService,
     pending_manual_sync: Mutex<Option<PendingManualSync>>,
+    translator: PositionTranslator,
 }
 
 struct PendingManualSync {
@@ -109,11 +111,12 @@ impl ConfigAccess {
 }
 
 impl BillSyncService {
-    pub fn new(db_manager: DatabaseManager, crypto: CryptoService) -> Self {
+    pub fn new(db_manager: DatabaseManager, crypto: CryptoService, translator: PositionTranslator) -> Self {
         Self {
             db_manager,
             crypto,
             pending_manual_sync: Mutex::new(None),
+            translator,
         }
     }
 
@@ -576,6 +579,7 @@ impl BillSyncService {
             self.db_manager.db().clone(),
             &account.account_id,
             account.identity_id,
+            self.translator.clone(),
         ).await?;
         let mut result = AccountSyncResult {
             account_id: account.account_id.clone(),

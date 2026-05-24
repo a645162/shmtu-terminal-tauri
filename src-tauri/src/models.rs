@@ -97,6 +97,9 @@ pub struct BillMerged {
     pub is_combined: bool,
     pub source_account_id: Option<String>,
     pub is_manual: bool,
+    pub position: Option<String>,
+    pub room: Option<String>,
+    pub notes: Option<String>,
     pub synced_at: Option<String>,
 }
 

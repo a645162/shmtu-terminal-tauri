@@ -7,6 +7,9 @@ import {
   Subtitle2,
   Spinner,
   Button,
+  InfoLabel,
+  TabList,
+  Tab,
 } from '@fluentui/react-components';
 import {
   Money24Regular,
@@ -17,27 +20,29 @@ import {
 import { useAppStore } from '../../stores/appStore';
 import { ExpenseTrendChart } from '../../components/Charts/ExpenseTrendChart';
 import { CategoryPieChart } from '../../components/Charts/CategoryPieChart';
+import { MonthComparisonCard } from '../../components/Charts/MonthComparisonCard';
 import { formatBillMoney } from '../../hooks';
 import * as tauri from '../../services/tauri';
+import { formatLocalDate } from '../../utils/date';
 
 function getDateRangeParams(rangeKey: string, identityId: number): tauri.StatisticsParams {
   const now = new Date();
   let dateStart: string | undefined;
   let dateEnd: string | undefined;
 
-  const today = now.toISOString().split('T')[0];
+  const today = formatLocalDate(now);
   dateEnd = today;
 
   switch (rangeKey) {
     case 'week': {
       const d = new Date(now);
       d.setDate(d.getDate() - 6);
-      dateStart = d.toISOString().split('T')[0];
+      dateStart = formatLocalDate(d);
       break;
     }
     case 'month': {
       const d = new Date(now.getFullYear(), now.getMonth(), 1);
-      dateStart = d.toISOString().split('T')[0];
+      dateStart = formatLocalDate(d);
       break;
     }
     case 'today':
@@ -66,6 +71,7 @@ export const HomePage: React.FC = () => {
   const refreshStatistics = useAppStore((s) => s.refreshStatistics);
 
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [homeTab, setHomeTab] = useState<string>('overview');
 
   useEffect(() => {
     if (!currentIdentity) return;
@@ -114,95 +120,120 @@ export const HomePage: React.FC = () => {
         </Button>
       </div>
 
-      {/* Summary Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 20 }}>
-        <StatCard
-          title="今日消费"
-          value={todaySummary ? `¥ ${Math.abs(todaySummary.total_expense).toFixed(2)}` : '加载中...'}
-          icon={<SubtractCircle24Regular />}
-          color="var(--colorPaletteRedForeground3)"
-        />
-        <StatCard
-          title="本月消费"
-          value={todaySummary ? `¥ ${Math.abs(todaySummary.total_expense).toFixed(2)}` : '加载中...'}
-          icon={<SubtractCircle24Regular />}
-          color="var(--colorPaletteRedForeground3)"
-        />
-        <StatCard
-          title="本月充值"
-          value={monthSummary ? `¥ ${monthSummary.total_income.toFixed(2)}` : '加载中...'}
-          icon={<AddCircle24Regular />}
-          color="var(--colorPaletteGreenForeground3)"
-        />
-        <StatCard
-          title="卡片余额"
-          value="暂不可用"
-          icon={<Money24Regular />}
-          color="var(--colorBrandForeground1)"
-        />
-      </div>
+      {/* Home Tab Navigation */}
+      <TabList selectedValue={homeTab} onTabSelect={(_, data) => setHomeTab(data.value as string)} style={{ marginBottom: 16 }}>
+        <Tab value="overview">总览</Tab>
+        <Tab value="compare">月度对比</Tab>
+      </TabList>
 
-      {/* Charts Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
-        <Card style={{ padding: 16 }}>
-          <CardHeader>
-            <Subtitle2>近7日消费趋势</Subtitle2>
-          </CardHeader>
-          {isLoadingStatistics ? (
-            <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
-              <Spinner label="加载中..." />
-            </div>
-          ) : (
-            <ExpenseTrendChart data={dailyTrend} />
-          )}
-        </Card>
-        <Card style={{ padding: 16 }}>
-          <CardHeader>
-            <Subtitle2>消费分类占比</Subtitle2>
-          </CardHeader>
-          <CategoryPieChart data={categoryDistribution} />
-        </Card>
-      </div>
-
-      {/* Recent Transactions */}
-      <Card style={{ padding: 16 }}>
-        <CardHeader>
-          <Subtitle2>最近交易</Subtitle2>
-        </CardHeader>
-        {recentBills.length === 0 ? (
-          <Text size={200} style={{ color: 'var(--colorNeutralForeground3)', padding: 24, display: 'block', textAlign: 'center' }}>
-            暂无交易记录
-          </Text>
-        ) : (
-          <div>
-            {recentBills.map((bill) => (
-              <div
-                key={bill.id}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '8px 0',
-                  borderBottom: '1px solid var(--colorNeutralStroke2)',
-                }}
-              >
-                <div>
-                  <Text block size={200}>{bill.item_type}</Text>
-                  <Text size={100} style={{ color: 'var(--colorNeutralForeground3)' }}>
-                    {bill.date_time_formatted}
-                  </Text>
-                </div>
-                <Text
-                  weight="semibold"
-                  style={{ color: bill.item_type?.includes('充值') || bill.item_type?.includes('冲正') || bill.item_type?.includes('退款') ? 'var(--colorPaletteGreenForeground3)' : 'var(--colorPaletteRedForeground3)' }}
-                >
-                  {formatBillMoney(bill.money, bill.item_type || '')}
-                </Text>
-              </div>
-            ))}
+      {homeTab === 'overview' && (
+        <>
+          {/* Summary Cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 20 }}>
+            <StatCard
+              title="今日消费"
+              value={todaySummary ? `¥ ${Math.abs(todaySummary.total_expense).toFixed(2)}` : '加载中...'}
+              icon={<SubtractCircle24Regular />}
+              color="var(--colorPaletteRedForeground3)"
+            />
+            <StatCard
+              title="本月消费"
+              value={monthSummary ? `¥ ${Math.abs(monthSummary.total_expense).toFixed(2)}` : '加载中...'}
+              icon={<SubtractCircle24Regular />}
+              color="var(--colorPaletteRedForeground3)"
+            />
+            <StatCard
+              title="本月充值"
+              value={monthSummary ? `¥ ${monthSummary.total_income.toFixed(2)}` : '加载中...'}
+              icon={<AddCircle24Regular />}
+              color="var(--colorPaletteGreenForeground3)"
+            />
+            <StatCard
+              title="卡片余额"
+              value="暂不可用"
+              icon={<Money24Regular />}
+              color="var(--colorBrandForeground1)"
+            />
           </div>
-        )}
-      </Card>
+
+          {/* Charts Row */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
+            <Card style={{ padding: 16 }}>
+              <CardHeader>
+                <InfoLabel info="点击图例可切换显示/隐藏线条。">
+                  近7日消费趋势
+                </InfoLabel>
+              </CardHeader>
+              {isLoadingStatistics ? (
+                <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
+                  <Spinner label="加载中..." />
+                </div>
+              ) : (
+                <ExpenseTrendChart data={dailyTrend} />
+              )}
+            </Card>
+            <Card style={{ padding: 16 }}>
+              <CardHeader>
+                <InfoLabel info="点击扇区查看该分类详情。">
+                  消费分类占比
+                </InfoLabel>
+              </CardHeader>
+              <CategoryPieChart data={categoryDistribution} />
+            </Card>
+          </div>
+
+          {/* Recent Transactions */}
+          <Card style={{ padding: 16 }}>
+            <CardHeader>
+              <Subtitle2>最近交易</Subtitle2>
+            </CardHeader>
+            {recentBills.length === 0 ? (
+              <Text size={200} style={{ color: 'var(--colorNeutralForeground3)', padding: 24, display: 'block', textAlign: 'center' }}>
+                暂无交易记录
+              </Text>
+            ) : (
+              <div>
+                {recentBills.map((bill) => (
+                  <div
+                    key={bill.id}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '8px 0',
+                      borderBottom: '1px solid var(--colorNeutralStroke2)',
+                    }}
+                  >
+                    <div>
+                      <Text block size={200}>{bill.item_type}</Text>
+                      <Text size={100} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                        {bill.date_time_formatted}
+                      </Text>
+                    </div>
+                    <Text
+                      weight="semibold"
+                      style={{ color: bill.item_type?.includes('充值') || bill.item_type?.includes('冲正') || bill.item_type?.includes('退款') ? 'var(--colorPaletteGreenForeground3)' : 'var(--colorPaletteRedForeground3)' }}
+                    >
+                      {formatBillMoney(bill.money, bill.item_type || '')}
+                    </Text>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </>
+      )}
+
+      {homeTab === 'compare' && (
+        <Card style={{ padding: 16 }}>
+          <CardHeader>
+            <InfoLabel info="对比本月与上月的消费变化情况。">
+              月度消费对比
+            </InfoLabel>
+          </CardHeader>
+          <MonthComparisonCard />
+        </Card>
+      )}
     </div>
   );
 };

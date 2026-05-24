@@ -131,6 +131,10 @@ export async function delete_merged_bill(identityId: number, billId: number): Pr
   return invoke('delete_merged_bill', { identityId, billId });
 }
 
+export async function update_bill_notes(identityId: number, billId: number, notes: string | null): Promise<void> {
+  return invoke('update_bill_notes', { identityId, billId, notes });
+}
+
 // ========== Sync ==========
 
 export async function incremental_sync(identityId: number): Promise<SyncProgress> {
@@ -232,6 +236,33 @@ export async function get_consumption_distribution(params: StatisticsParams): Pr
 
 export async function get_merchant_ranking(params: StatisticsParams): Promise<import('../types').MerchantRankingItem[]> {
   return invoke<import('../types').MerchantRankingItem[]>('get_merchant_ranking', { params });
+}
+
+// ========== Category Summary ==========
+
+export interface CategorySummaryParams {
+  identityId: number;
+  category: string;
+  dateStart?: string;
+  dateEnd?: string;
+}
+
+export interface CategorySummary {
+  category: string;
+  total_amount: number;
+  count: number;
+  daily_average: number;
+  avg_per_transaction: number;
+}
+
+export async function get_category_summary(params: CategorySummaryParams): Promise<CategorySummary> {
+  return invoke<CategorySummary>('get_category_summary', { params });
+}
+
+// ========== Classification Rules (Dynamic Loading) ==========
+
+export async function get_classification_rules(): Promise<import('../types').ClassificationRules> {
+  return invoke<import('../types').ClassificationRules>('get_classification_rules');
 }
 
 // ========== Startup Protection ==========

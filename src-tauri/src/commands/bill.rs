@@ -51,6 +51,9 @@ pub struct BillItemFrontend {
     pub synced_at: Option<String>,
     pub source_account_id: Option<String>,
     pub is_manual: Option<bool>,
+    pub position: Option<String>,
+    pub room: Option<String>,
+    pub notes: Option<String>,
 }
 
 impl From<BillMerged> for BillItemFrontend {
@@ -77,6 +80,9 @@ impl From<BillMerged> for BillItemFrontend {
             synced_at: b.synced_at,
             source_account_id: b.source_account_id,
             is_manual: Some(b.is_manual),
+            position: b.position,
+            room: b.room,
+            notes: b.notes,
         }
     }
 }
@@ -99,7 +105,8 @@ pub async fn query_bills(
     }
 
     let db_conn = db.db().clone();
-    let store = BillStoreImpl::new(db_conn, "", identity_id)
+    let translator = state.db_file_manager.create_position_translator();
+    let store = BillStoreImpl::new(db_conn, "", identity_id, translator)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -132,11 +139,31 @@ pub async fn delete_merged_bill(
 ) -> Result<(), String> {
     let db = state.db_manager.read().await;
     let db_conn = db.db().clone();
-    let store = BillStoreImpl::new(db_conn, "", identity_id)
+    let translator = state.db_file_manager.create_position_translator();
+    let store = BillStoreImpl::new(db_conn, "", identity_id, translator)
         .await
         .map_err(|e| e.to_string())?;
     store
         .delete_merged_bill(identity_id, bill_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn update_bill_notes(
+    state: State<'_, AppState>,
+    identity_id: i64,
+    bill_id: i64,
+    notes: Option<String>,
+) -> Result<(), String> {
+    let db = state.db_manager.read().await;
+    let db_conn = db.db().clone();
+    let translator = state.db_file_manager.create_position_translator();
+    let store = BillStoreImpl::new(db_conn, "", identity_id, translator)
+        .await
+        .map_err(|e| e.to_string())?;
+    store
+        .update_bill_notes(bill_id, notes)
         .await
         .map_err(|e| e.to_string())
 }

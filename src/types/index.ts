@@ -49,6 +49,9 @@ export interface BillItem {
   // Merged-specific fields
   source_account_id?: string;
   is_manual?: boolean;
+  position?: string;
+  room?: string;
+  notes?: string;
 }
 
 // OperationLog - manual operation records on merged data
@@ -183,4 +186,27 @@ export interface CardBalance {
   account_id: string;
   balance: number;
   last_updated: string;
+}
+
+// Classification rules (loaded from backend / database/bill/)
+// 数据来源：rules.toml → Rust TOML 解析 → JSON → 前端
+export interface ClassificationRules {
+  type?: Record<string, {
+    match_field: string;
+    match_names: string[];
+    match_targets: string[];
+  }>;
+  type_rules: Record<string, {
+    match_field: string;
+    match_names: string[];
+    match_targets: string[];
+  }>;
+  position: {
+    field: string;
+    keywords: Record<string, { building: string; room: string }>;
+  };
+  schedule: Array<{
+    valid_date: { start_date: string; end_date: string };
+    timetable: Record<string, { name: string; start_time: string; end_time: string }>;
+  }>;
 }

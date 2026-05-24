@@ -15,6 +15,8 @@ import type {
 } from '../types';
 import type { AppConfig } from '../services/tauri';
 import * as tauri from '../services/tauri';
+import { formatLocalDate } from '../utils/date';
+import { initTranslationData } from '../utils/translation';
 
 // ========== App Store ==========
 
@@ -235,6 +237,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const config = await tauri.load_config();
       set({ config, theme: config.ui.theme });
+      // 从后端加载最新分类规则（本地/GitHub），覆盖前端默认值
+      initTranslationData(() => tauri.get_classification_rules()).catch(() => {});
     } catch (e) {
       console.error('Failed to load config:', e);
     }
@@ -401,7 +405,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     // 今日统计
-    const today = new Date().toISOString().split('T')[0];
+    const today = formatLocalDate(new Date());
     try {
       const todaySummary = await tauri.get_statistics_summary({ identityId: currentIdentity.id, dateStart: today, dateEnd: today });
       set({ todaySummary });
@@ -421,7 +425,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     // 每日趋势（最近30天）
     const trendEnd = today;
-    const trendStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const trendStart = formatLocalDate(new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000));
     try {
       const dailyTrend = await tauri.get_daily_trend({ identityId: currentIdentity.id, dateStart: trendStart, dateEnd: trendEnd });
       set({ dailyTrend });

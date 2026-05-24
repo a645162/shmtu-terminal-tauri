@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use chrono::NaiveDate;
 use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
 use tauri::State;
 
@@ -59,34 +60,69 @@ pub struct MerchantRankingItem {
     pub amount: f64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CategorySummaryParams {
+    pub identity_id: i64,
+    pub category: String,
+    pub date_start: Option<String>,
+    pub date_end: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CategorySummary {
+    pub category: String,
+    pub total_amount: f64,
+    pub count: u32,
+    pub daily_average: f64,
+    pub avg_per_transaction: f64,
+}
+
 const CATEGORY_COLORS: &[&str] = &[
     "#5B8FF9", "#5AD8A6", "#F6BD16", "#E86452", "#6DC8EC", "#945FB9", "#FF9845", "#1E9493",
     "#FF99C3", "#269A99",
 ];
 
-fn apply_date_filter(
-    mut query: sea_orm::Select<bill_merged::Entity>,
-    date_start: &Option<String>,
-    date_end: &Option<String>,
-) -> sea_orm::Select<bill_merged::Entity> {
-    if let Some(ref start) = date_start {
-        tracing::debug!("[Statistics] date filter: start={}", start);
-        query = query.filter(bill_merged::Column::DateStr.gte(start));
-    }
-    if let Some(ref end) = date_end {
-        tracing::debug!("[Statistics] date filter: end={}", end);
-        query = query.filter(bill_merged::Column::DateStr.lte(end));
-    }
-    query
+fn parse_bill_date(date_str: &str) -> Option<NaiveDate> {
+    ["%Y.%m.%d", "%Y-%m-%d", "%Y/%m/%d"]
+        .iter()
+        .find_map(|fmt| NaiveDate::parse_from_str(date_str, fmt).ok())
 }
 
-fn success_query(identity_id: i64, date_start: &Option<String>, date_end: &Option<String>) -> sea_orm::Select<bill_merged::Entity> {
-    tracing::debug!("[Statistics] success_query: identity_id={}, date_start={:?}, date_end={:?}",
-        identity_id, date_start, date_end);
-    let query = bill_merged::Entity::find()
+fn filter_models_by_date(
+    models: Vec<bill_merged::Model>,
+    date_start: &Option<String>,
+    date_end: &Option<String>,
+) -> Vec<bill_merged::Model> {
+    let start = date_start.as_deref().and_then(parse_bill_date);
+    let end = date_end.as_deref().and_then(parse_bill_date);
+
+    models
+        .into_iter()
+        .filter(|model| {
+            let Some(date) = parse_bill_date(&model.date_str) else {
+                return false;
+            };
+            if let Some(start_date) = start {
+                if date < start_date {
+                    return false;
+                }
+            }
+            if let Some(end_date) = end {
+                if date > end_date {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect()
+}
+
+fn success_query(identity_id: i64) -> sea_orm::Select<bill_merged::Entity> {
+    tracing::debug!("[Statistics] success_query: identity_id={}", identity_id);
+    bill_merged::Entity::find()
         .filter(bill_merged::Column::IdentityId.eq(identity_id))
-        .filter(bill_merged::Column::StatusStr.eq("交易成功"));
-    apply_date_filter(query, date_start, date_end)
+        .filter(bill_merged::Column::StatusStr.eq("交易成功"))
 }
 
 #[tauri::command]
@@ -109,13 +145,14 @@ pub async fn get_statistics_summary(
         .unwrap_or(0);
     tracing::info!("[Statistics] bill_merged total records for identity {}: {}", params.identity_id, total_count);
 
-    let models = success_query(params.identity_id, &params.date_start, &params.date_end)
+    let models = success_query(params.identity_id)
         .all(db_conn)
         .await
         .map_err(|e| {
             tracing::error!("[Statistics] summary fetch failed: {}", e);
             e.to_string()
         })?;
+    let models = filter_models_by_date(models, &params.date_start, &params.date_end);
 
     let expense: f64 = models.iter().map(|m| m.money.unwrap_or(0.0).abs()).sum();
     let expense_count = models.len() as u32;
@@ -154,13 +191,14 @@ pub async fn get_daily_trend(
     let db = state.db_manager.read().await;
     let db_conn = db.db();
 
-    let models = success_query(params.identity_id, &params.date_start, &params.date_end)
+    let models = success_query(params.identity_id)
         .all(db_conn)
         .await
         .map_err(|e| {
             tracing::error!("[Statistics] daily_trend fetch failed: {}", e);
             e.to_string()
         })?;
+    let models = filter_models_by_date(models, &params.date_start, &params.date_end);
 
     let mut daily_map: std::collections::BTreeMap<String, f64> = std::collections::BTreeMap::new();
     for m in &models {
@@ -199,13 +237,14 @@ pub async fn get_category_distribution(
     let has_classifier = classifier.is_some();
     tracing::info!("[Statistics] classifier loaded: {}", has_classifier);
 
-    let models = success_query(params.identity_id, &params.date_start, &params.date_end)
+    let models = success_query(params.identity_id)
         .all(db_conn)
         .await
         .map_err(|e| {
             tracing::error!("[Statistics] category fetch failed: {}", e);
             e.to_string()
         })?;
+    let models = filter_models_by_date(models, &params.date_start, &params.date_end);
 
     tracing::info!("[Statistics] category: {} success records fetched", models.len());
 
@@ -274,13 +313,14 @@ pub async fn get_meal_distribution(
     let classifier = state.classifier.read().await;
     let db_conn = db.db();
 
-    let models = success_query(params.identity_id, &params.date_start, &params.date_end)
+    let models = success_query(params.identity_id)
         .all(db_conn)
         .await
         .map_err(|e| {
             tracing::error!("[Statistics] meal fetch failed: {}", e);
             e.to_string()
         })?;
+    let models = filter_models_by_date(models, &params.date_start, &params.date_end);
 
     tracing::info!("[Statistics] meal: {} success records fetched", models.len());
 
@@ -339,13 +379,14 @@ pub async fn get_consumption_distribution(
     let db = state.db_manager.read().await;
     let db_conn = db.db();
 
-    let models = success_query(params.identity_id, &params.date_start, &params.date_end)
+    let models = success_query(params.identity_id)
         .all(db_conn)
         .await
         .map_err(|e| {
             tracing::error!("[Statistics] consumption fetch failed: {}", e);
             e.to_string()
         })?;
+    let models = filter_models_by_date(models, &params.date_start, &params.date_end);
 
     tracing::info!("[Statistics] consumption: {} success records fetched", models.len());
 
@@ -398,13 +439,14 @@ pub async fn get_merchant_ranking(
     let db = state.db_manager.read().await;
     let db_conn = db.db();
 
-    let models = success_query(params.identity_id, &params.date_start, &params.date_end)
+    let models = success_query(params.identity_id)
         .all(db_conn)
         .await
         .map_err(|e| {
             tracing::error!("[Statistics] merchant_ranking fetch failed: {}", e);
             e.to_string()
         })?;
+    let models = filter_models_by_date(models, &params.date_start, &params.date_end);
 
     let mut merchant_map: std::collections::HashMap<String, (f64, u32)> =
         std::collections::HashMap::new();
@@ -440,4 +482,80 @@ pub async fn get_merchant_ranking(
             count,
         })
         .collect())
+}
+
+#[tauri::command]
+pub async fn get_category_summary(
+    state: State<'_, AppState>,
+    params: CategorySummaryParams,
+) -> Result<CategorySummary, String> {
+    tracing::info!(
+        "[Statistics] get_category_summary: identity_id={}, category={}, date_start={:?}, date_end={:?}",
+        params.identity_id, params.category, params.date_start, params.date_end
+    );
+
+    let db = state.db_manager.read().await;
+    let classifier = state.classifier.read().await;
+    let db_conn = db.db();
+
+    let models = success_query(params.identity_id)
+        .all(db_conn)
+        .await
+        .map_err(|e| {
+            tracing::error!("[Statistics] category_summary fetch failed: {}", e);
+            e.to_string()
+        })?;
+    let models = filter_models_by_date(models, &params.date_start, &params.date_end);
+
+    let category_name = params.category.clone();
+    let mut total_amount = 0.0_f64;
+    let mut count = 0u32;
+
+    for m in &models {
+        let cat = if let Some(ref classifier) = *classifier {
+            classifier
+                .classify(
+                    m.item_type.as_deref().unwrap_or(""),
+                    m.target_user.as_deref().unwrap_or(""),
+                    0,
+                )
+                .type_label
+                .clone()
+                .unwrap_or_else(|| "其他".to_string())
+        } else {
+            "其他".to_string()
+        };
+
+        if cat == category_name {
+            total_amount += m.money.unwrap_or(0.0).abs();
+            count += 1;
+        }
+    }
+
+    let days = {
+        let unique_dates: std::collections::HashSet<&str> = models
+            .iter()
+            .map(|m| m.date_str.as_str())
+            .collect();
+        (unique_dates.len() as f64).max(1.0)
+    };
+
+    let avg_per_transaction = if count > 0 {
+        total_amount / count as f64
+    } else {
+        0.0
+    };
+
+    tracing::info!(
+        "[Statistics] category_summary: category={}, total={}, count={}, daily_avg={}, per_txn={}",
+        category_name, total_amount, count, total_amount / days, avg_per_transaction
+    );
+
+    Ok(CategorySummary {
+        category: category_name,
+        total_amount,
+        count,
+        daily_average: total_amount / days,
+        avg_per_transaction,
+    })
 }
