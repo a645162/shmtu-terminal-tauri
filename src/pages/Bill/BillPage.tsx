@@ -19,6 +19,7 @@ import {
   MenuPopover,
   MenuList,
   MenuItem,
+  MenuButton,
   Dialog,
   DialogSurface,
   DialogTitle,
@@ -30,11 +31,13 @@ import {
 import {
   ArrowSync24Regular,
   ArrowClockwise24Regular,
+  ArrowDownload24Regular,
   Search24Regular,
   Delete24Regular,
   Copy24Regular,
   Info24Regular,
   MoreVertical24Regular,
+  MoreHorizontal24Regular,
   ChevronLeft24Regular,
   ChevronRight24Regular,
   Edit24Regular,
@@ -140,6 +143,7 @@ export const BillPage: React.FC = () => {
   const setBillDateRange = useAppStore((s) => s.setBillDateRange);
   const loadBills = useAppStore((s) => s.loadBills);
   const startSync = useAppStore((s) => s.startSync);
+  const startFullSync = useAppStore((s) => s.startFullSync);
 
   const [searchInput, setSearchInput] = useState(billKeyword);
   const [dateRange, setDateRange] = useState('all');
@@ -176,6 +180,12 @@ export const BillPage: React.FC = () => {
       loadBills();
     }
   }, [currentIdentity, loadBills]);
+
+  const handleFullSync = useCallback(() => {
+    if (currentIdentity) {
+      startFullSync(currentIdentity.id);
+    }
+  }, [currentIdentity, startFullSync]);
 
   const handleDeleteBill = useCallback(
     async (bill: BillItem) => {
@@ -248,16 +258,34 @@ export const BillPage: React.FC = () => {
           style={{ minWidth: 240 }}
         />
 
-        <Button appearance="primary" icon={<ArrowSync24Regular />} onClick={handleSync}>
-          同步
-        </Button>
-        <Button appearance="secondary" icon={<ArrowClockwise24Regular />} onClick={handleRefresh}>
-          刷新
-        </Button>
-
-        <Text size={200} style={{ marginLeft: 'auto', color: 'var(--colorNeutralForeground3)' }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
           共 {billTotal} 条
-        </Text>
+          </Text>
+          <Button appearance="secondary" icon={<ArrowClockwise24Regular />} onClick={handleRefresh}>
+            刷新
+          </Button>
+          <Menu>
+            <MenuTrigger>
+              <MenuButton appearance="primary" icon={<MoreHorizontal24Regular />}>
+                更多操作
+              </MenuButton>
+            </MenuTrigger>
+            <MenuPopover>
+              <MenuList>
+                <MenuItem icon={<ArrowSync24Regular />} onClick={handleSync}>
+                  增量更新
+                </MenuItem>
+                <MenuItem icon={<ArrowDownload24Regular />} onClick={handleFullSync}>
+                  全量更新
+                </MenuItem>
+                <MenuItem icon={<ArrowClockwise24Regular />} onClick={handleRefresh}>
+                  刷新数据
+                </MenuItem>
+              </MenuList>
+            </MenuPopover>
+          </Menu>
+        </div>
       </div>
 
       {/* Table */}

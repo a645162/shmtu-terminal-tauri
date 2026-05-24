@@ -85,6 +85,7 @@ interface AppState {
   loadConfig: () => Promise<void>;
   setTheme: (theme: AppTheme) => void;
   startSync: (identityId: number) => Promise<void>;
+  startFullSync: (identityId: number) => Promise<void>;
   setShowStartupDialog: (show: boolean) => void;
   setShowIdentitySelectDialog: (show: boolean) => void;
   setShowIdentityManagerDialog: (show: boolean) => void;
@@ -281,6 +282,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().refreshStatistics();
     } catch (e) {
       get().showError(`同步失败: ${e}`);
+    }
+  },
+
+  startFullSync: async (identityId) => {
+    try {
+      const progress = await tauri.full_sync(identityId);
+      set({ syncProgress: progress });
+      get().loadBills();
+      get().refreshStatistics();
+    } catch (e) {
+      get().showError(`全量更新失败: ${e}`);
     }
   },
 
