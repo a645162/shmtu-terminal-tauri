@@ -51,8 +51,10 @@ export const ManualCaptchaDialog: React.FC<ManualCaptchaDialogProps> = ({
         loadBills();
         onSuccess();
       } else if (result.status === 'captcha_required' && result.captcha_image && result.execution) {
+        // 更新验证码图片并重新输入
         setCaptchaForManualLogin(result.captcha_image, result.execution);
-        setError(result.error ?? '验证码错误，请重试');
+        setCaptchaCode(''); // 清空输入框
+        setError(result.error ?? '验证码错误，请重新输入');
       } else {
         setError('验证码错误，请重试');
       }

@@ -7,6 +7,7 @@ use crate::state::AppState;
 
 /// 前端账单查询参数（与 tauri.ts 中的 BillQueryParams 对齐）
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BillQueryParams {
     pub identity_id: Option<i64>,
     pub account_id: Option<String>,

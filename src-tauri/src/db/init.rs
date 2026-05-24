@@ -39,7 +39,6 @@ impl DatabaseManager {
     pub fn initialize(&self) -> AppResult<()> {
         self.ensure_directories()?;
         self.init_global_db()?;
-        self.init_session_db()?;
         Ok(())
     }
 
@@ -66,8 +65,8 @@ impl DatabaseManager {
         self.data_dir.join("shmtu.terminal.sqlite")
     }
 
-    pub fn session_db_path(&self) -> PathBuf {
-        self.data_dir.join("session.sqlite")
+    pub fn session_db_path(&self, account_id: &str) -> PathBuf {
+        self.account_dir().join(format!("{}_session.sqlite", account_id))
     }
 
     pub fn identity_dir(&self) -> PathBuf {
@@ -662,8 +661,8 @@ impl DatabaseManager {
     // === 会话数据库操作 ===
 
     /// 初始化会话数据库
-    fn init_session_db(&self) -> AppResult<()> {
-        let path = self.session_db_path();
+    fn init_session_db(&self, account_id: &str) -> AppResult<()> {
+        let path = self.session_db_path(account_id);
         let conn = Connection::open(&path)?;
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
 
@@ -684,10 +683,10 @@ impl DatabaseManager {
     }
 
     /// 打开会话数据库连接
-    pub fn open_session_db(&self) -> AppResult<Connection> {
-        let path = self.session_db_path();
+    pub fn open_session_db(&self, account_id: &str) -> AppResult<Connection> {
+        let path = self.session_db_path(account_id);
         if !path.exists() {
-            self.init_session_db()?;
+            self.init_session_db(account_id)?;
         }
         let conn = Connection::open(&path)?;
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
@@ -707,7 +706,7 @@ impl DatabaseManager {
         let now = chrono::Local::now().to_rfc3339();
         let expire = chrono::Local::now() + chrono::Duration::minutes(30);
 
-        let conn = self.open_session_db()?;
+        let conn = self.open_session_db(account_id)?;
         conn.execute(
             "INSERT OR REPLACE INTO session_info (account_id, cookies, login_time, expire_time, is_valid)
              VALUES (?1, ?2, ?3, ?4, 1)",
@@ -722,7 +721,7 @@ impl DatabaseManager {
         account_id: &str,
         crypto: &CryptoService,
     ) -> AppResult<Option<SessionInfo>> {
-        let conn = self.open_session_db()?;
+        let conn = self.open_session_db(account_id)?;
         let mut stmt = conn.prepare(
             "SELECT id, account_id, cookies, login_time, expire_time, is_valid
              FROM session_info WHERE account_id=?1 AND is_valid=1",
@@ -752,7 +751,7 @@ impl DatabaseManager {
 
     /// 使会话失效
     pub fn invalidate_session(&self, account_id: &str) -> AppResult<()> {
-        let conn = self.open_session_db()?;
+        let conn = self.open_session_db(account_id)?;
         conn.execute(
             "UPDATE session_info SET is_valid=0 WHERE account_id=?1",
             [account_id],
@@ -762,7 +761,7 @@ impl DatabaseManager {
 
     /// 删除会话
     pub fn delete_session(&self, account_id: &str) -> AppResult<()> {
-        let conn = self.open_session_db()?;
+        let conn = self.open_session_db(account_id)?;
         conn.execute("DELETE FROM session_info WHERE account_id=?1", [account_id])?;
         Ok(())
     }
