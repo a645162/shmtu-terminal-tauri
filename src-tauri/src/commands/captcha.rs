@@ -6,6 +6,7 @@ use tauri::State;
 use crate::config::CaptchaMode;
 use crate::state::AppState;
 
+/// 验证码测试结果（前端展示用）
 #[derive(Debug, Clone, Serialize)]
 pub struct CaptchaTestResultFrontend {
     pub id: u32,
@@ -17,6 +18,10 @@ pub struct CaptchaTestResultFrontend {
     pub error: Option<String>,
 }
 
+/// 获取验证码图片（base64 编码）。
+///
+/// 流程：探测登录状态 -> 若需登录则获取验证码挑战图片。
+/// 若已登录则返回错误提示"已登录，无需验证码"。
 #[tauri::command]
 pub async fn get_captcha_image() -> Result<String, String> {
     tracing::debug!("[Captcha] get_captcha_image called");
@@ -59,12 +64,19 @@ pub async fn get_captcha_image() -> Result<String, String> {
     }
 }
 
+/// 验证码挑战响应，包含图片和 execution 参数。
+///
+/// execution 参数用于 CAS 登录流程的后续步骤。
 #[derive(Debug, Clone, Serialize)]
 pub struct CaptchaChallengeResponse {
     pub captcha_image: String,
     pub execution: String,
 }
 
+/// 获取验证码图片及 execution 参数。
+///
+/// 与 `get_captcha_image` 类似，但额外返回 CAS 登录所需的 execution 字段，
+/// 供前端在自动登录流程中使用。
 #[tauri::command]
 pub async fn get_captcha_with_execution() -> Result<CaptchaChallengeResponse, String> {
     tracing::debug!("[Captcha] get_captcha_with_execution called");
@@ -113,6 +125,12 @@ pub async fn get_captcha_with_execution() -> Result<CaptchaChallengeResponse, St
     }
 }
 
+/// 内部实现：获取验证码并尝试识别。
+///
+/// 支持三种模式：
+/// - `manual`：仅获取验证码图片，不自动识别，返回"手动模式需要用户输入"
+/// - `remote_ocr`：通过远程 OCR 服务识别验证码表达式并计算答案
+/// - `local_onnx`：本地 ONNX 模型识别（暂未实现）
 async fn do_test_captcha(
     state: Option<&AppState>,
     mode: &str,
@@ -190,6 +208,7 @@ async fn do_test_captcha(
                     .with_retries(retry_count);
                 match resolver.resolve(&challenge.captcha_image).await {
                     Ok(result) => {
+                        // OCR 返回表达式（如 "3+5="）和计算后的答案
                         let expr = result.value.clone();
                         let ans = result.into_final_answer();
                         tracing::info!("[Captcha] do_test_captcha: OCR success, answer={}", ans);
@@ -229,6 +248,9 @@ async fn do_test_captcha(
     })
 }
 
+/// 单次验证码识别测试。
+///
+/// 获取验证码图片后尝试用指定模式识别，返回识别结果和耗时。
 #[tauri::command]
 pub async fn test_captcha(
     state: State<'_, AppState>,
@@ -247,6 +269,9 @@ pub async fn test_captcha(
     }
 }
 
+/// 批量验证码识别测试。
+///
+/// 连续执行 count 次验证码识别，若某次失败则中断并返回已完成的结果。
 #[tauri::command]
 pub async fn batch_test_captcha(
     state: State<'_, AppState>,

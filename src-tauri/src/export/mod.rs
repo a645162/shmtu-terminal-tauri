@@ -99,8 +99,17 @@ impl ExportService {
         identity_name: &str,
         options: &ExportOptions,
     ) -> AppResult<()> {
+        tracing::info!(
+            "[Export] export_identity_bills: identity_id={}, format={:?}, path={}",
+            identity_id,
+            options.format,
+            options.output_path
+        );
+
         let store = BillStoreImpl::new(self.db_manager.db().clone(), "", identity_id, self.translator.clone()).await?;
         let bills = store.get_all_merged_bills(identity_id).await?;
+
+        tracing::debug!("[Export] loaded {} merged bills for export", bills.len());
 
         // 时间范围过滤
         let filtered: Vec<&BillMerged> = bills
@@ -120,6 +129,12 @@ impl ExportService {
             })
             .collect();
 
+        tracing::info!(
+            "[Export] filtered: {} -> {} bills (date range filter)",
+            bills.len(),
+            filtered.len()
+        );
+
         match options.format {
             ExportFormat::Csv => self.export_csv(&filtered, &options.output_path)?,
             ExportFormat::Json => {
@@ -128,19 +143,40 @@ impl ExportService {
             ExportFormat::Qianji => self.export_qianji(&filtered, &options.output_path)?,
         }
 
+        tracing::info!(
+            "[Export] export_identity_bills completed: {} bills written to {}",
+            filtered.len(),
+            options.output_path
+        );
+
         Ok(())
     }
 
     /// 导出账号原始数据
     pub async fn export_account_bills(&self, account_id: &str, options: &ExportOptions) -> AppResult<()> {
+        tracing::info!(
+            "[Export] export_account_bills: account_id={}, format={:?}, path={}",
+            account_id,
+            options.format,
+            options.output_path
+        );
+
         let store = BillStoreImpl::new(self.db_manager.db().clone(), account_id, 0, self.translator.clone()).await?;
         let bills = store.get_all_original_bills(account_id).await?;
+
+        tracing::debug!("[Export] loaded {} original bills for export", bills.len());
 
         match options.format {
             ExportFormat::Csv => self.export_original_csv(&bills, &options.output_path)?,
             ExportFormat::Json => self.export_original_json(&bills, account_id, options)?,
             ExportFormat::Qianji => self.export_original_qianji(&bills, &options.output_path)?,
         }
+
+        tracing::info!(
+            "[Export] export_account_bills completed: {} bills written to {}",
+            bills.len(),
+            options.output_path
+        );
 
         Ok(())
     }
@@ -149,6 +185,8 @@ impl ExportService {
     fn export_csv(&self, bills: &[&BillMerged], path: &str) -> AppResult<()> {
         use std::fs::File;
         use std::io::Write;
+
+        tracing::debug!("[Export] writing CSV to {}, {} rows", path, bills.len());
 
         let mut file = File::create(path)?;
         // UTF-8 BOM
@@ -178,6 +216,8 @@ impl ExportService {
     fn export_original_csv(&self, bills: &[BillOriginal], path: &str) -> AppResult<()> {
         use std::fs::File;
         use std::io::Write;
+
+        tracing::debug!("[Export] writing original CSV to {}, {} rows", path, bills.len());
 
         let mut file = File::create(path)?;
         file.write_all(&[0xEF, 0xBB, 0xBF])?;
@@ -211,14 +251,21 @@ impl ExportService {
         options: &ExportOptions,
         _total: &usize,
     ) -> AppResult<()> {
+        tracing::debug!(
+            "[Export] writing JSON, include_classification={}",
+            options.include_classification
+        );
+
         let classifier = if options.include_classification {
             // 尝试加载分类规则
             let rules_path = self.db_manager.data_dir().join("classification_rules.toml");
             if rules_path.exists() {
+                tracing::debug!("[Export] loading classification rules from {:?}", rules_path);
                 Some(BillClassifier::from_file(
                     rules_path.to_str().unwrap_or(""),
                 )?)
             } else {
+                tracing::warn!("[Export] classification_rules.toml not found, skipping classification");
                 None
             }
         } else {
@@ -286,6 +333,8 @@ impl ExportService {
         account_id: &str,
         options: &ExportOptions,
     ) -> AppResult<()> {
+        tracing::debug!("[Export] writing original JSON for account={}", account_id);
+
         let json_bills: Vec<JsonBillItem> = bills
             .iter()
             .map(|b| {
@@ -326,6 +375,8 @@ impl ExportService {
 
     /// 钱迹格式导出（合并数据）
     fn export_qianji(&self, bills: &[&BillMerged], path: &str) -> AppResult<()> {
+        tracing::debug!("[Export] writing Qianji format to {}, {} rows", path, bills.len());
+
         let items: Vec<QianjiItem> = bills
             .iter()
             .filter_map(|b| {
@@ -368,6 +419,8 @@ impl ExportService {
             })
             .collect();
 
+        tracing::debug!("[Export] Qianji format: {} items after filtering", items.len());
+
         let json_str = serde_json::to_string_pretty(&items)?;
         std::fs::write(path, json_str)?;
 
@@ -376,6 +429,8 @@ impl ExportService {
 
     /// 钱迹格式导出（原始数据）
     fn export_original_qianji(&self, bills: &[BillOriginal], path: &str) -> AppResult<()> {
+        tracing::debug!("[Export] writing original Qianji format to {}, {} rows", path, bills.len());
+
         let items: Vec<QianjiItem> = bills
             .iter()
             .filter_map(|b| {
@@ -421,10 +476,17 @@ impl ExportService {
 
     /// 从 JSON 文件导入数据到身份合并数据库
     pub async fn import_json(&self, identity_id: i64, json_path: &str) -> AppResult<usize> {
+        tracing::info!("[Export] import_json: identity_id={}, path={}", identity_id, json_path);
+
         use sea_orm::{EntityTrait, Set};
 
         let content = std::fs::read_to_string(json_path)?;
         let import: JsonImport = serde_json::from_str(&content)?;
+
+        tracing::info!(
+            "[Export] import_json: parsed {} bills from file",
+            import.bills.len()
+        );
 
         let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let mut count = 0;
@@ -463,6 +525,12 @@ impl ExportService {
             count += 1;
         }
 
+        tracing::info!(
+            "[Export] import_json completed: {} bills imported for identity_id={}",
+            count,
+            identity_id
+        );
+
         Ok(count)
     }
 
@@ -470,6 +538,8 @@ impl ExportService {
 
     /// 创建数据快照
     pub fn create_snapshot(&self, max_keep: usize) -> AppResult<String> {
+        tracing::info!("[Export] create_snapshot: max_keep={}", max_keep);
+
         let snapshot_dir = self.db_manager.snapshot_dir();
         std::fs::create_dir_all(&snapshot_dir)?;
 
@@ -492,6 +562,11 @@ impl ExportService {
         )?;
 
         zip.finish()?;
+
+        tracing::info!(
+            "[Export] create_snapshot: saved to {}",
+            snapshot_path.display()
+        );
 
         // 清理超出的快照
         self.cleanup_snapshots(max_keep)?;
@@ -534,11 +609,16 @@ impl ExportService {
 
     /// 从快照恢复数据
     pub fn restore_snapshot(&self, snapshot_path: &str) -> AppResult<()> {
+        tracing::info!("[Export] restore_snapshot: path={}", snapshot_path);
+
         let data_dir = self.db_manager.data_dir();
 
         // 解压覆盖当前 Data 目录
         let file = std::fs::File::open(snapshot_path)?;
         let mut archive = zip::ZipArchive::new(file)?;
+
+        let file_count = archive.len();
+        tracing::debug!("[Export] restore_snapshot: {} files in archive", file_count);
 
         for i in 0..archive.len() {
             let mut file = archive.by_index(i)?;
@@ -563,6 +643,12 @@ impl ExportService {
                 std::io::copy(&mut file, &mut outfile)?;
             }
         }
+
+        tracing::info!(
+            "[Export] restore_snapshot completed: {} files restored from {}",
+            file_count,
+            snapshot_path
+        );
 
         Ok(())
     }
@@ -605,6 +691,8 @@ impl ExportService {
         // 按名称倒序（最新的在前）
         snapshots.sort_by(|a, b| b.name.cmp(&a.name));
 
+        tracing::debug!("[Export] list_snapshots: {} snapshots found", snapshots.len());
+
         Ok(snapshots)
     }
 
@@ -613,10 +701,13 @@ impl ExportService {
         let mut snapshots = self.list_snapshots()?;
 
         if snapshots.len() > max_keep {
+            let removed = snapshots.len() - max_keep;
             // 已按时间倒序排列，删除最旧的
             for snapshot in snapshots.drain(max_keep..) {
+                tracing::info!("[Export] cleanup_snapshots: removing old snapshot {}", snapshot.name);
                 let _ = std::fs::remove_file(&snapshot.path);
             }
+            tracing::info!("[Export] cleanup_snapshots: removed {} old snapshots", removed);
         }
 
         Ok(())

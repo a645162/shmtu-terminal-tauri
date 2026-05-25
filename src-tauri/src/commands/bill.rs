@@ -7,6 +7,7 @@ use crate::entity::bill_merged;
 use crate::models::BillMerged;
 use crate::state::AppState;
 
+/// 前端账单查询参数
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BillQueryParams {
@@ -20,6 +21,7 @@ pub struct BillQueryParams {
     pub date_end: Option<String>,
 }
 
+/// 账单查询结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BillQueryResult {
     pub items: Vec<BillItemFrontend>,
@@ -28,12 +30,14 @@ pub struct BillQueryResult {
     pub page_size: u32,
 }
 
+/// 去重操作结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DedupeResult {
     pub backfilled_count: usize,
     pub removed_count: usize,
 }
 
+/// 前端展示的账单项
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BillItemFrontend {
     pub id: i64,
@@ -93,11 +97,21 @@ impl From<BillMerged> for BillItemFrontend {
     }
 }
 
+/// 分页查询合并账单。
+///
+/// 先尝试回填缺失的元数据，再按页码返回结果。
 #[tauri::command]
 pub async fn query_bills(
     state: State<'_, AppState>,
     params: BillQueryParams,
 ) -> Result<BillQueryResult, String> {
+    tracing::debug!(
+        "[Bill] query_bills: identity_id={:?}, page={}, page_size={}",
+        params.identity_id,
+        params.page,
+        params.page_size
+    );
+
     let db = state.db_manager.read().await;
 
     let identity_id = params.identity_id.unwrap_or(0);
@@ -137,6 +151,12 @@ pub async fn query_bills(
 
     let items: Vec<BillItemFrontend> = bills.into_iter().map(BillItemFrontend::from).collect();
 
+    tracing::debug!(
+        "[Bill] query_bills: returned {} items, total={}",
+        items.len(),
+        total
+    );
+
     Ok(BillQueryResult {
         items,
         total,
@@ -145,12 +165,19 @@ pub async fn query_bills(
     })
 }
 
+/// 删除指定的合并账单。
 #[tauri::command]
 pub async fn delete_merged_bill(
     state: State<'_, AppState>,
     identity_id: i64,
     bill_id: i64,
 ) -> Result<(), String> {
+    tracing::info!(
+        "[Bill] delete_merged_bill: identity_id={}, bill_id={}",
+        identity_id,
+        bill_id
+    );
+
     let db = state.db_manager.read().await;
     let db_conn = db.db().clone();
     let translator = state.db_file_manager.create_position_translator();
@@ -163,6 +190,7 @@ pub async fn delete_merged_bill(
         .map_err(|e| e.to_string())
 }
 
+/// 更新指定账单的备注。
 #[tauri::command]
 pub async fn update_bill_notes(
     state: State<'_, AppState>,
@@ -170,6 +198,12 @@ pub async fn update_bill_notes(
     bill_id: i64,
     notes: Option<String>,
 ) -> Result<(), String> {
+    tracing::debug!(
+        "[Bill] update_bill_notes: bill_id={}, has_notes={}",
+        bill_id,
+        notes.is_some()
+    );
+
     let db = state.db_manager.read().await;
     let db_conn = db.db().clone();
     let translator = state.db_file_manager.create_position_translator();
@@ -182,11 +216,17 @@ pub async fn update_bill_notes(
         .map_err(|e| e.to_string())
 }
 
+/// 对指定身份的合并账单执行回填+去重。
+///
+/// 先回填缺失的元数据（如规范化交易号、位置信息），
+/// 再按交易号去重，保留字段最完整的记录。
 #[tauri::command]
 pub async fn dedupe_identity_bills(
     state: State<'_, AppState>,
     identity_id: i64,
 ) -> Result<DedupeResult, String> {
+    tracing::info!("[Bill] dedupe_identity_bills: identity_id={}", identity_id);
+
     let db = state.db_manager.read().await;
     let db_conn = db.db().clone();
     let translator = state.db_file_manager.create_position_translator();
@@ -203,18 +243,31 @@ pub async fn dedupe_identity_bills(
         .await
         .map_err(|e| e.to_string())?;
 
+    tracing::info!(
+        "[Bill] dedupe_identity_bills completed: backfilled={}, removed={}",
+        backfilled_count,
+        removed_count
+    );
+
     Ok(DedupeResult {
         backfilled_count,
         removed_count,
     })
 }
 
+/// 对指定账号的原始账单执行回填+去重。
 #[tauri::command]
 pub async fn dedupe_account_bills(
     state: State<'_, AppState>,
     identity_id: i64,
     account_id: String,
 ) -> Result<DedupeResult, String> {
+    tracing::info!(
+        "[Bill] dedupe_account_bills: identity_id={}, account_id={}",
+        identity_id,
+        account_id
+    );
+
     let db = state.db_manager.read().await;
     let db_conn = db.db().clone();
     let translator = state.db_file_manager.create_position_translator();
@@ -230,6 +283,12 @@ pub async fn dedupe_account_bills(
         .dedupe_original_by_account(&account_id)
         .await
         .map_err(|e| e.to_string())?;
+
+    tracing::info!(
+        "[Bill] dedupe_account_bills completed: backfilled={}, removed={}",
+        backfilled_count,
+        removed_count
+    );
 
     Ok(DedupeResult {
         backfilled_count,

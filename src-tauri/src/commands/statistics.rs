@@ -6,6 +6,7 @@ use tauri::State;
 use crate::entity::bill_merged;
 use crate::state::AppState;
 
+/// 统计查询通用参数
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StatisticsParams {
@@ -14,6 +15,7 @@ pub struct StatisticsParams {
     pub date_end: Option<String>,
 }
 
+/// 消费概览统计结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StatisticsSummary {
     pub total_expense: f64,
@@ -24,6 +26,7 @@ pub struct StatisticsSummary {
     pub income_count: u32,
 }
 
+/// 每日消费趋势条目
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DailyTrendItem {
     pub date: String,
@@ -31,6 +34,7 @@ pub struct DailyTrendItem {
     pub income: f64,
 }
 
+/// 消费分类分布条目
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CategoryItem {
     pub name: String,
@@ -39,6 +43,7 @@ pub struct CategoryItem {
     pub color: String,
 }
 
+/// 用餐时段分布条目
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MealDistItem {
     pub name: String,
@@ -46,6 +51,7 @@ pub struct MealDistItem {
     pub amount: f64,
 }
 
+/// 消费金额区间分布条目
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConsumptionBucketItem {
     pub range: String,
@@ -53,6 +59,7 @@ pub struct ConsumptionBucketItem {
     pub amount: f64,
 }
 
+/// 商户消费排行条目
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MerchantRankingItem {
     pub merchant: String,
@@ -60,6 +67,7 @@ pub struct MerchantRankingItem {
     pub amount: f64,
 }
 
+/// 单个分类的详细统计参数
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CategorySummaryParams {
@@ -69,6 +77,7 @@ pub struct CategorySummaryParams {
     pub date_end: Option<String>,
 }
 
+/// 单个分类的详细统计结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CategorySummary {
     pub category: String,
@@ -83,12 +92,14 @@ const CATEGORY_COLORS: &[&str] = &[
     "#FF99C3", "#269A99",
 ];
 
+/// 解析日期字符串，支持 "YYYY.MM.DD"、"YYYY-MM-DD"、"YYYY/MM/DD" 三种格式。
 fn parse_bill_date(date_str: &str) -> Option<NaiveDate> {
     ["%Y.%m.%d", "%Y-%m-%d", "%Y/%m/%d"]
         .iter()
         .find_map(|fmt| NaiveDate::parse_from_str(date_str, fmt).ok())
 }
 
+/// 按日期范围过滤账单模型列表。
 fn filter_models_by_date(
     models: Vec<bill_merged::Model>,
     date_start: &Option<String>,
@@ -118,6 +129,7 @@ fn filter_models_by_date(
         .collect()
 }
 
+/// 构造"交易成功"状态的查询条件，仅统计成功的交易记录。
 fn success_query(identity_id: i64) -> sea_orm::Select<bill_merged::Entity> {
     tracing::debug!("[Statistics] success_query: identity_id={}", identity_id);
     bill_merged::Entity::find()
@@ -125,6 +137,7 @@ fn success_query(identity_id: i64) -> sea_orm::Select<bill_merged::Entity> {
         .filter(bill_merged::Column::StatusStr.eq("交易成功"))
 }
 
+/// 获取消费概览统计：总支出、日均、笔数等。
 #[tauri::command]
 pub async fn get_statistics_summary(
     state: State<'_, AppState>,
@@ -178,6 +191,7 @@ pub async fn get_statistics_summary(
     })
 }
 
+/// 获取每日消费趋势，按日期聚合消费金额。
 #[tauri::command]
 pub async fn get_daily_trend(
     state: State<'_, AppState>,
@@ -220,6 +234,7 @@ pub async fn get_daily_trend(
         .collect())
 }
 
+/// 获取消费分类分布，基于分类器将交易归类后统计各类别金额和笔数。
 #[tauri::command]
 pub async fn get_category_distribution(
     state: State<'_, AppState>,
@@ -299,6 +314,7 @@ pub async fn get_category_distribution(
     Ok(items)
 }
 
+/// 获取用餐时段分布，基于分类器和时间戳判断早/中/晚餐时段。
 #[tauri::command]
 pub async fn get_meal_distribution(
     state: State<'_, AppState>,
@@ -366,6 +382,7 @@ pub async fn get_meal_distribution(
     Ok(items)
 }
 
+/// 获取消费金额区间分布，按 5 个金额档位统计笔数和总额。
 #[tauri::command]
 pub async fn get_consumption_distribution(
     state: State<'_, AppState>,
@@ -426,6 +443,7 @@ pub async fn get_consumption_distribution(
         .collect())
 }
 
+/// 获取商户消费排行，按对方账户聚合后取消费金额前 10 名。
 #[tauri::command]
 pub async fn get_merchant_ranking(
     state: State<'_, AppState>,
@@ -484,6 +502,7 @@ pub async fn get_merchant_ranking(
         .collect())
 }
 
+/// 获取指定分类的消费明细统计：总额、笔数、日均、笔均。
 #[tauri::command]
 pub async fn get_category_summary(
     state: State<'_, AppState>,
