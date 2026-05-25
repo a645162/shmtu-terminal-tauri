@@ -12,6 +12,8 @@
   font-size: 14px;
   line-height: 1.5;
   font-weight: 400;
+  --app-motion-curve: cubic-bezier(0.16, 1, 0.3, 1);
+  --app-motion-shadow: 0 16px 36px rgba(15, 23, 42, 0.14);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -66,4 +68,129 @@ body,
 /* ===== Utility ===== */
 .fui-DataGrid {
   min-width: 0;
+}
+
+.motion-hover-lift {
+  transition:
+    transform 180ms var(--app-motion-curve),
+    box-shadow 180ms var(--app-motion-curve),
+    background-color 180ms ease;
+  will-change: transform;
+}
+
+.motion-hover-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--app-motion-shadow);
+}
+
+.motion-hover-lift:active {
+  transform: translateY(-1px) scale(0.99);
+}
+
+.motion-sheen {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.motion-sheen::after {
+  content: '';
+  position: absolute;
+  inset: -30%;
+  background: linear-gradient(115deg, transparent 35%, rgba(255, 255, 255, 0.22) 50%, transparent 65%);
+  transform: translateX(-120%) rotate(10deg);
+  transition: transform 700ms var(--app-motion-curve);
+  pointer-events: none;
+}
+
+.motion-sheen:hover::after {
+  transform: translateX(120%) rotate(10deg);
+}
+
+.motion-spin-indefinite {
+  display: inline-flex;
+  animation: appSpin 0.9s linear infinite;
+}
+
+.motion-float {
+  display: inline-flex;
+  animation: appFloat 3.6s ease-in-out infinite;
+  transform-origin: center;
+}
+
+.motion-badge-glow {
+  animation: appPulseGlow 3.2s ease-in-out infinite;
+}
+
+.motion-list-row {
+  margin: 0 -12px;
+  padding: 10px 12px !important;
+  border-radius: 10px;
+  transition:
+    transform 180ms var(--app-motion-curve),
+    background-color 180ms ease;
+}
+
+.motion-list-row:hover {
+  transform: translateX(4px);
+  background: var(--colorNeutralBackground1Hover);
+}
+
+.motion-table-row {
+  transition:
+    transform 180ms var(--app-motion-curve),
+    background-color 180ms ease;
+}
+
+.motion-table-row:hover {
+  transform: translateX(2px);
+  background: var(--colorNeutralBackground1Hover);
+}
+
+.motion-empty-state {
+  animation: appFadeIn 240ms ease both;
+}
+
+@keyframes appSpin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes appFloat {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes appPulseGlow {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 rgba(0, 0, 0, 0);
+  }
+
+  50% {
+    transform: scale(1.02);
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--colorBrandBackground) 18%, transparent);
+  }
+}
+
+@keyframes appFadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }

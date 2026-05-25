@@ -7,6 +7,7 @@
       "dependencies": {
         "@fluentui/react-components": "^9.73.8",
         "@fluentui/react-icons": "^2.0.328",
+        "@fluentui/react-motion": "^9.15.0",
         "@tauri-apps/api": "^2",
         "@tauri-apps/plugin-opener": "^2",
         "react": "^19.2.6",

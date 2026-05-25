@@ -24,6 +24,12 @@ import { MonthComparisonCard } from '../../components/Charts/MonthComparisonCard
 import { formatBillMoney } from '../../hooks';
 import * as tauri from '../../services/tauri';
 import { formatLocalDate } from '../../utils/date';
+import {
+  CardEnterMotion,
+  SectionEnterMotion,
+  SlideInFromRightMotion,
+  getStaggerDelay,
+} from '../../components/Common/motion';
 
 function getDateRangeParams(rangeKey: string, identityId: number): tauri.StatisticsParams {
   const now = new Date();
@@ -58,7 +64,6 @@ function getDateRangeParams(rangeKey: string, identityId: number): tauri.Statist
 export const HomePage: React.FC = () => {
   const currentIdentity = useAppStore((s) => s.currentIdentity);
   const bills = useAppStore((s) => s.bills);
-  const statisticsSummary = useAppStore((s) => s.statisticsSummary);
   const dailyTrend = useAppStore((s) => s.dailyTrend);
   const categoryDistribution = useAppStore((s) => s.categoryDistribution);
   const isLoadingStatistics = useAppStore((s) => s.isLoadingStatistics);
@@ -93,6 +98,32 @@ export const HomePage: React.FC = () => {
   };
 
   const recentBills = bills.slice(0, 5);
+  const summaryCards = [
+    {
+      title: '今日消费',
+      value: todaySummary ? `¥ ${Math.abs(todaySummary.total_expense).toFixed(2)}` : '加载中...',
+      icon: <SubtractCircle24Regular />,
+      color: 'var(--colorPaletteRedForeground3)',
+    },
+    {
+      title: '本月消费',
+      value: monthSummary ? `¥ ${Math.abs(monthSummary.total_expense).toFixed(2)}` : '加载中...',
+      icon: <SubtractCircle24Regular />,
+      color: 'var(--colorPaletteRedForeground3)',
+    },
+    {
+      title: '本月充值',
+      value: monthSummary ? `¥ ${monthSummary.total_income.toFixed(2)}` : '加载中...',
+      icon: <AddCircle24Regular />,
+      color: 'var(--colorPaletteGreenForeground3)',
+    },
+    {
+      title: '卡片余额',
+      value: '暂不可用',
+      icon: <Money24Regular />,
+      color: 'var(--colorBrandForeground1)',
+    },
+  ];
 
   if (!currentIdentity) {
     return (
@@ -107,132 +138,138 @@ export const HomePage: React.FC = () => {
   return (
     <div style={{ padding: 20, maxWidth: 1200, margin: '0 auto' }}>
       {/* Header with Refresh Button */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-        <Title3>首页统计</Title3>
-        <Button
-          icon={<ArrowSync24Regular />}
-          appearance="secondary"
-          size="small"
-          onClick={handleRefresh}
-          disabled={isRefreshing || !currentIdentity}
-        >
-          {isRefreshing ? '刷新中...' : '刷新统计'}
-        </Button>
-      </div>
+      <SectionEnterMotion>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <Title3>首页统计</Title3>
+          <Button
+            icon={
+              <span className={isRefreshing ? 'motion-spin-indefinite' : undefined}>
+                <ArrowSync24Regular />
+              </span>
+            }
+            appearance="secondary"
+            size="small"
+            onClick={handleRefresh}
+            disabled={isRefreshing || !currentIdentity}
+          >
+            {isRefreshing ? '刷新中...' : '刷新统计'}
+          </Button>
+        </div>
+      </SectionEnterMotion>
 
       {/* Home Tab Navigation */}
-      <TabList selectedValue={homeTab} onTabSelect={(_, data) => setHomeTab(data.value as string)} style={{ marginBottom: 16 }}>
-        <Tab value="overview">总览</Tab>
-        <Tab value="compare">月度对比</Tab>
-      </TabList>
+      <SlideInFromRightMotion delay={50}>
+        <div>
+          <TabList selectedValue={homeTab} onTabSelect={(_, data) => setHomeTab(data.value as string)} style={{ marginBottom: 16 }}>
+            <Tab value="overview">总览</Tab>
+            <Tab value="compare">月度对比</Tab>
+          </TabList>
+        </div>
+      </SlideInFromRightMotion>
 
       {homeTab === 'overview' && (
         <>
           {/* Summary Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 20 }}>
-            <StatCard
-              title="今日消费"
-              value={todaySummary ? `¥ ${Math.abs(todaySummary.total_expense).toFixed(2)}` : '加载中...'}
-              icon={<SubtractCircle24Regular />}
-              color="var(--colorPaletteRedForeground3)"
-            />
-            <StatCard
-              title="本月消费"
-              value={monthSummary ? `¥ ${Math.abs(monthSummary.total_expense).toFixed(2)}` : '加载中...'}
-              icon={<SubtractCircle24Regular />}
-              color="var(--colorPaletteRedForeground3)"
-            />
-            <StatCard
-              title="本月充值"
-              value={monthSummary ? `¥ ${monthSummary.total_income.toFixed(2)}` : '加载中...'}
-              icon={<AddCircle24Regular />}
-              color="var(--colorPaletteGreenForeground3)"
-            />
-            <StatCard
-              title="卡片余额"
-              value="暂不可用"
-              icon={<Money24Regular />}
-              color="var(--colorBrandForeground1)"
-            />
+            {summaryCards.map((card, index) => (
+              <CardEnterMotion key={card.title} delay={getStaggerDelay(index, 70, 90)}>
+                <div>
+                  <StatCard
+                    title={card.title}
+                    value={card.value}
+                    icon={card.icon}
+                    color={card.color}
+                  />
+                </div>
+              </CardEnterMotion>
+            ))}
           </div>
 
           {/* Charts Row */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
-            <Card style={{ padding: 16 }}>
-              <CardHeader>
-                <InfoLabel info="点击图例可切换显示/隐藏线条。">
-                  近7日消费趋势
-                </InfoLabel>
-              </CardHeader>
-              {isLoadingStatistics ? (
-                <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
-                  <Spinner label="加载中..." />
-                </div>
-              ) : (
-                <ExpenseTrendChart data={dailyTrend} />
-              )}
-            </Card>
-            <Card style={{ padding: 16 }}>
-              <CardHeader>
-                <InfoLabel info="点击扇区查看该分类详情。">
-                  消费分类占比
-                </InfoLabel>
-              </CardHeader>
-              <CategoryPieChart data={categoryDistribution} />
-            </Card>
+            <CardEnterMotion delay={getStaggerDelay(0, 90, 220)}>
+              <Card className="motion-hover-lift motion-sheen" style={{ padding: 16 }}>
+                <CardHeader>
+                  <InfoLabel info="点击图例可切换显示/隐藏线条。">
+                    近7日消费趋势
+                  </InfoLabel>
+                </CardHeader>
+                {isLoadingStatistics ? (
+                  <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
+                    <Spinner label="加载中..." />
+                  </div>
+                ) : (
+                  <ExpenseTrendChart data={dailyTrend} />
+                )}
+              </Card>
+            </CardEnterMotion>
+            <CardEnterMotion delay={getStaggerDelay(1, 90, 220)}>
+              <Card className="motion-hover-lift motion-sheen" style={{ padding: 16 }}>
+                <CardHeader>
+                  <InfoLabel info="点击扇区查看该分类详情。">
+                    消费分类占比
+                  </InfoLabel>
+                </CardHeader>
+                <CategoryPieChart data={categoryDistribution} />
+              </Card>
+            </CardEnterMotion>
           </div>
 
           {/* Recent Transactions */}
-          <Card style={{ padding: 16 }}>
-            <CardHeader>
-              <Subtitle2>最近交易</Subtitle2>
-            </CardHeader>
-            {recentBills.length === 0 ? (
-              <Text size={200} style={{ color: 'var(--colorNeutralForeground3)', padding: 24, display: 'block', textAlign: 'center' }}>
-                暂无交易记录
-              </Text>
-            ) : (
-              <div>
-                {recentBills.map((bill) => (
-                  <div
-                    key={bill.id}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      padding: '8px 0',
-                      borderBottom: '1px solid var(--colorNeutralStroke2)',
-                    }}
-                  >
-                    <div>
-                      <Text block size={200}>{bill.item_type}</Text>
-                      <Text size={100} style={{ color: 'var(--colorNeutralForeground3)' }}>
-                        {bill.date_time_formatted}
+          <CardEnterMotion delay={320}>
+            <Card className="motion-hover-lift" style={{ padding: 16 }}>
+              <CardHeader>
+                <Subtitle2>最近交易</Subtitle2>
+              </CardHeader>
+              {recentBills.length === 0 ? (
+                <Text size={200} style={{ color: 'var(--colorNeutralForeground3)', padding: 24, display: 'block', textAlign: 'center' }}>
+                  暂无交易记录
+                </Text>
+              ) : (
+                <div>
+                  {recentBills.map((bill) => (
+                    <div
+                      key={bill.id}
+                      className="motion-list-row"
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        borderBottom: '1px solid var(--colorNeutralStroke2)',
+                      }}
+                    >
+                      <div>
+                        <Text block size={200}>{bill.item_type}</Text>
+                        <Text size={100} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                          {bill.date_time_formatted}
+                        </Text>
+                      </div>
+                      <Text
+                        weight="semibold"
+                        style={{ color: bill.item_type?.includes('充值') || bill.item_type?.includes('冲正') || bill.item_type?.includes('退款') ? 'var(--colorPaletteGreenForeground3)' : 'var(--colorPaletteRedForeground3)' }}
+                      >
+                        {formatBillMoney(bill.money, bill.item_type || '')}
                       </Text>
                     </div>
-                    <Text
-                      weight="semibold"
-                      style={{ color: bill.item_type?.includes('充值') || bill.item_type?.includes('冲正') || bill.item_type?.includes('退款') ? 'var(--colorPaletteGreenForeground3)' : 'var(--colorPaletteRedForeground3)' }}
-                    >
-                      {formatBillMoney(bill.money, bill.item_type || '')}
-                    </Text>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </CardEnterMotion>
         </>
       )}
 
       {homeTab === 'compare' && (
-        <Card style={{ padding: 16 }}>
-          <CardHeader>
-            <InfoLabel info="对比本月与上月的消费变化情况。">
-              月度消费对比
-            </InfoLabel>
-          </CardHeader>
-          <MonthComparisonCard />
-        </Card>
+        <CardEnterMotion delay={120}>
+          <Card className="motion-hover-lift motion-sheen" style={{ padding: 16 }}>
+            <CardHeader>
+              <InfoLabel info="对比本月与上月的消费变化情况。">
+                月度消费对比
+              </InfoLabel>
+            </CardHeader>
+            <MonthComparisonCard />
+          </Card>
+        </CardEnterMotion>
       )}
     </div>
   );
@@ -246,9 +283,9 @@ interface StatCardProps {
 }
 
 const StatCard: React.FC<StatCardProps> = ({ title, value, icon, color }) => (
-  <Card style={{ padding: 16 }}>
+  <Card className="motion-hover-lift motion-sheen" style={{ padding: 16 }}>
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-      <span style={{ color }}>{icon}</span>
+      <span className="motion-float" style={{ color }}>{icon}</span>
       <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>{title}</Text>
     </div>
     <Title3 block>{value}</Title3>

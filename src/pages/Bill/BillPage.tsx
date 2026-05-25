@@ -46,6 +46,10 @@ import { useAppStore } from '../../stores/appStore';
 import type { BillItem, BillType } from '../../types';
 import { formatBillMoney } from '../../hooks';
 import * as tauri from '../../services/tauri';
+import {
+  SectionEnterMotion,
+  SlideInFromRightMotion,
+} from '../../components/Common/motion';
 
 const BILL_TYPE_OPTIONS: { key: BillType; text: string }[] = [
   { key: 'all', text: '全部' },
@@ -151,13 +155,9 @@ export const BillPage: React.FC = () => {
 
   const totalPages = Math.max(1, Math.ceil(billTotal / billPageSize));
 
-  const handleSearch = useCallback(async () => {
-    // Update store state and call loadBills directly with the current search keyword
-    const { billType, billDateStart, billDateEnd } = useAppStore.getState();
+  const handleSearch = useCallback(() => {
     setBillKeyword(searchInput);
-    // Pass keyword directly to avoid setState timing issues
     if (currentIdentity) {
-      const { isLoading } = useAppStore.getState();
       useAppStore.setState({ billKeyword: searchInput, billPage: 1 });
       useAppStore.getState().loadBills();
     }
@@ -204,184 +204,198 @@ export const BillPage: React.FC = () => {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Filter Bar */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '12px 20px',
-          borderBottom: '1px solid var(--colorNeutralStroke2)',
-          flexWrap: 'wrap',
-          flexShrink: 0,
-        }}
-      >
-        <Dropdown
-          value={BILL_TYPE_OPTIONS.find((o) => o.key === billType)?.text ?? '全部'}
-          selectedOptions={[billType]}
-          onOptionSelect={(_, data) => setBillType(data.optionValue as BillType)}
-          style={{ minWidth: 120 }}
+      <SectionEnterMotion>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '12px 20px',
+            borderBottom: '1px solid var(--colorNeutralStroke2)',
+            flexWrap: 'wrap',
+            flexShrink: 0,
+          }}
         >
-          {BILL_TYPE_OPTIONS.map((opt) => (
-            <Option key={opt.key} value={opt.key}>
-              {opt.text}
-            </Option>
-          ))}
-        </Dropdown>
+          <Dropdown
+            value={BILL_TYPE_OPTIONS.find((o) => o.key === billType)?.text ?? '全部'}
+            selectedOptions={[billType]}
+            onOptionSelect={(_, data) => setBillType(data.optionValue as BillType)}
+            style={{ minWidth: 120 }}
+          >
+            {BILL_TYPE_OPTIONS.map((opt) => (
+              <Option key={opt.key} value={opt.key}>
+                {opt.text}
+              </Option>
+            ))}
+          </Dropdown>
 
-        <Dropdown
-          value={DATE_RANGE_OPTIONS.find((o) => o.key === dateRange)?.text ?? '全部时间'}
-          selectedOptions={[dateRange]}
-          onOptionSelect={(_, data) => handleDateRangeChange(data.optionValue ?? 'all')}
-          style={{ minWidth: 120 }}
-        >
-          {DATE_RANGE_OPTIONS.map((opt) => (
-            <Option key={opt.key} value={opt.key}>
-              {opt.text}
-            </Option>
-          ))}
-        </Dropdown>
+          <Dropdown
+            value={DATE_RANGE_OPTIONS.find((o) => o.key === dateRange)?.text ?? '全部时间'}
+            selectedOptions={[dateRange]}
+            onOptionSelect={(_, data) => handleDateRangeChange(data.optionValue ?? 'all')}
+            style={{ minWidth: 120 }}
+          >
+            {DATE_RANGE_OPTIONS.map((opt) => (
+              <Option key={opt.key} value={opt.key}>
+                {opt.text}
+              </Option>
+            ))}
+          </Dropdown>
 
-        <Input
-          placeholder="搜索交易名称、对方账户..."
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.currentTarget.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-          contentAfter={
+          <Input
+            placeholder="搜索交易名称、对方账户..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.currentTarget.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+            contentAfter={
+              <Button
+                appearance="subtle"
+                icon={<Search24Regular />}
+                onClick={handleSearch}
+                size="small"
+                style={{ pointerEvents: 'auto' }}
+              />
+            }
+            style={{ minWidth: 240 }}
+          />
+
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+              共 {billTotal} 条
+            </Text>
             <Button
-              appearance="subtle"
-              icon={<Search24Regular />}
-              onClick={handleSearch}
-              size="small"
-              style={{ pointerEvents: 'auto' }}
-            />
-          }
-          style={{ minWidth: 240 }}
-        />
-
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
-          共 {billTotal} 条
-          </Text>
-          <Button appearance="secondary" icon={<ArrowClockwise24Regular />} onClick={handleRefresh}>
-            刷新
-          </Button>
-          <Menu>
-            <MenuTrigger>
-              <MenuButton appearance="primary" icon={<MoreHorizontal24Regular />}>
-                更多操作
-              </MenuButton>
-            </MenuTrigger>
-            <MenuPopover>
-              <MenuList>
-                <MenuItem icon={<ArrowSync24Regular />} onClick={handleSync}>
-                  增量更新
-                </MenuItem>
-                <MenuItem icon={<ArrowDownload24Regular />} onClick={handleFullSync}>
-                  全量更新
-                </MenuItem>
-                <MenuItem icon={<ArrowClockwise24Regular />} onClick={handleRefresh}>
-                  刷新数据
-                </MenuItem>
-              </MenuList>
-            </MenuPopover>
-          </Menu>
+              appearance="secondary"
+              icon={
+                <span className={isLoading ? 'motion-spin-indefinite' : undefined}>
+                  <ArrowClockwise24Regular />
+                </span>
+              }
+              onClick={handleRefresh}
+            >
+              刷新
+            </Button>
+            <Menu>
+              <MenuTrigger>
+                <MenuButton appearance="primary" icon={<MoreHorizontal24Regular />}>
+                  更多操作
+                </MenuButton>
+              </MenuTrigger>
+              <MenuPopover>
+                <MenuList>
+                  <MenuItem icon={<ArrowSync24Regular />} onClick={handleSync}>
+                    增量更新
+                  </MenuItem>
+                  <MenuItem icon={<ArrowDownload24Regular />} onClick={handleFullSync}>
+                    全量更新
+                  </MenuItem>
+                  <MenuItem icon={<ArrowClockwise24Regular />} onClick={handleRefresh}>
+                    刷新数据
+                  </MenuItem>
+                </MenuList>
+              </MenuPopover>
+            </Menu>
+          </div>
         </div>
-      </div>
+      </SectionEnterMotion>
 
       {/* Table */}
       <div style={{ flex: 1, overflow: 'auto' }}>
-        {isLoading ? (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: 48 }}>
-            <Spinner size="large" label="加载中..." />
+        <SlideInFromRightMotion delay={70}>
+          <div>
+            {isLoading ? (
+              <div style={{ display: 'flex', justifyContent: 'center', padding: 48 }}>
+                <Spinner size="large" label="加载中..." />
+              </div>
+            ) : bills.length === 0 ? (
+              <div className="motion-empty-state" style={{ textAlign: 'center', padding: 48, color: 'var(--colorNeutralForeground3)' }}>
+                <Text size={400}>暂无账单数据</Text>
+                <br />
+                <Text size={200}>点击"同步"按钮获取最新账单</Text>
+              </div>
+            ) : (
+              <Table style={{ minWidth: 700 }}>
+                <TableHeader>
+                  <TableRow>
+                    <TableHeaderCell style={{ minWidth: 160 }}>日期时间</TableHeaderCell>
+                    <TableHeaderCell style={{ minWidth: 120 }}>交易名称</TableHeaderCell>
+                    <TableHeaderCell style={{ minWidth: 140 }}>对方账户</TableHeaderCell>
+                    <TableHeaderCell style={{ minWidth: 120 }}>位置</TableHeaderCell>
+                    <TableHeaderCell style={{ minWidth: 100 }}>金额</TableHeaderCell>
+                    <TableHeaderCell style={{ minWidth: 100 }}>支付方式</TableHeaderCell>
+                    <TableHeaderCell style={{ minWidth: 80 }}>状态</TableHeaderCell>
+                    <TableHeaderCell style={{ width: 40 }}></TableHeaderCell>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {bills.map((item) => (
+                    <TableRow key={item.id} className="motion-table-row">
+                      <TableCell>
+                        <Text size={200}>{item.date_time_formatted || `${item.date_str} ${item.time_str_formatted}`}</Text>
+                      </TableCell>
+                      <TableCell>
+                        <TableCellLayout>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <Text size={200}>{normalizeTransactionName(item)}</Text>
+                            {item.is_combined && <Badge appearance="outline" size="small">合并</Badge>}
+                          </div>
+                        </TableCellLayout>
+                      </TableCell>
+                      <TableCell>
+                        <Text size={200}>{item.target_user || '—'}</Text>
+                      </TableCell>
+                      <TableCell>
+                        <Text size={200}>{formatBillLocation(item)}</Text>
+                      </TableCell>
+                      <TableCell>
+                        <Text
+                          size={200}
+                          weight="semibold"
+                          style={{ color: item.item_type?.includes('充值') || item.item_type?.includes('冲正') || item.item_type?.includes('退款') ? 'var(--colorPaletteGreenForeground3)' : 'var(--colorPaletteRedForeground3)' }}
+                        >
+                          {formatBillMoney(item.money, item.item_type || '')}
+                        </Text>
+                      </TableCell>
+                      <TableCell>
+                        <Text size={200}>{item.method}</Text>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          appearance="filled"
+                          color={item.status_str === '交易成功' ? 'success' : item.status_str === '#fail' ? 'danger' : 'informative'}
+                        >
+                          {item.status_str}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Menu>
+                          <MenuTrigger>
+                            <Button appearance="subtle" icon={<MoreVertical24Regular />} size="small" />
+                          </MenuTrigger>
+                          <MenuPopover>
+                            <MenuList>
+                              <MenuItem icon={<Copy24Regular />} onClick={() => navigator.clipboard.writeText(normalizeTransactionNumber(item))}>
+                                复制交易号
+                              </MenuItem>
+                              <MenuItem icon={<Copy24Regular />} onClick={() => navigator.clipboard.writeText(item.money_str)}>
+                                复制金额
+                              </MenuItem>
+                              <MenuItem icon={<Info24Regular />} onClick={() => setDetailBill(item)}>
+                                查看详情
+                              </MenuItem>
+                              <MenuItem icon={<Delete24Regular />} onClick={() => handleDeleteBill(item)}>
+                                删除
+                              </MenuItem>
+                            </MenuList>
+                          </MenuPopover>
+                        </Menu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </div>
-        ) : bills.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: 48, color: 'var(--colorNeutralForeground3)' }}>
-            <Text size={400}>暂无账单数据</Text>
-            <br />
-            <Text size={200}>点击"同步"按钮获取最新账单</Text>
-          </div>
-        ) : (
-          <Table style={{ minWidth: 700 }}>
-            <TableHeader>
-              <TableRow>
-                <TableHeaderCell style={{ minWidth: 160 }}>日期时间</TableHeaderCell>
-                <TableHeaderCell style={{ minWidth: 120 }}>交易名称</TableHeaderCell>
-                <TableHeaderCell style={{ minWidth: 140 }}>对方账户</TableHeaderCell>
-                <TableHeaderCell style={{ minWidth: 120 }}>位置</TableHeaderCell>
-                <TableHeaderCell style={{ minWidth: 100 }}>金额</TableHeaderCell>
-                <TableHeaderCell style={{ minWidth: 100 }}>支付方式</TableHeaderCell>
-                <TableHeaderCell style={{ minWidth: 80 }}>状态</TableHeaderCell>
-                <TableHeaderCell style={{ width: 40 }}></TableHeaderCell>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {bills.map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell>
-                    <Text size={200}>{item.date_time_formatted || `${item.date_str} ${item.time_str_formatted}`}</Text>
-                  </TableCell>
-                  <TableCell>
-                    <TableCellLayout>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <Text size={200}>{normalizeTransactionName(item)}</Text>
-                        {item.is_combined && <Badge appearance="outline" size="small">合并</Badge>}
-                      </div>
-                    </TableCellLayout>
-                  </TableCell>
-                  <TableCell>
-                    <Text size={200}>{item.target_user || '—'}</Text>
-                  </TableCell>
-                  <TableCell>
-                    <Text size={200}>{formatBillLocation(item)}</Text>
-                  </TableCell>
-                  <TableCell>
-                    <Text
-                      size={200}
-                      weight="semibold"
-                      style={{ color: item.item_type?.includes('充值') || item.item_type?.includes('冲正') || item.item_type?.includes('退款') ? 'var(--colorPaletteGreenForeground3)' : 'var(--colorPaletteRedForeground3)' }}
-                    >
-                      {formatBillMoney(item.money, item.item_type || '')}
-                    </Text>
-                  </TableCell>
-                  <TableCell>
-                    <Text size={200}>{item.method}</Text>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      appearance="filled"
-                      color={item.status_str === '交易成功' ? 'success' : item.status_str === '#fail' ? 'danger' : 'informative'}
-                    >
-                      {item.status_str}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Menu>
-                      <MenuTrigger>
-                        <Button appearance="subtle" icon={<MoreVertical24Regular />} size="small" />
-                      </MenuTrigger>
-                        <MenuPopover>
-                          <MenuList>
-                          <MenuItem icon={<Copy24Regular />} onClick={() => navigator.clipboard.writeText(normalizeTransactionNumber(item))}>
-                            复制交易号
-                          </MenuItem>
-                          <MenuItem icon={<Copy24Regular />} onClick={() => navigator.clipboard.writeText(item.money_str)}>
-                            复制金额
-                          </MenuItem>
-                          <MenuItem icon={<Info24Regular />} onClick={() => setDetailBill(item)}>
-                            查看详情
-                          </MenuItem>
-                          <MenuItem icon={<Delete24Regular />} onClick={() => handleDeleteBill(item)}>
-                            删除
-                          </MenuItem>
-                        </MenuList>
-                      </MenuPopover>
-                    </Menu>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
+        </SlideInFromRightMotion>
       </div>
 
       {/* Pagination */}
