@@ -86,6 +86,8 @@ interface AppState {
   setTheme: (theme: AppTheme) => void;
   startSync: (identityId: number) => Promise<void>;
   startFullSync: (identityId: number) => Promise<void>;
+  startSyncAccount: (identityId: number, accountId: string) => Promise<void>;
+  startFullSyncAccount: (identityId: number, accountId: string) => Promise<void>;
   setShowStartupDialog: (show: boolean) => void;
   setShowIdentitySelectDialog: (show: boolean) => void;
   setShowIdentityManagerDialog: (show: boolean) => void;
@@ -288,11 +290,60 @@ export const useAppStore = create<AppState>((set, get) => ({
   startFullSync: async (identityId) => {
     try {
       const progress = await tauri.full_sync(identityId);
+      if (progress.captcha_required && progress.captcha_image && progress.execution) {
+        set({
+          syncProgress: { ...progress, status: 'captcha_required' },
+          captchaImage: progress.captcha_image,
+          captchaExecution: progress.execution,
+          showManualCaptchaDialog: true,
+        });
+        return;
+      }
       set({ syncProgress: progress });
       get().loadBills();
       get().refreshStatistics();
     } catch (e) {
       get().showError(`全量更新失败: ${e}`);
+    }
+  },
+
+  startSyncAccount: async (identityId, accountId) => {
+    try {
+      const progress = await tauri.incremental_sync_account(identityId, accountId);
+      if (progress.captcha_required && progress.captcha_image && progress.execution) {
+        set({
+          syncProgress: { ...progress, status: 'captcha_required' },
+          captchaImage: progress.captcha_image,
+          captchaExecution: progress.execution,
+          showManualCaptchaDialog: true,
+        });
+        return;
+      }
+      set({ syncProgress: progress });
+      get().loadBills();
+      get().refreshStatistics();
+    } catch (e) {
+      get().showError(`账号增量更新失败: ${e}`);
+    }
+  },
+
+  startFullSyncAccount: async (identityId, accountId) => {
+    try {
+      const progress = await tauri.full_sync_account(identityId, accountId);
+      if (progress.captcha_required && progress.captcha_image && progress.execution) {
+        set({
+          syncProgress: { ...progress, status: 'captcha_required' },
+          captchaImage: progress.captcha_image,
+          captchaExecution: progress.execution,
+          showManualCaptchaDialog: true,
+        });
+        return;
+      }
+      set({ syncProgress: progress });
+      get().loadBills();
+      get().refreshStatistics();
+    } catch (e) {
+      get().showError(`账号全量更新失败: ${e}`);
     }
   },
 

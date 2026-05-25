@@ -132,22 +132,38 @@ pub async fn full_sync(
     let sync_service = state.sync_service.read().await;
     let result = sync_service
         .full_sync_identity(identity_id, None)
-        .await
-        .map_err(|e| {
-            let err_str = e.to_string();
-            tracing::error!("[Command] full_sync FAILED: [{}]", err_str);
-            err_str
-        })?;
+        .await;
 
-    let _ = app.emit(
-        "sync-progress",
-        SyncProgressFrontend::success(result.total_new_count),
-    );
-    tracing::info!(
-        "[Command] full_sync completed, new_items={}",
-        result.total_new_count
-    );
-    Ok(SyncProgressFrontend::success(result.total_new_count))
+    match result {
+        Ok(r) => {
+            let _ = app.emit(
+                "sync-progress",
+                SyncProgressFrontend::success(r.total_new_count),
+            );
+            tracing::info!(
+                "[Command] full_sync completed, new_items={}",
+                r.total_new_count
+            );
+            Ok(SyncProgressFrontend::success(r.total_new_count))
+        }
+        Err(e) => {
+            let err_str = e.to_string();
+            if let Some((image, execution)) =
+                parse_captcha_marker(&err_str, "MANUAL_CAPTCHA_REQUIRED|")
+            {
+                tracing::info!("[Command] full_sync requires manual captcha");
+                let progress = SyncProgressFrontend::captcha_required(
+                    image.to_string(),
+                    execution.to_string(),
+                    "请输入验证码",
+                );
+                let _ = app.emit("sync-progress", progress.clone());
+                return Ok(progress);
+            }
+            tracing::error!("[Command] full_sync FAILED: [{}]", err_str);
+            Err(err_str)
+        }
+    }
 }
 
 /// 增量同步单个账号
@@ -182,6 +198,18 @@ pub async fn incremental_sync_account(
         }
         Err(e) => {
             let err_str = e.to_string();
+            if let Some((image, execution)) =
+                parse_captcha_marker(&err_str, "MANUAL_CAPTCHA_REQUIRED|")
+            {
+                tracing::info!("[Command] incremental_sync_account requires manual captcha");
+                let progress = SyncProgressFrontend::captcha_required(
+                    image.to_string(),
+                    execution.to_string(),
+                    "请输入验证码",
+                );
+                let _ = app.emit("sync-progress", progress.clone());
+                return Ok(progress);
+            }
             tracing::error!("[Command] incremental_sync_account FAILED: [{}]", err_str);
             Err(err_str)
         }

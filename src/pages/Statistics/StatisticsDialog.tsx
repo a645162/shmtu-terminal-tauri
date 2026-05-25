@@ -32,6 +32,12 @@ import { MonthComparisonCard } from '../../components/Charts/MonthComparisonCard
 import * as tauri from '../../services/tauri';
 import { formatLocalDate } from '../../utils/date';
 import { getCategoryDisplayName, getAllCategories, getCategoryColor } from '../../utils/translation';
+import {
+  CardEnterMotion,
+  PageEnterMotion,
+  SectionEnterMotion,
+  getStaggerDelay,
+} from '../../components/Common/motion';
 
 function buildParams(identityId: number, rangeKey: string): tauri.StatisticsParams {
   const now = new Date();
@@ -180,61 +186,68 @@ export const StatisticsDialog: React.FC = () => {
           </DialogTitle>
           <DialogContent>
             {/* Filters */}
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-              <Dropdown
-                value={
-                  dateRange === 'week' ? '本周' :
-                  dateRange === 'month' ? '本月' :
-                  dateRange === '30days' ? '近30天' : '本月'
-                }
-                selectedOptions={[dateRange]}
-                onOptionSelect={(_, data) => setDateRange(data.optionValue ?? 'month')}
-                style={{ minWidth: 120 }}
-              >
-                <Option value="week">本周</Option>
-                <Option value="month">本月</Option>
-                <Option value="30days">近30天</Option>
-              </Dropdown>
-              <Dropdown
-                value={identities.find((i) => i.id.toString() === selectedIdentityId)?.name ?? ''}
-                selectedOptions={[selectedIdentityId]}
-                onOptionSelect={(_, data) => setSelectedIdentityId(data.optionValue ?? '')}
-                style={{ minWidth: 120 }}
-              >
-                {identities.map((i) => (
-                  <Option key={i.id} value={i.id.toString()}>
-                    {i.name}
-                  </Option>
-                ))}
-              </Dropdown>
-              {/* Type filter dropdown */}
-              <Dropdown
-                value={selectedCategory === 'all' ? '全部分类' : getCategoryDisplayName(selectedCategory)}
-                selectedOptions={[selectedCategory]}
-                onOptionSelect={(_, data) => setSelectedCategory(data.optionValue ?? 'all')}
-                style={{ minWidth: 130 }}
-              >
-                <Option value="all">全部分类</Option>
-                {getAllCategories().map((cat) => (
-                  <Option key={cat} value={cat}>
-                    {getCategoryDisplayName(cat)}
-                  </Option>
-                ))}
-              </Dropdown>
-            </div>
+            <SectionEnterMotion>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+                <Dropdown
+                  value={
+                    dateRange === 'week' ? '本周' :
+                    dateRange === 'month' ? '本月' :
+                    dateRange === '30days' ? '近30天' : '本月'
+                  }
+                  selectedOptions={[dateRange]}
+                  onOptionSelect={(_, data) => setDateRange(data.optionValue ?? 'month')}
+                  style={{ minWidth: 120 }}
+                >
+                  <Option value="week">本周</Option>
+                  <Option value="month">本月</Option>
+                  <Option value="30days">近30天</Option>
+                </Dropdown>
+                <Dropdown
+                  value={identities.find((i) => i.id.toString() === selectedIdentityId)?.name ?? ''}
+                  selectedOptions={[selectedIdentityId]}
+                  onOptionSelect={(_, data) => setSelectedIdentityId(data.optionValue ?? '')}
+                  style={{ minWidth: 120 }}
+                >
+                  {identities.map((i) => (
+                    <Option key={i.id} value={i.id.toString()}>
+                      {i.name}
+                    </Option>
+                  ))}
+                </Dropdown>
+                <Dropdown
+                  value={selectedCategory === 'all' ? '全部分类' : getCategoryDisplayName(selectedCategory)}
+                  selectedOptions={[selectedCategory]}
+                  onOptionSelect={(_, data) => setSelectedCategory(data.optionValue ?? 'all')}
+                  style={{ minWidth: 130 }}
+                >
+                  <Option value="all">全部分类</Option>
+                  {getAllCategories().map((cat) => (
+                    <Option key={cat} value={cat}>
+                      {getCategoryDisplayName(cat)}
+                    </Option>
+                  ))}
+                </Dropdown>
+              </div>
+            </SectionEnterMotion>
 
             {/* Chart tab switcher */}
-            <TabList selectedValue={chartTab} onTabSelect={(_, data) => setChartTab(data.value as string)} style={{ marginBottom: 12 }}>
-              <Tab value="overview">总览</Tab>
-              <Tab value="category">分类分析</Tab>
-              <Tab value="position">位置分布</Tab>
-              <Tab value="compare">月度对比</Tab>
-            </TabList>
+            <SectionEnterMotion delay={50}>
+              <div>
+                <TabList selectedValue={chartTab} onTabSelect={(_, data) => setChartTab(data.value as string)} style={{ marginBottom: 12 }}>
+                  <Tab value="overview">总览</Tab>
+                  <Tab value="category">分类分析</Tab>
+                  <Tab value="position">位置分布</Tab>
+                  <Tab value="compare">月度对比</Tab>
+                </TabList>
+              </div>
+            </SectionEnterMotion>
 
-            {chartTab === 'overview' && (
-              <>
+            <PageEnterMotion key={chartTab}>
+              <div>
+                {chartTab === 'overview' && (
+                  <>
                 {/* Summary */}
-                <Card style={{ padding: 16, marginBottom: 12 }}>
+                <Card className="motion-hover-lift motion-sheen" style={{ padding: 16, marginBottom: 12 }}>
                   <CardHeader>
                     <Subtitle2>统计摘要</Subtitle2>
                   </CardHeader>
@@ -244,12 +257,12 @@ export const StatisticsDialog: React.FC = () => {
                     </div>
                   ) : summary ? (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginTop: 8 }}>
-                      <SummaryItem label="总消费" value={`¥${summary.total_expense.toFixed(2)}`} color="var(--colorPaletteRedForeground3)" />
-                      <SummaryItem label="总充值" value={`¥${summary.total_income.toFixed(2)}`} color="var(--colorPaletteGreenForeground3)" />
-                      <SummaryItem label="净支出" value={`¥${summary.net_expense.toFixed(2)}`} color="var(--colorBrandForeground1)" />
-                      <SummaryItem label="日均消费" value={`¥${summary.daily_average.toFixed(2)}`} />
-                      <SummaryItem label="消费笔数" value={`${summary.expense_count}笔`} />
-                      <SummaryItem label="充值笔数" value={`${summary.income_count}笔`} />
+                      <SummaryItem label="总消费" value={`¥${summary.total_expense.toFixed(2)}`} color="var(--colorPaletteRedForeground3)" delay={getStaggerDelay(0, 40)} />
+                      <SummaryItem label="总充值" value={`¥${summary.total_income.toFixed(2)}`} color="var(--colorPaletteGreenForeground3)" delay={getStaggerDelay(1, 40)} />
+                      <SummaryItem label="净支出" value={`¥${summary.net_expense.toFixed(2)}`} color="var(--colorBrandForeground1)" delay={getStaggerDelay(2, 40)} />
+                      <SummaryItem label="日均消费" value={`¥${summary.daily_average.toFixed(2)}`} delay={getStaggerDelay(3, 40)} />
+                      <SummaryItem label="消费笔数" value={`${summary.expense_count}笔`} delay={getStaggerDelay(4, 40)} />
+                      <SummaryItem label="充值笔数" value={`${summary.income_count}笔`} delay={getStaggerDelay(5, 40)} />
                     </div>
                   ) : (
                     <Text style={{ color: 'var(--colorNeutralForeground3)', textAlign: 'center', padding: 16, display: 'block' }}>
@@ -259,7 +272,7 @@ export const StatisticsDialog: React.FC = () => {
                 </Card>
 
                 {/* Category quick summary */}
-                <Card style={{ padding: 16, marginBottom: 12 }}>
+                <Card className="motion-hover-lift" style={{ padding: 16, marginBottom: 12 }}>
                   <CardHeader>
                     <InfoLabel info="按消费类型展示各分类的总金额和笔数。数据实时计算。">
                       分类消费概览
@@ -277,13 +290,13 @@ export const StatisticsDialog: React.FC = () => {
                           <div
                             key={cat}
                             onClick={() => { setSelectedCategory(cat); setChartTab('category'); }}
+                            className="motion-hover-lift"
                             style={{
                               padding: '10px 12px',
                               borderRadius: 8,
                               border: `1px solid ${getCategoryColor(cat)}`,
                               cursor: 'pointer',
                               background: selectedCategory === cat ? `${getCategoryColor(cat)}18` : 'transparent',
-                              transition: 'all 0.15s',
                             }}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
@@ -311,7 +324,7 @@ export const StatisticsDialog: React.FC = () => {
                 </Card>
 
                 {/* Trend chart */}
-                <Card style={{ padding: 16, marginBottom: 12 }}>
+                <Card className="motion-hover-lift motion-sheen" style={{ padding: 16, marginBottom: 12 }}>
                   <CardHeader>
                     <InfoLabel info="点击图例可切换显示/隐藏线条。点击数据点可查看当日详情。">
                       消费趋势
@@ -322,7 +335,7 @@ export const StatisticsDialog: React.FC = () => {
 
                 {/* Two column charts */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-                  <Card style={{ padding: 16 }}>
+                  <Card className="motion-hover-lift motion-sheen" style={{ padding: 16 }}>
                     <CardHeader>
                       <InfoLabel info="点击扇区可查看该分类详情。">
                         消费分类占比
@@ -330,7 +343,7 @@ export const StatisticsDialog: React.FC = () => {
                     </CardHeader>
                     <CategoryPieChart data={categoryDistribution} onCategoryClick={handleCategoryClick} />
                   </Card>
-                  <Card style={{ padding: 16 }}>
+                  <Card className="motion-hover-lift motion-sheen" style={{ padding: 16 }}>
                     <CardHeader>
                       <Subtitle2>用餐时段分布</Subtitle2>
                     </CardHeader>
@@ -339,26 +352,26 @@ export const StatisticsDialog: React.FC = () => {
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-                  <Card style={{ padding: 16 }}>
+                  <Card className="motion-hover-lift motion-sheen" style={{ padding: 16 }}>
                     <CardHeader>
                       <Subtitle2>消费金额分布</Subtitle2>
                     </CardHeader>
                     <ConsumptionDistributionChart data={consumptionDistribution} />
                   </Card>
-                  <Card style={{ padding: 16 }}>
+                  <Card className="motion-hover-lift motion-sheen" style={{ padding: 16 }}>
                     <CardHeader>
                       <Subtitle2>商户消费排行</Subtitle2>
                     </CardHeader>
                     <MerchantRankingChart data={merchantRanking} />
                   </Card>
                 </div>
-              </>
-            )}
+                  </>
+                )}
 
-            {chartTab === 'category' && (
-              <>
+                {chartTab === 'category' && (
+                  <>
                 {/* Category bar chart */}
-                <Card style={{ padding: 16, marginBottom: 12 }}>
+                <Card className="motion-hover-lift motion-sheen" style={{ padding: 16, marginBottom: 12 }}>
                   <CardHeader>
                     <InfoLabel info="按消费类型（食堂、淋浴、电费等）展示金额分布。">
                       分类金额排行
@@ -368,7 +381,7 @@ export const StatisticsDialog: React.FC = () => {
                 </Card>
 
                 {/* Category pie chart */}
-                <Card style={{ padding: 16, marginBottom: 12 }}>
+                <Card className="motion-hover-lift motion-sheen" style={{ padding: 16, marginBottom: 12 }}>
                   <CardHeader>
                     <Subtitle2>分类占比详情</Subtitle2>
                   </CardHeader>
@@ -380,7 +393,7 @@ export const StatisticsDialog: React.FC = () => {
                 </Card>
 
                 {/* Category legend/tags */}
-                <Card style={{ padding: 16 }}>
+                <Card className="motion-hover-lift" style={{ padding: 16 }}>
                   <CardHeader>
                     <Subtitle2>分类图例</Subtitle2>
                   </CardHeader>
@@ -389,6 +402,7 @@ export const StatisticsDialog: React.FC = () => {
                       <div
                         key={cat}
                         onClick={() => setSelectedCategory(selectedCategory === cat ? 'all' : cat)}
+                        className="motion-hover-lift"
                         style={{
                           display: 'inline-flex',
                           alignItems: 'center',
@@ -400,7 +414,6 @@ export const StatisticsDialog: React.FC = () => {
                           border: `1px solid ${getCategoryColor(cat)}`,
                           color: selectedCategory === cat ? '#fff' : getCategoryColor(cat),
                           fontSize: 13,
-                          transition: 'all 0.2s',
                         }}
                       >
                         <span style={{
@@ -415,13 +428,13 @@ export const StatisticsDialog: React.FC = () => {
                     ))}
                   </div>
                 </Card>
-              </>
-            )}
+                  </>
+                )}
 
-            {chartTab === 'position' && (
-              <>
+                {chartTab === 'position' && (
+                  <>
                 {/* Position pie chart */}
-                <Card style={{ padding: 16, marginBottom: 12 }}>
+                <Card className="motion-hover-lift motion-sheen" style={{ padding: 16, marginBottom: 12 }}>
                   <CardHeader>
                     <InfoLabel info="根据商户名称映射到食堂楼栋位置，展示各位置的消费分布。悬停查看详情。">
                       消费位置分布
@@ -431,25 +444,27 @@ export const StatisticsDialog: React.FC = () => {
                 </Card>
 
                 {/* Merchant ranking */}
-                <Card style={{ padding: 16 }}>
+                <Card className="motion-hover-lift motion-sheen" style={{ padding: 16 }}>
                   <CardHeader>
                     <Subtitle2>商户排行详情</Subtitle2>
                   </CardHeader>
                   <MerchantRankingChart data={merchantRanking} />
                 </Card>
-              </>
-            )}
+                  </>
+                )}
 
-            {chartTab === 'compare' && (
-              <Card style={{ padding: 16 }}>
-                <CardHeader>
-                  <InfoLabel info="对比本月与上月的消费变化情况。">
-                    月度消费对比
-                  </InfoLabel>
-                </CardHeader>
-                <MonthComparisonCard identityId={parseInt(selectedIdentityId)} />
-              </Card>
-            )}
+                {chartTab === 'compare' && (
+                  <Card className="motion-hover-lift motion-sheen" style={{ padding: 16 }}>
+                    <CardHeader>
+                      <InfoLabel info="对比本月与上月的消费变化情况。">
+                        月度消费对比
+                      </InfoLabel>
+                    </CardHeader>
+                    <MonthComparisonCard identityId={parseInt(selectedIdentityId)} />
+                  </Card>
+                )}
+              </div>
+            </PageEnterMotion>
           </DialogContent>
           <DialogActions>
             <Button appearance="secondary" onClick={() => setShowStatisticsDialog(false)}>
@@ -466,11 +481,14 @@ const SummaryItem: React.FC<{
   label: string;
   value: string;
   color?: string;
-}> = ({ label, value, color }) => (
-  <div>
-    <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }} block>
-      {label}
-    </Text>
-    <Title3 style={{ color: color ?? 'inherit' }}>{value}</Title3>
-  </div>
+  delay?: number;
+}> = ({ label, value, color, delay = 0 }) => (
+  <CardEnterMotion delay={delay}>
+    <div>
+      <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }} block>
+        {label}
+      </Text>
+      <Title3 style={{ color: color ?? 'inherit' }}>{value}</Title3>
+    </div>
+  </CardEnterMotion>
 );

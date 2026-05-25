@@ -30,6 +30,10 @@ import { useAppStore } from '../../stores/appStore';
 import type { ExportFormat, SnapshotInfo } from '../../types';
 import * as tauri from '../../services/tauri';
 import { formatBytes } from '../../hooks';
+import {
+  PageEnterMotion,
+  SectionEnterMotion,
+} from '../../components/Common/motion';
 
 type DataTab = 'export' | 'import' | 'snapshot';
 
@@ -263,7 +267,7 @@ export const DataTransferDialog: React.FC = () => {
                 </TableHeader>
                 <TableBody>
                   {snapshots.map((snap) => (
-                    <TableRow key={snap.filename}>
+                    <TableRow key={snap.filename} className="motion-table-row">
                       <TableCell>{snap.created_at}</TableCell>
                       <TableCell>{formatBytes(snap.size_bytes)}</TableCell>
                       <TableCell>
@@ -291,16 +295,22 @@ export const DataTransferDialog: React.FC = () => {
         <DialogBody>
           <DialogTitle>数据管理</DialogTitle>
           <DialogContent>
-            <TabList
-              selectedValue={selectedTab}
-              onTabSelect={(_, data) => setSelectedTab(data.value as DataTab)}
-              style={{ marginBottom: 16 }}
-            >
-              <Tab value="export">导出</Tab>
-              <Tab value="import">导入</Tab>
-              <Tab value="snapshot">快照</Tab>
-            </TabList>
-            {renderContent()}
+            <SectionEnterMotion>
+              <div>
+                <TabList
+                  selectedValue={selectedTab}
+                  onTabSelect={(_, data) => setSelectedTab(data.value as DataTab)}
+                  style={{ marginBottom: 16 }}
+                >
+                  <Tab value="export">导出</Tab>
+                  <Tab value="import">导入</Tab>
+                  <Tab value="snapshot">快照</Tab>
+                </TabList>
+              </div>
+            </SectionEnterMotion>
+            <PageEnterMotion key={selectedTab}>
+              <div>{renderContent()}</div>
+            </PageEnterMotion>
           </DialogContent>
           <DialogActions>
             <Button appearance="secondary" onClick={() => setShowDataTransferDialog(false)}>

@@ -41,6 +41,7 @@ import {
   ChevronLeft24Regular,
   ChevronRight24Regular,
   Edit24Regular,
+  People24Regular,
 } from '@fluentui/react-icons';
 import { useAppStore } from '../../stores/appStore';
 import type { BillItem, BillType } from '../../types';
@@ -141,6 +142,7 @@ export const BillPage: React.FC = () => {
   const billKeyword = useAppStore((s) => s.billKeyword);
   const isLoading = useAppStore((s) => s.isLoading);
   const currentIdentity = useAppStore((s) => s.currentIdentity);
+  const accounts = useAppStore((s) => s.accounts);
   const setBillPage = useAppStore((s) => s.setBillPage);
   const setBillType = useAppStore((s) => s.setBillType);
   const setBillKeyword = useAppStore((s) => s.setBillKeyword);
@@ -148,10 +150,13 @@ export const BillPage: React.FC = () => {
   const loadBills = useAppStore((s) => s.loadBills);
   const startSync = useAppStore((s) => s.startSync);
   const startFullSync = useAppStore((s) => s.startFullSync);
+  const startSyncAccount = useAppStore((s) => s.startSyncAccount);
+  const startFullSyncAccount = useAppStore((s) => s.startFullSyncAccount);
 
   const [searchInput, setSearchInput] = useState(billKeyword);
   const [dateRange, setDateRange] = useState('all');
   const [detailBill, setDetailBill] = useState<BillItem | null>(null);
+  const [showAccountPanel, setShowAccountPanel] = useState(false);
 
   const totalPages = Math.max(1, Math.ceil(billTotal / billPageSize));
 
@@ -186,6 +191,18 @@ export const BillPage: React.FC = () => {
       startFullSync(currentIdentity.id);
     }
   }, [currentIdentity, startFullSync]);
+
+  const handleAccountSync = useCallback((accountId: string) => {
+    if (currentIdentity) {
+      startSyncAccount(currentIdentity.id, accountId);
+    }
+  }, [currentIdentity, startSyncAccount]);
+
+  const handleAccountFullSync = useCallback((accountId: string) => {
+    if (currentIdentity) {
+      startFullSyncAccount(currentIdentity.id, accountId);
+    }
+  }, [currentIdentity, startFullSyncAccount]);
 
   const handleDeleteBill = useCallback(
     async (bill: BillItem) => {
@@ -283,10 +300,10 @@ export const BillPage: React.FC = () => {
               <MenuPopover>
                 <MenuList>
                   <MenuItem icon={<ArrowSync24Regular />} onClick={handleSync}>
-                    增量更新
+                    增量更新（全部账号）
                   </MenuItem>
                   <MenuItem icon={<ArrowDownload24Regular />} onClick={handleFullSync}>
-                    全量更新
+                    全量更新（全部账号）
                   </MenuItem>
                   <MenuItem icon={<ArrowClockwise24Regular />} onClick={handleRefresh}>
                     刷新数据
@@ -294,9 +311,83 @@ export const BillPage: React.FC = () => {
                 </MenuList>
               </MenuPopover>
             </Menu>
+            {accounts.length > 0 && (
+              <Button
+                appearance="subtle"
+                icon={<People24Regular />}
+                onClick={() => setShowAccountPanel(!showAccountPanel)}
+              >
+                {showAccountPanel ? '隐藏账号' : `账号 (${accounts.length})`}
+              </Button>
+            )}
           </div>
         </div>
       </SectionEnterMotion>
+
+      {/* Account Sync Panel */}
+      {showAccountPanel && (
+        <SectionEnterMotion>
+          <div
+            style={{
+              padding: '8px 20px',
+              borderBottom: '1px solid var(--colorNeutralStroke2)',
+              backgroundColor: 'var(--colorNeutralBackground3)',
+            }}
+          >
+            <Text size={200} weight="semibold" style={{ marginBottom: 8, display: 'block' }}>
+              账号级别同步
+            </Text>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {accounts.map((account) => (
+                <div
+                  key={account.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '6px 12px',
+                    borderRadius: 6,
+                    backgroundColor: 'var(--colorNeutralBackground1)',
+                    border: '1px solid var(--colorNeutralStroke2)',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <Text size={200} weight="semibold">{account.account_name}</Text>
+                    <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                      {account.account_id}
+                    </Text>
+                    {account.enable && account.enable_update ? (
+                      <Badge appearance="filled" color="success" size="small">启用</Badge>
+                    ) : (
+                      <Badge appearance="outline" size="small">禁用</Badge>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <Button
+                      appearance="subtle"
+                      size="small"
+                      icon={<ArrowSync24Regular />}
+                      onClick={() => handleAccountSync(account.account_id)}
+                      disabled={!account.enable || !account.enable_update}
+                    >
+                      增量
+                    </Button>
+                    <Button
+                      appearance="subtle"
+                      size="small"
+                      icon={<ArrowDownload24Regular />}
+                      onClick={() => handleAccountFullSync(account.account_id)}
+                      disabled={!account.enable || !account.enable_update}
+                    >
+                      全量
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </SectionEnterMotion>
+      )}
 
       {/* Table */}
       <div style={{ flex: 1, overflow: 'auto' }}>

@@ -16,6 +16,12 @@ import {
 import { PersonArrowRight24Regular } from '@fluentui/react-icons';
 import { useAppStore } from '../../stores/appStore';
 import * as tauri from '../../services/tauri';
+import {
+  CardEnterMotion,
+  PageEnterMotion,
+  SectionEnterMotion,
+  getStaggerDelay,
+} from './motion';
 
 function pillStyle(background: string, color: string) {
   return {
@@ -142,22 +148,25 @@ export const IdentitySelectDialog: React.FC = () => {
           </DialogTitle>
           <DialogContent>
             <div style={{ display: 'grid', gap: 16 }}>
-              <div
-                style={{
-                  padding: '16px 18px',
-                  borderRadius: 14,
-                  border: '1px solid color-mix(in srgb, var(--colorBrandBackground) 24%, var(--colorNeutralStroke2))',
-                  background:
-                    'linear-gradient(135deg, color-mix(in srgb, var(--colorBrandBackground2) 72%, white), var(--colorNeutralBackground2))',
-                }}
-              >
-                <Text weight="semibold" size={400} block style={{ marginBottom: 6 }}>
-                  账单、账号和同步范围会跟随身份切换
-                </Text>
-                <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
-                  先确认你要进入的是谁的数据，再执行同步或查看记录。
-                </Text>
-              </div>
+              <SectionEnterMotion>
+                <div
+                  className="motion-sheen"
+                  style={{
+                    padding: '16px 18px',
+                    borderRadius: 14,
+                    border: '1px solid color-mix(in srgb, var(--colorBrandBackground) 24%, var(--colorNeutralStroke2))',
+                    background:
+                      'linear-gradient(135deg, color-mix(in srgb, var(--colorBrandBackground2) 72%, white), var(--colorNeutralBackground2))',
+                  }}
+                >
+                  <Text weight="semibold" size={400} block style={{ marginBottom: 6 }}>
+                    账单、账号和同步范围会跟随身份切换
+                  </Text>
+                  <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                    先确认你要进入的是谁的数据，再执行同步或查看记录。
+                  </Text>
+                </div>
+              </SectionEnterMotion>
 
               {isLoading ? (
                 <div
@@ -194,128 +203,132 @@ export const IdentitySelectDialog: React.FC = () => {
                     onChange={(_, data) => setSelectedId(data.value)}
                     style={{ display: 'grid', gap: 10, maxHeight: 320, overflowY: 'auto', paddingRight: 4 }}
                   >
-                    {enabledIdentities.map((identity) => {
+                    {enabledIdentities.map((identity, index) => {
                       const isSelected = selectedId === identity.id.toString();
                       const isCurrent = currentIdentity?.id === identity.id;
                       const isDefault = defaultIdentityId === identity.id;
                       const accountCount = accountCounts[identity.id] ?? 0;
 
                       return (
-                        <Card
-                          key={identity.id}
-                          onClick={() => setSelectedId(identity.id.toString())}
-                          style={{
-                            cursor: 'pointer',
-                            padding: 16,
-                            borderRadius: 14,
-                            border: isSelected
-                              ? '1px solid var(--colorBrandStroke1)'
-                              : '1px solid var(--colorNeutralStroke2)',
-                            boxShadow: isSelected
-                              ? '0 0 0 3px color-mix(in srgb, var(--colorBrandStroke1) 18%, transparent)'
-                              : 'none',
-                            background: isSelected
-                              ? 'color-mix(in srgb, var(--colorBrandBackground2) 65%, var(--colorNeutralBackground1))'
-                              : 'var(--colorNeutralBackground1)',
-                          }}
-                        >
-                          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                            <div style={{ paddingTop: 2 }}>
-                              <Radio value={identity.id.toString()} label="" />
-                            </div>
-                            <div style={{ flex: 1, minWidth: 0, display: 'grid', gap: 10 }}>
-                              <div
-                                style={{
-                                  display: 'flex',
-                                  justifyContent: 'space-between',
-                                  gap: 12,
-                                  alignItems: 'flex-start',
-                                  flexWrap: 'wrap',
-                                }}
-                              >
-                                <div style={{ minWidth: 0 }}>
-                                  <Text weight="semibold" size={400} block>
-                                    {identity.name}
-                                  </Text>
-                                  <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
-                                    身份 ID #{identity.id}
-                                  </Text>
-                                </div>
-                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                                  {isCurrent && (
-                                    <span
-                                      style={pillStyle(
-                                        'var(--colorBrandBackground)',
-                                        'var(--colorNeutralForegroundOnBrand)'
-                                      )}
-                                    >
-                                      当前身份
-                                    </span>
-                                  )}
-                                  {isDefault && (
-                                    <span
-                                      style={pillStyle(
-                                        'var(--colorPaletteLightGreenBackground2)',
-                                        'var(--colorPaletteGreenForeground2)'
-                                      )}
-                                    >
-                                      默认进入
-                                    </span>
-                                  )}
-                                </div>
+                        <CardEnterMotion key={identity.id} delay={getStaggerDelay(index, 55, 60)}>
+                          <Card
+                            className="motion-hover-lift motion-sheen"
+                            onClick={() => setSelectedId(identity.id.toString())}
+                            style={{
+                              cursor: 'pointer',
+                              padding: 16,
+                              borderRadius: 14,
+                              border: isSelected
+                                ? '1px solid var(--colorBrandStroke1)'
+                                : '1px solid var(--colorNeutralStroke2)',
+                              boxShadow: isSelected
+                                ? '0 0 0 3px color-mix(in srgb, var(--colorBrandStroke1) 18%, transparent)'
+                                : 'none',
+                              background: isSelected
+                                ? 'color-mix(in srgb, var(--colorBrandBackground2) 65%, var(--colorNeutralBackground1))'
+                                : 'var(--colorNeutralBackground1)',
+                            }}
+                          >
+                            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                              <div style={{ paddingTop: 2 }}>
+                                <Radio value={identity.id.toString()} label="" />
                               </div>
-
-                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                <span
-                                  style={pillStyle(
-                                    'var(--colorNeutralBackground3)',
-                                    'var(--colorNeutralForeground2)'
-                                  )}
+                              <div style={{ flex: 1, minWidth: 0, display: 'grid', gap: 10 }}>
+                                <div
+                                  style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    gap: 12,
+                                    alignItems: 'flex-start',
+                                    flexWrap: 'wrap',
+                                  }}
                                 >
-                                  {accountCount} 个启用账号
-                                </span>
+                                  <div style={{ minWidth: 0 }}>
+                                    <Text weight="semibold" size={400} block>
+                                      {identity.name}
+                                    </Text>
+                                    <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                                      身份 ID #{identity.id}
+                                    </Text>
+                                  </div>
+                                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                    {isCurrent && (
+                                      <span
+                                        style={pillStyle(
+                                          'var(--colorBrandBackground)',
+                                          'var(--colorNeutralForegroundOnBrand)'
+                                        )}
+                                      >
+                                        当前身份
+                                      </span>
+                                    )}
+                                    {isDefault && (
+                                      <span
+                                        style={pillStyle(
+                                          'var(--colorPaletteLightGreenBackground2)',
+                                          'var(--colorPaletteGreenForeground2)'
+                                        )}
+                                      >
+                                        默认进入
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                  <span
+                                    style={pillStyle(
+                                      'var(--colorNeutralBackground3)',
+                                      'var(--colorNeutralForeground2)'
+                                    )}
+                                  >
+                                    {accountCount} 个启用账号
+                                  </span>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </Card>
+                          </Card>
+                        </CardEnterMotion>
                       );
                     })}
                   </RadioGroup>
 
-                  <div
-                    style={{
-                      padding: '14px 16px',
-                      borderRadius: 14,
-                      border: '1px solid var(--colorNeutralStroke2)',
-                      background: 'var(--colorNeutralBackground2)',
-                    }}
-                  >
-                    <Text weight="semibold" block style={{ marginBottom: 4 }}>
-                      {selectedIdentity ? `即将进入：${selectedIdentity.name}` : '请选择一个身份'}
-                    </Text>
-                    <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
-                      {selectedIdentity
-                        ? `将加载该身份下的 ${accountCounts[selectedIdentity.id] ?? 0} 个启用账号，并切换后续账单与同步视图。`
-                        : '未选择身份时无法进入。'}
-                    </Text>
-                    {selectedIdentity && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
-                        <Button
-                          appearance="subtle"
-                          size="small"
-                          onClick={handleSetDefaultIdentity}
-                          disabled={defaultIdentityId === selectedIdentity.id}
-                        >
-                          {defaultIdentityId === selectedIdentity.id ? '已设为默认身份' : '设为默认身份'}
-                        </Button>
-                        <Text size={100} style={{ color: 'var(--colorNeutralForeground3)' }}>
-                          {config?.identity.remember_default
-                            ? '当前启动策略会优先加载默认身份。'
-                            : '当前启动策略是优先加载上一次使用的身份。'}
-                        </Text>
-                      </div>
-                    )}
-                  </div>
+                  <PageEnterMotion key={selectedIdentity?.id ?? 'empty'}>
+                    <div
+                      style={{
+                        padding: '14px 16px',
+                        borderRadius: 14,
+                        border: '1px solid var(--colorNeutralStroke2)',
+                        background: 'var(--colorNeutralBackground2)',
+                      }}
+                    >
+                      <Text weight="semibold" block style={{ marginBottom: 4 }}>
+                        {selectedIdentity ? `即将进入：${selectedIdentity.name}` : '请选择一个身份'}
+                      </Text>
+                      <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                        {selectedIdentity
+                          ? `将加载该身份下的 ${accountCounts[selectedIdentity.id] ?? 0} 个启用账号，并切换后续账单与同步视图。`
+                          : '未选择身份时无法进入。'}
+                      </Text>
+                      {selectedIdentity && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
+                          <Button
+                            appearance="subtle"
+                            size="small"
+                            onClick={handleSetDefaultIdentity}
+                            disabled={defaultIdentityId === selectedIdentity.id}
+                          >
+                            {defaultIdentityId === selectedIdentity.id ? '已设为默认身份' : '设为默认身份'}
+                          </Button>
+                          <Text size={100} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                            {config?.identity.remember_default
+                              ? '当前启动策略会优先加载默认身份。'
+                              : '当前启动策略是优先加载上一次使用的身份。'}
+                          </Text>
+                        </div>
+                      )}
+                    </div>
+                  </PageEnterMotion>
                 </>
               )}
             </div>

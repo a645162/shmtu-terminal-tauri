@@ -24,6 +24,10 @@ import { useAppStore } from '../../stores/appStore';
 import { ErrorCircle24Regular } from '@fluentui/react-icons';
 import type { CaptchaMode, AppTheme } from '../../types';
 import * as tauri from '../../services/tauri';
+import {
+  PageEnterMotion,
+  SectionEnterMotion,
+} from '../../components/Common/motion';
 
 type SettingsTab = 'security' | 'identity' | 'captcha' | 'sync' | 'data' | 'ui' | 'classification' | 'update' | 'debug';
 type IdentityStartupMode = 'last_used' | 'configured_default';
@@ -536,23 +540,25 @@ export const SettingsDialog: React.FC = () => {
           <DialogContent>
             <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: 16, minHeight: 350 }}>
               {/* Left Nav */}
-              <div>
-                <TabList
-                  vertical
-                  selectedValue={selectedTab}
-                  onTabSelect={(_, data) => setSelectedTab(data.value as SettingsTab)}
-                >
-                  <Tab value="security">安全</Tab>
-                  <Tab value="identity">身份</Tab>
-                  <Tab value="captcha">验证码</Tab>
-                  <Tab value="sync">同步</Tab>
-                  <Tab value="data">数据</Tab>
-                  <Tab value="ui">界面</Tab>
-                  <Tab value="classification">分类规则</Tab>
-                  <Tab value="update">更新</Tab>
-                  <Tab value="debug"><ErrorCircle24Regular style={{ marginRight: 4 }} />调试</Tab>
-                </TabList>
-              </div>
+              <SectionEnterMotion>
+                <div>
+                  <TabList
+                    vertical
+                    selectedValue={selectedTab}
+                    onTabSelect={(_, data) => setSelectedTab(data.value as SettingsTab)}
+                  >
+                    <Tab value="security">安全</Tab>
+                    <Tab value="identity">身份</Tab>
+                    <Tab value="captcha">验证码</Tab>
+                    <Tab value="sync">同步</Tab>
+                    <Tab value="data">数据</Tab>
+                    <Tab value="ui">界面</Tab>
+                    <Tab value="classification">分类规则</Tab>
+                    <Tab value="update">更新</Tab>
+                    <Tab value="debug"><ErrorCircle24Regular style={{ marginRight: 4 }} />调试</Tab>
+                  </TabList>
+                </div>
+              </SectionEnterMotion>
 
               {/* Right Content */}
               <div style={{ paddingLeft: 16, borderLeft: '1px solid var(--colorNeutralStroke2)' }}>
@@ -561,7 +567,9 @@ export const SettingsDialog: React.FC = () => {
                     <MessageBarBody>{message}</MessageBarBody>
                   </MessageBar>
                 )}
-                {renderContent()}
+                <PageEnterMotion key={selectedTab}>
+                  <div>{renderContent()}</div>
+                </PageEnterMotion>
               </div>
             </div>
           </DialogContent>

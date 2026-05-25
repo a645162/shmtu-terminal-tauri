@@ -20,6 +20,10 @@ import { PersonAdd24Regular, Delete24Regular, Edit24Regular } from '@fluentui/re
 import { useAppStore } from '../../stores/appStore';
 import type { Identity, Account } from '../../types';
 import * as tauri from '../../services/tauri';
+import {
+  PageEnterMotion,
+  SectionEnterMotion,
+} from '../../components/Common/motion';
 
 export const IdentityManagerDialog: React.FC = () => {
   const showIdentityManagerDialog = useAppStore((s) => s.showIdentityManagerDialog);
@@ -157,6 +161,7 @@ export const IdentityManagerDialog: React.FC = () => {
                   <div
                     key={identity.id}
                     onClick={() => handleSelectIdentity(identity)}
+                    className="motion-hover-lift"
                     style={{
                       padding: '8px 12px',
                       borderRadius: 4,
@@ -223,50 +228,57 @@ export const IdentityManagerDialog: React.FC = () => {
               <div>
                 {selectedIdentity ? (
                   <>
-                    <Text weight="semibold" block style={{ marginBottom: 8 }}>
-                      {selectedIdentity.name} 的账号列表
-                    </Text>
-                    {accounts.length === 0 ? (
-                      <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
-                        暂无账号
+                    <SectionEnterMotion>
+                      <Text weight="semibold" block style={{ marginBottom: 8 }}>
+                        {selectedIdentity.name} 的账号列表
                       </Text>
-                    ) : (
-                      accounts.map((account) => (
-                        <div
-                          key={account.id}
-                          onClick={() => handleSelectAccount(account)}
-                          style={{
-                            padding: 12,
-                            border: '1px solid var(--colorNeutralStroke2)',
-                            borderRadius: 4,
-                            marginBottom: 8,
-                            cursor: 'pointer',
-                            backgroundColor:
-                              selectedAccount?.id === account.id
-                                ? 'var(--colorBrandBackground2)'
-                                : 'transparent',
-                          }}
-                        >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <Text size={200} weight="semibold">
-                              {account.account_name}
-                            </Text>
-                            <Button
-                              appearance="subtle"
-                              icon={<Delete24Regular />}
-                              size="small"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteAccount(account.id);
-                              }}
-                            />
-                          </div>
-                          <Text size={100} style={{ color: 'var(--colorNeutralForeground3)' }}>
-                            学号: {account.account_id} | {account.enable ? '已启用' : '已禁用'}
+                    </SectionEnterMotion>
+                    <PageEnterMotion key={selectedIdentity.id}>
+                      <div>
+                        {accounts.length === 0 ? (
+                          <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                            暂无账号
                           </Text>
-                        </div>
-                      ))
-                    )}
+                        ) : (
+                          accounts.map((account) => (
+                            <div
+                              key={account.id}
+                              onClick={() => handleSelectAccount(account)}
+                              className="motion-hover-lift motion-sheen"
+                              style={{
+                                padding: 12,
+                                border: '1px solid var(--colorNeutralStroke2)',
+                                borderRadius: 4,
+                                marginBottom: 8,
+                                cursor: 'pointer',
+                                backgroundColor:
+                                  selectedAccount?.id === account.id
+                                    ? 'var(--colorBrandBackground2)'
+                                    : 'transparent',
+                              }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <Text size={200} weight="semibold">
+                                  {account.account_name}
+                                </Text>
+                                <Button
+                                  appearance="subtle"
+                                  icon={<Delete24Regular />}
+                                  size="small"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteAccount(account.id);
+                                  }}
+                                />
+                              </div>
+                              <Text size={100} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                                学号: {account.account_id} | {account.enable ? '已启用' : '已禁用'}
+                              </Text>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </PageEnterMotion>
                     <Button
                       appearance="subtle"
                       icon={<PersonAdd24Regular />}
@@ -288,7 +300,8 @@ export const IdentityManagerDialog: React.FC = () => {
 
                     {/* Account Edit Form */}
                     {selectedAccount && (
-                      <>
+                      <PageEnterMotion key={selectedAccount.id}>
+                        <div>
                         <Divider style={{ margin: '12px 0' }} />
                         <Text weight="semibold" block style={{ marginBottom: 8 }}>
                           {selectedAccount.id === -1 ? '添加账号' : '编辑账号'}
@@ -357,7 +370,8 @@ export const IdentityManagerDialog: React.FC = () => {
                             )}
                           </div>
                         </div>
-                      </>
+                        </div>
+                      </PageEnterMotion>
                     )}
                   </>
                 ) : (

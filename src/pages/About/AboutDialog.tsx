@@ -14,6 +14,9 @@ import {
 import { Info24Regular } from '@fluentui/react-icons';
 import { useAppStore } from '../../stores/appStore';
 import * as tauri from '../../services/tauri';
+import {
+  SectionEnterMotion,
+} from '../../components/Common/motion';
 
 export const AboutDialog: React.FC = () => {
   const showAboutDialog = useAppStore((s) => s.showAboutDialog);
@@ -53,14 +56,16 @@ export const AboutDialog: React.FC = () => {
             关于 海大终端
           </DialogTitle>
           <DialogContent>
-            <div style={{ textAlign: 'center', padding: '16px 0' }}>
-              <Text size={700} weight="bold" block style={{ marginBottom: 4 }}>
-                海大终端
-              </Text>
-              <Text size={300} style={{ color: 'var(--colorNeutralForeground3)' }}>
-                版本 {version}
-              </Text>
-            </div>
+            <SectionEnterMotion>
+              <div className="motion-sheen" style={{ textAlign: 'center', padding: '16px 0' }}>
+                <Text size={700} weight="bold" block style={{ marginBottom: 4 }}>
+                  海大终端
+                </Text>
+                <Text size={300} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                  版本 {version}
+                </Text>
+              </div>
+            </SectionEnterMotion>
 
             <Divider style={{ margin: '12px 0' }} />
 

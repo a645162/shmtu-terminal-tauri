@@ -108,6 +108,13 @@ impl ConfigAccess {
         let config = content.and_then(|c| toml::from_str::<crate::config::AppConfig>(&c).ok());
         config.map(|c| c.captcha.remote_ocr_port).unwrap_or(0)
     }
+
+    fn ocr_retry_count(&self) -> usize {
+        let config_path = self.data_dir.join("app_config.toml");
+        let content = std::fs::read_to_string(&config_path).ok();
+        let config = content.and_then(|c| toml::from_str::<crate::config::AppConfig>(&c).ok());
+        config.map(|c| c.captcha.ocr_retry_count).unwrap_or(3)
+    }
 }
 
 impl BillSyncService {
@@ -196,6 +203,40 @@ impl BillSyncService {
             return Ok(cached_result);
         }
 
+        let cfg = ConfigAccess::new(&self.db_manager);
+        if matches!(cfg.captcha_mode(), crate::config::CaptchaMode::Manual) {
+            let mut epay = EpayAuth::new()?;
+            match epay.probe_login().await? {
+                LoginProbe::AlreadyLoggedIn => {
+                    return self
+                        .sync_logged_in_account(account, &epay, sync_options)
+                        .await;
+                }
+                LoginProbe::NeedLogin { .. } => {
+                    let challenge = epay.prepare_challenge().await?;
+                    let image = Self::encode_captcha_image(&challenge.captcha_image);
+                    let execution = challenge.execution.clone();
+
+                    self.store_pending_manual_sync(PendingManualSync {
+                        identity_id: account.identity_id,
+                        sync_options: sync_options.clone(),
+                        current_account: account.clone(),
+                        remaining_accounts: VecDeque::new(),
+                        results: Vec::new(),
+                        total_new_count: 0,
+                        epay,
+                        execution: execution.clone(),
+                    })
+                    .await;
+
+                    return Err(AppError::Sync(format!(
+                        "MANUAL_CAPTCHA_REQUIRED|{}|{}",
+                        image, execution
+                    )));
+                }
+            }
+        }
+
         let password = self
             .db_manager
             .decrypt_account_password(account, &self.crypto)?;
@@ -282,9 +323,10 @@ impl BillSyncService {
 
     async fn login_auto(&self, username: &str, password: &str) -> AppResult<EpayAuth> {
         let cfg = ConfigAccess::new(&self.db_manager);
+        let max_attempts = cfg.ocr_retry_count().max(1);
 
-        for attempt in 1..=3 {
-            tracing::info!("[Sync] Login attempt {}/3", attempt);
+        for attempt in 1..=max_attempts {
+            tracing::info!("[Sync] Login attempt {}/{}", attempt, max_attempts);
             let mut epay = EpayAuth::new()?;
             epay.probe_login().await?;
             let challenge = epay.prepare_challenge().await?;
@@ -297,7 +339,7 @@ impl BillSyncService {
 
             tracing::info!("[Sync] Using remote OCR {}:{}", host, port);
             let captcha_code = shmtu_cas::captcha::OcrCaptchaResolver::new(&host, port)
-                .with_retries(3)
+                .with_retries(max_attempts)
                 .resolve(&challenge.captcha_image)
                 .await?
                 .into_final_answer();
@@ -315,8 +357,8 @@ impl BillSyncService {
                     }
                 }
                 LoginSubmitResult::ValidateCodeError => {
-                    tracing::warn!("[Sync] Captcha wrong, retry {}/3", attempt);
-                    if attempt < 3 {
+                    tracing::warn!("[Sync] Captcha wrong, retry {}/{}", attempt, max_attempts);
+                    if attempt < max_attempts {
                         continue;
                     }
                     return Err(AppError::Sync("验证码识别多次失败".to_string()));
@@ -471,14 +513,32 @@ impl BillSyncService {
         self.db_manager.clear_merged_non_manual(identity_id).await?;
         let _ = self.db_manager.clear_operation_logs(identity_id, None).await;
         let accounts = self.get_enabled_accounts_for_identity(identity_id).await?;
+        // 清除所有账号的旧数据和 session
+        for account in &accounts {
+            let _ = self.db_manager.clear_account_original(&account.account_id).await;
+            let _ = self.db_manager.invalidate_session(&account.account_id).await;
+        }
+
+        let sync_options = SyncOptions {
+            start_page: 1,
+            max_pages: 1000,
+            bill_type: BillType::All,
+            early_stop_threshold: u32::MAX,
+        };
+
+        let cfg = ConfigAccess::new(&self.db_manager);
+        if matches!(cfg.captcha_mode(), crate::config::CaptchaMode::Manual) {
+            tracing::info!("[Sync] full_sync_identity: manual captcha mode");
+            self.clear_pending_manual_sync().await;
+            return self
+                .sync_identity_manual(identity_id, sync_options, progress_callback)
+                .await;
+        }
+
         let mut results = Vec::new();
         let mut total_new = 0;
 
         for (idx, account) in accounts.iter().enumerate() {
-            // 清除该账号的原始数据和 session
-            let _ = self.db_manager.clear_account_original(&account.account_id).await;
-            // 全量更新时清除旧 session，强制重新登录
-            let _ = self.db_manager.invalidate_session(&account.account_id).await;
             if let Some(cb) = progress_callback {
                 cb(SyncProgress {
                     current_account: account.account_name.clone(),
@@ -487,12 +547,6 @@ impl BillSyncService {
                     status: SyncStatus::ProbingLogin,
                 });
             }
-            let sync_options = SyncOptions {
-                start_page: 1,
-                max_pages: 1000,
-                bill_type: BillType::All,
-                early_stop_threshold: u32::MAX,
-            };
             let account_result = self
                 .sync_single_account(account, &sync_options, progress_callback)
                 .await?;

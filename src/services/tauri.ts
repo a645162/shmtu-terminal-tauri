@@ -158,6 +158,14 @@ export async function full_sync(identityId: number): Promise<SyncProgress> {
   return invoke<SyncProgress>('full_sync', { identityId });
 }
 
+export async function incremental_sync_account(identityId: number, accountId: string): Promise<SyncProgress> {
+  return invoke<SyncProgress>('incremental_sync_account', { identityId, accountId });
+}
+
+export async function full_sync_account(identityId: number, accountId: string): Promise<SyncProgress> {
+  return invoke<SyncProgress>('full_sync_account', { identityId, accountId });
+}
+
 export async function get_sync_progress(): Promise<SyncProgress> {
   return invoke<SyncProgress>('get_sync_progress');
 }
