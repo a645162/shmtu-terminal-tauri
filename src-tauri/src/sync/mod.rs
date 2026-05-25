@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 
+use chrono::{Duration, Local};
 use shmtu_cas::captcha::CaptchaResolver;
 use shmtu_cas::cas::epay::{EpayAuth, LoginProbe, LoginSubmitResult};
 use shmtu_cas::classifier::PositionTranslator;
@@ -13,6 +14,17 @@ use crate::error::{AppError, AppResult};
 use crate::models::Account;
 
 pub type SyncProgressCallback = Box<dyn Fn(SyncProgress) + Send + Sync>;
+
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SyncRangePreset {
+    Week,
+    HalfMonth,
+    Month,
+    HalfYear,
+    Year,
+    All,
+}
 
 #[derive(Debug, Clone)]
 pub struct SyncProgress {
@@ -169,11 +181,16 @@ impl BillSyncService {
     pub async fn sync_identity(
         &self,
         identity_id: i64,
+        sync_range: SyncRangePreset,
         progress_callback: Option<&SyncProgressCallback>,
     ) -> AppResult<IdentitySyncResult> {
-        tracing::info!("[Sync] sync_identity called, identity_id={}", identity_id);
+        tracing::info!(
+            "[Sync] sync_identity called, identity_id={}, sync_range={:?}",
+            identity_id,
+            sync_range
+        );
         let cfg = ConfigAccess::new(&self.db_manager);
-        let sync_options = Self::default_incremental_sync_options();
+        let sync_options = Self::default_incremental_sync_options(sync_range);
 
         if matches!(cfg.captcha_mode(), crate::config::CaptchaMode::Manual) {
             tracing::info!("[Sync] Manual mode detected");
@@ -721,9 +738,14 @@ impl BillSyncService {
     pub async fn full_sync_identity(
         &self,
         identity_id: i64,
+        sync_range: SyncRangePreset,
         progress_callback: Option<&SyncProgressCallback>,
     ) -> AppResult<IdentitySyncResult> {
-        tracing::info!("[Sync] full_sync_identity, identity_id={}", identity_id);
+        tracing::info!(
+            "[Sync] full_sync_identity, identity_id={}, sync_range={:?}",
+            identity_id,
+            sync_range
+        );
         // 全量更新：清空旧数据
         self.db_manager.clear_merged_non_manual(identity_id).await?;
         let _ = self.db_manager.clear_operation_logs(identity_id, None).await;
@@ -739,6 +761,7 @@ impl BillSyncService {
             max_pages: 1000,
             bill_type: BillType::All,
             early_stop_threshold: u32::MAX,
+            since_timestamp: Self::range_since_timestamp(sync_range),
         };
 
         let cfg = ConfigAccess::new(&self.db_manager);
@@ -758,24 +781,20 @@ impl BillSyncService {
         &self,
         identity_id: i64,
         account_id: &str,
+        sync_range: SyncRangePreset,
         progress_callback: Option<&SyncProgressCallback>,
     ) -> AppResult<IdentitySyncResult> {
-        tracing::info!("[Sync] sync_single_account_by_id, identity_id={}, account_id={}", identity_id, account_id);
+        tracing::info!(
+            "[Sync] sync_single_account_by_id, identity_id={}, account_id={}, sync_range={:?}",
+            identity_id,
+            account_id,
+            sync_range
+        );
         let account = self
             .find_enabled_account(identity_id, account_id)
             .await?;
-        tracing::info!(
-            "[Sync] full_sync_single_account clearing original/session/merged data for account_id={}",
-            account.account_id
-        );
 
-        let sync_options = Self::default_incremental_sync_options();
-        let sync_options = SyncOptions {
-            start_page: sync_options.start_page,
-            max_pages: sync_options.max_pages,
-            bill_type: BillType::All,
-            early_stop_threshold: sync_options.early_stop_threshold,
-        };
+        let sync_options = Self::default_incremental_sync_options(sync_range);
         self.run_accounts(&[account], &sync_options, progress_callback).await
     }
 
@@ -784,9 +803,15 @@ impl BillSyncService {
         &self,
         identity_id: i64,
         account_id: &str,
+        sync_range: SyncRangePreset,
         progress_callback: Option<&SyncProgressCallback>,
     ) -> AppResult<IdentitySyncResult> {
-        tracing::info!("[Sync] full_sync_single_account, identity_id={}, account_id={}", identity_id, account_id);
+        tracing::info!(
+            "[Sync] full_sync_single_account, identity_id={}, account_id={}, sync_range={:?}",
+            identity_id,
+            account_id,
+            sync_range
+        );
         let account = self
             .find_enabled_account(identity_id, account_id)
             .await?;
@@ -803,6 +828,7 @@ impl BillSyncService {
             max_pages: 1000,
             bill_type: BillType::All,
             early_stop_threshold: u32::MAX,
+            since_timestamp: Self::range_since_timestamp(sync_range),
         };
         self.run_accounts(&[account], &sync_options, progress_callback).await
     }
@@ -1314,13 +1340,27 @@ impl BillSyncService {
         pending
     }
 
-    fn default_incremental_sync_options() -> SyncOptions {
+    fn default_incremental_sync_options(sync_range: SyncRangePreset) -> SyncOptions {
         SyncOptions {
             start_page: 1,
             max_pages: 100,
             bill_type: BillType::All,
             early_stop_threshold: 10,
+            since_timestamp: Self::range_since_timestamp(sync_range),
         }
+    }
+
+    fn range_since_timestamp(sync_range: SyncRangePreset) -> Option<i64> {
+        let now = Local::now();
+        let since = match sync_range {
+            SyncRangePreset::Week => Some(now - Duration::days(7)),
+            SyncRangePreset::HalfMonth => Some(now - Duration::days(15)),
+            SyncRangePreset::Month => Some(now - Duration::days(30)),
+            SyncRangePreset::HalfYear => Some(now - Duration::days(183)),
+            SyncRangePreset::Year => Some(now - Duration::days(365)),
+            SyncRangePreset::All => None,
+        };
+        since.map(|dt| dt.timestamp())
     }
 
     fn encode_captcha_image(image: &[u8]) -> String {

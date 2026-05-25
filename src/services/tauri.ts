@@ -128,6 +128,8 @@ export interface DedupeResult {
   removed_count: number;
 }
 
+export type SyncRangePreset = 'week' | 'half_month' | 'month' | 'half_year' | 'year' | 'all';
+
 export async function query_bills(params: BillQueryParams): Promise<BillQueryResult> {
   return invoke<BillQueryResult>('query_bills', { params });
 }
@@ -150,20 +152,20 @@ export async function dedupe_account_bills(identityId: number, accountId: string
 
 // ========== Sync ==========
 
-export async function incremental_sync(identityId: number): Promise<SyncProgress> {
-  return invoke<SyncProgress>('incremental_sync', { identityId });
+export async function incremental_sync(identityId: number, syncRange: SyncRangePreset): Promise<SyncProgress> {
+  return invoke<SyncProgress>('incremental_sync', { identityId, syncRange });
 }
 
-export async function full_sync(identityId: number): Promise<SyncProgress> {
-  return invoke<SyncProgress>('full_sync', { identityId });
+export async function full_sync(identityId: number, syncRange: SyncRangePreset): Promise<SyncProgress> {
+  return invoke<SyncProgress>('full_sync', { identityId, syncRange });
 }
 
-export async function incremental_sync_account(identityId: number, accountId: string): Promise<SyncProgress> {
-  return invoke<SyncProgress>('incremental_sync_account', { identityId, accountId });
+export async function incremental_sync_account(identityId: number, accountId: string, syncRange: SyncRangePreset): Promise<SyncProgress> {
+  return invoke<SyncProgress>('incremental_sync_account', { identityId, accountId, syncRange });
 }
 
-export async function full_sync_account(identityId: number, accountId: string): Promise<SyncProgress> {
-  return invoke<SyncProgress>('full_sync_account', { identityId, accountId });
+export async function full_sync_account(identityId: number, accountId: string, syncRange: SyncRangePreset): Promise<SyncProgress> {
+  return invoke<SyncProgress>('full_sync_account', { identityId, accountId, syncRange });
 }
 
 export async function get_sync_progress(): Promise<SyncProgress> {

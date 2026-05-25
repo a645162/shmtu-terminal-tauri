@@ -148,10 +148,7 @@ export const BillPage: React.FC = () => {
   const setBillKeyword = useAppStore((s) => s.setBillKeyword);
   const setBillDateRange = useAppStore((s) => s.setBillDateRange);
   const loadBills = useAppStore((s) => s.loadBills);
-  const startSync = useAppStore((s) => s.startSync);
-  const startFullSync = useAppStore((s) => s.startFullSync);
-  const startSyncAccount = useAppStore((s) => s.startSyncAccount);
-  const startFullSyncAccount = useAppStore((s) => s.startFullSyncAccount);
+  const openSyncRangeDialog = useAppStore((s) => s.openSyncRangeDialog);
 
   const [searchInput, setSearchInput] = useState(billKeyword);
   const [dateRange, setDateRange] = useState('all');
@@ -176,9 +173,9 @@ export const BillPage: React.FC = () => {
 
   const handleSync = useCallback(() => {
     if (currentIdentity) {
-      startSync(currentIdentity.id);
+      openSyncRangeDialog({ kind: 'identity_incremental', identityId: currentIdentity.id });
     }
-  }, [currentIdentity, startSync]);
+  }, [currentIdentity, openSyncRangeDialog]);
 
   const handleRefresh = useCallback(() => {
     if (currentIdentity) {
@@ -188,21 +185,29 @@ export const BillPage: React.FC = () => {
 
   const handleFullSync = useCallback(() => {
     if (currentIdentity) {
-      startFullSync(currentIdentity.id);
+      openSyncRangeDialog({ kind: 'identity_full', identityId: currentIdentity.id });
     }
-  }, [currentIdentity, startFullSync]);
+  }, [currentIdentity, openSyncRangeDialog]);
 
   const handleAccountSync = useCallback((accountId: string) => {
     if (currentIdentity) {
-      startSyncAccount(currentIdentity.id, accountId);
+      openSyncRangeDialog({
+        kind: 'account_incremental',
+        identityId: currentIdentity.id,
+        accountId,
+      });
     }
-  }, [currentIdentity, startSyncAccount]);
+  }, [currentIdentity, openSyncRangeDialog]);
 
   const handleAccountFullSync = useCallback((accountId: string) => {
     if (currentIdentity) {
-      startFullSyncAccount(currentIdentity.id, accountId);
+      openSyncRangeDialog({
+        kind: 'account_full',
+        identityId: currentIdentity.id,
+        accountId,
+      });
     }
-  }, [currentIdentity, startFullSyncAccount]);
+  }, [currentIdentity, openSyncRangeDialog]);
 
   const handleDeleteBill = useCallback(
     async (bill: BillItem) => {

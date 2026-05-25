@@ -1,11 +1,20 @@
 use serde::{Deserialize, Serialize};
-use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
+use sea_orm::{ColumnTrait, Condition, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder};
 use tauri::State;
 
-use crate::db::BillStoreImpl;
+use crate::db::{init::bill_merged_model_to_app, BillStoreImpl};
 use crate::entity::bill_merged;
 use crate::models::BillMerged;
 use crate::state::AppState;
+
+fn normalize_bill_type_status(bill_type: &str) -> Option<&'static str> {
+    match bill_type {
+        "success" => Some("交易成功"),
+        "not_paid" => Some("#waitfor"),
+        "failure" => Some("#fail"),
+        _ => None,
+    }
+}
 
 /// 前端账单查询参数
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -138,30 +147,80 @@ pub async fn query_bills(
         );
     }
 
-    let (bills, _total_pages) = store
+    let _ = store
         .list_merged_bills(identity_id, params.page, params.page_size)
         .await
         .map_err(|e| e.to_string())?;
 
-    let total = bill_merged::Entity::find()
-        .filter(bill_merged::Column::IdentityId.eq(identity_id))
-        .count(db.db())
-        .await
-        .unwrap_or(0) as u32;
+    let mut condition = Condition::all().add(bill_merged::Column::IdentityId.eq(identity_id));
 
-    let items: Vec<BillItemFrontend> = bills.into_iter().map(BillItemFrontend::from).collect();
+    if let Some(account_id) = params.account_id.clone() {
+        condition = condition.add(bill_merged::Column::SourceAccountId.eq(account_id));
+    }
+
+    if let Some(status) = normalize_bill_type_status(&params.bill_type) {
+        condition = condition.add(bill_merged::Column::StatusStr.eq(status));
+    }
+
+    if let Some(date_start) = params.date_start.clone() {
+        condition = condition.add(bill_merged::Column::DateStr.gte(date_start.replace('-', ".")));
+    }
+
+    if let Some(date_end) = params.date_end.clone() {
+        condition = condition.add(bill_merged::Column::DateStr.lte(date_end.replace('-', ".")));
+    }
+
+    if let Some(keyword) = params.keyword.clone().map(|k| k.trim().to_string()).filter(|k| !k.is_empty()) {
+        condition = condition.add(
+            Condition::any()
+                .add(bill_merged::Column::ItemType.contains(&keyword))
+                .add(bill_merged::Column::TargetUser.contains(&keyword))
+                .add(bill_merged::Column::Number.contains(&keyword))
+                .add(bill_merged::Column::NumberList.contains(&keyword))
+                .add(bill_merged::Column::Position.contains(&keyword))
+                .add(bill_merged::Column::Room.contains(&keyword))
+                .add(bill_merged::Column::Notes.contains(&keyword)),
+        );
+    }
+
+    let page = params.page.max(1);
+    let page_size = params.page_size.max(1);
+
+    let paginator = bill_merged::Entity::find()
+        .filter(condition)
+        .order_by_desc(bill_merged::Column::Timestamp)
+        .order_by_desc(bill_merged::Column::Id)
+        .paginate(db.db(), page_size as u64);
+
+    let total = paginator.num_items().await.map_err(|e| e.to_string())? as u32;
+    let models = paginator
+        .fetch_page((page - 1) as u64)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let items: Vec<BillItemFrontend> = models
+        .into_iter()
+        .map(bill_merged_model_to_app)
+        .map(BillItemFrontend::from)
+        .collect();
 
     tracing::debug!(
-        "[Bill] query_bills: returned {} items, total={}",
+        "[Bill] query_bills: returned {} items, total={}, page={}, page_size={}, bill_type={}, keyword={:?}, date_start={:?}, date_end={:?}",
         items.len(),
-        total
+        total,
+        page,
+        page_size,
+        params.bill_type,
+        params.keyword,
+        params.date_start,
+        params.date_end
     );
 
     Ok(BillQueryResult {
         items,
         total,
-        page: params.page,
-        page_size: params.page_size,
+        page,
+        page_size,
     })
 }
 

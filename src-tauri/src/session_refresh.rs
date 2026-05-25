@@ -80,7 +80,7 @@ impl SessionExpirationService {
 
         // 启动后台任务
         tokio::spawn(async move {
-            let mut rng = rand_simple();
+            let rng = rand_simple();
             let base_interval = check_interval * 60; // 转换为秒
 
             loop {

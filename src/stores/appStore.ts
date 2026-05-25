@@ -5,6 +5,7 @@ import type {
   BillItem,
   BillType,
   SyncProgress,
+  SyncRangePreset,
   AppTheme,
   StatisticsSummary,
   DailyTrendItem,
@@ -19,6 +20,29 @@ import { formatLocalDate } from '../utils/date';
 import { initTranslationData } from '../utils/translation';
 
 // ========== App Store ==========
+
+type PendingSyncAction =
+  | { kind: 'identity_incremental'; identityId: number }
+  | { kind: 'identity_full'; identityId: number }
+  | { kind: 'account_incremental'; identityId: number; accountId: string }
+  | { kind: 'account_full'; identityId: number; accountId: string };
+
+function syncRangeLabel(syncRange: SyncRangePreset): string {
+  switch (syncRange) {
+    case 'week':
+      return '最近一周';
+    case 'half_month':
+      return '最近半个月';
+    case 'month':
+      return '最近一个月';
+    case 'half_year':
+      return '最近半年';
+    case 'year':
+      return '最近一年';
+    case 'all':
+      return '全部';
+  }
+}
 
 interface AppState {
   // Current identity
@@ -64,9 +88,11 @@ interface AppState {
   showCaptchaTestDialog: boolean;
   showDataTransferDialog: boolean;
   showStatisticsDialog: boolean;
+  showSyncRangeDialog: boolean;
   showManualCaptchaDialog: boolean;
   captchaImage: string | null;
   captchaExecution: string | null;
+  pendingSyncAction: PendingSyncAction | null;
   // Error dialog state
   showErrorDialog: boolean;
   errorMessage: string;
@@ -84,10 +110,13 @@ interface AppState {
   setBillPageSize: (size: number) => void;
   loadConfig: () => Promise<void>;
   setTheme: (theme: AppTheme) => void;
-  startSync: (identityId: number) => Promise<void>;
-  startFullSync: (identityId: number) => Promise<void>;
-  startSyncAccount: (identityId: number, accountId: string) => Promise<void>;
-  startFullSyncAccount: (identityId: number, accountId: string) => Promise<void>;
+  startSync: (identityId: number, syncRange: SyncRangePreset) => Promise<void>;
+  startFullSync: (identityId: number, syncRange: SyncRangePreset) => Promise<void>;
+  startSyncAccount: (identityId: number, accountId: string, syncRange: SyncRangePreset) => Promise<void>;
+  startFullSyncAccount: (identityId: number, accountId: string, syncRange: SyncRangePreset) => Promise<void>;
+  openSyncRangeDialog: (action: PendingSyncAction) => void;
+  closeSyncRangeDialog: () => void;
+  confirmSyncRange: (syncRange: SyncRangePreset) => Promise<void>;
   setShowStartupDialog: (show: boolean) => void;
   setShowIdentitySelectDialog: (show: boolean) => void;
   setShowIdentityManagerDialog: (show: boolean) => void;
@@ -153,9 +182,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   showCaptchaTestDialog: false,
   showDataTransferDialog: false,
   showStatisticsDialog: false,
+  showSyncRangeDialog: false,
   showManualCaptchaDialog: false,
   captchaImage: null,
   captchaExecution: null,
+  pendingSyncAction: null,
   showErrorDialog: false,
   errorMessage: '',
 
@@ -267,7 +298,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ config: nextConfig });
     tauri.save_config(nextConfig).catch(console.error);
   },
-  startSync: async (identityId) => {
+  startSync: async (identityId, syncRange) => {
     try {
       set({
         syncProgress: {
@@ -277,10 +308,10 @@ export const useAppStore = create<AppState>((set, get) => ({
           new_items: 0,
           is_running: true,
           status: 'running',
-          message: '正在执行增量同步...',
+          message: `正在执行增量同步（范围：${syncRangeLabel(syncRange)}）...`,
         },
       });
-      const progress = await tauri.incremental_sync(identityId);
+      const progress = await tauri.incremental_sync(identityId, syncRange);
       // 检查是否需要手动输入验证码
       if (progress.captcha_required && progress.captcha_image && progress.execution) {
         const previous = get().syncProgress;
@@ -315,7 +346,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  startFullSync: async (identityId) => {
+  startFullSync: async (identityId, syncRange) => {
     try {
       set({
         syncProgress: {
@@ -325,10 +356,10 @@ export const useAppStore = create<AppState>((set, get) => ({
           new_items: 0,
           is_running: true,
           status: 'running',
-          message: '正在执行全量同步，可能需要一点时间...',
+          message: `正在执行全量同步（范围：${syncRangeLabel(syncRange)}），可能需要一点时间...`,
         },
       });
-      const progress = await tauri.full_sync(identityId);
+      const progress = await tauri.full_sync(identityId, syncRange);
       if (progress.captcha_required && progress.captcha_image && progress.execution) {
         const previous = get().syncProgress;
         set({
@@ -361,7 +392,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  startSyncAccount: async (identityId, accountId) => {
+  startSyncAccount: async (identityId, accountId, syncRange) => {
     try {
       set({
         syncProgress: {
@@ -371,10 +402,10 @@ export const useAppStore = create<AppState>((set, get) => ({
           new_items: 0,
           is_running: true,
           status: 'running',
-          message: `正在同步账号 ${accountId}...`,
+          message: `正在同步账号 ${accountId}（范围：${syncRangeLabel(syncRange)}）...`,
         },
       });
-      const progress = await tauri.incremental_sync_account(identityId, accountId);
+      const progress = await tauri.incremental_sync_account(identityId, accountId, syncRange);
       if (progress.captcha_required && progress.captcha_image && progress.execution) {
         const previous = get().syncProgress;
         set({
@@ -407,7 +438,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  startFullSyncAccount: async (identityId, accountId) => {
+  startFullSyncAccount: async (identityId, accountId, syncRange) => {
     try {
       set({
         syncProgress: {
@@ -417,10 +448,10 @@ export const useAppStore = create<AppState>((set, get) => ({
           new_items: 0,
           is_running: true,
           status: 'running',
-          message: `正在全量同步账号 ${accountId}...`,
+          message: `正在全量同步账号 ${accountId}（范围：${syncRangeLabel(syncRange)}）...`,
         },
       });
-      const progress = await tauri.full_sync_account(identityId, accountId);
+      const progress = await tauri.full_sync_account(identityId, accountId, syncRange);
       if (progress.captcha_required && progress.captcha_image && progress.execution) {
         const previous = get().syncProgress;
         set({
@@ -453,6 +484,29 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  openSyncRangeDialog: (action) => set({ pendingSyncAction: action, showSyncRangeDialog: true }),
+  closeSyncRangeDialog: () => set({ showSyncRangeDialog: false, pendingSyncAction: null }),
+  confirmSyncRange: async (syncRange) => {
+    const action = get().pendingSyncAction;
+    if (!action) return;
+
+    set({ showSyncRangeDialog: false, pendingSyncAction: null });
+
+    switch (action.kind) {
+      case 'identity_incremental':
+        await get().startSync(action.identityId, syncRange);
+        return;
+      case 'identity_full':
+        await get().startFullSync(action.identityId, syncRange);
+        return;
+      case 'account_incremental':
+        await get().startSyncAccount(action.identityId, action.accountId, syncRange);
+        return;
+      case 'account_full':
+        await get().startFullSyncAccount(action.identityId, action.accountId, syncRange);
+        return;
+    }
+  },
   setShowStartupDialog: (show) => set({ showStartupDialog: show }),
   setShowIdentitySelectDialog: (show) => set({ showIdentitySelectDialog: show }),
   setShowIdentityManagerDialog: (show) => set({ showIdentityManagerDialog: show }),

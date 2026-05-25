@@ -85,6 +85,7 @@ export type CaptchaMode = 'manual' | 'remote_ocr' | 'local_onnx';
 
 // Captcha answer kind
 export type CaptchaAnswerKind = 'answer' | 'expression';
+export type SyncRangePreset = 'week' | 'half_month' | 'month' | 'half_year' | 'year' | 'all';
 
 // App theme
 export type AppTheme = 'light' | 'dark' | 'system';

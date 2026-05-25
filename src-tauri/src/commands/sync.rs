@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 
 use crate::state::AppState;
-use crate::sync::{SyncProgress, SyncProgressCallback, SyncStatus};
+use crate::sync::{SyncProgress, SyncProgressCallback, SyncRangePreset, SyncStatus};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncProgressFrontend {
@@ -231,15 +231,19 @@ pub async fn incremental_sync(
     state: State<'_, AppState>,
     app: AppHandle,
     identity_id: i64,
+    sync_range: SyncRangePreset,
 ) -> Result<SyncProgressFrontend, String> {
     tracing::info!(
-        "[Command] incremental_sync called, identity_id={}",
-        identity_id
+        "[Command] incremental_sync called, identity_id={}, sync_range={:?}",
+        identity_id,
+        sync_range
     );
 
     let sync_service = state.sync_service.read().await;
     let progress_callback = create_progress_callback(app.clone());
-    let result = sync_service.sync_identity(identity_id, Some(&progress_callback)).await;
+    let result = sync_service
+        .sync_identity(identity_id, sync_range, Some(&progress_callback))
+        .await;
 
     match result {
         Ok(r) => {
@@ -284,13 +288,18 @@ pub async fn full_sync(
     state: State<'_, AppState>,
     app: AppHandle,
     identity_id: i64,
+    sync_range: SyncRangePreset,
 ) -> Result<SyncProgressFrontend, String> {
-    tracing::info!("[Command] full_sync called, identity_id={}", identity_id);
+    tracing::info!(
+        "[Command] full_sync called, identity_id={}, sync_range={:?}",
+        identity_id,
+        sync_range
+    );
 
     let sync_service = state.sync_service.read().await;
     let progress_callback = create_progress_callback(app.clone());
     let result = sync_service
-        .full_sync_identity(identity_id, Some(&progress_callback))
+        .full_sync_identity(identity_id, sync_range, Some(&progress_callback))
         .await;
 
     match result {
@@ -338,16 +347,17 @@ pub async fn incremental_sync_account(
     app: AppHandle,
     identity_id: i64,
     account_id: String,
+    sync_range: SyncRangePreset,
 ) -> Result<SyncProgressFrontend, String> {
     tracing::info!(
-        "[Command] incremental_sync_account called, identity_id={}, account_id={}",
-        identity_id, account_id
+        "[Command] incremental_sync_account called, identity_id={}, account_id={}, sync_range={:?}",
+        identity_id, account_id, sync_range
     );
 
     let sync_service = state.sync_service.read().await;
     let progress_callback = create_progress_callback(app.clone());
     let result = sync_service.sync_single_account_by_id(
-        identity_id, &account_id, Some(&progress_callback),
+        identity_id, &account_id, sync_range, Some(&progress_callback),
     ).await;
 
     match result {
@@ -395,16 +405,17 @@ pub async fn full_sync_account(
     app: AppHandle,
     identity_id: i64,
     account_id: String,
+    sync_range: SyncRangePreset,
 ) -> Result<SyncProgressFrontend, String> {
     tracing::info!(
-        "[Command] full_sync_account called, identity_id={}, account_id={}",
-        identity_id, account_id
+        "[Command] full_sync_account called, identity_id={}, account_id={}, sync_range={:?}",
+        identity_id, account_id, sync_range
     );
 
     let sync_service = state.sync_service.read().await;
     let progress_callback = create_progress_callback(app.clone());
     let result = sync_service.full_sync_single_account(
-        identity_id, &account_id, Some(&progress_callback),
+        identity_id, &account_id, sync_range, Some(&progress_callback),
     ).await;
 
     match result {
