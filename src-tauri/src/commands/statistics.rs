@@ -92,6 +92,8 @@ const CATEGORY_COLORS: &[&str] = &[
     "#FF99C3", "#269A99",
 ];
 
+const INCOME_KEYWORDS: &[&str] = &["充值", "冲正", "退款", "返还", "补偿"];
+
 /// 解析日期字符串，支持 "YYYY.MM.DD"、"YYYY-MM-DD"、"YYYY/MM/DD" 三种格式。
 fn parse_bill_date(date_str: &str) -> Option<NaiveDate> {
     ["%Y.%m.%d", "%Y-%m-%d", "%Y/%m/%d"]
@@ -137,6 +139,14 @@ fn success_query(identity_id: i64) -> sea_orm::Select<bill_merged::Entity> {
         .filter(bill_merged::Column::StatusStr.eq("交易成功"))
 }
 
+fn is_income(model: &bill_merged::Model) -> bool {
+    let item_type = model.item_type.as_deref().unwrap_or("");
+    let target_user = model.target_user.as_deref().unwrap_or("");
+    INCOME_KEYWORDS
+        .iter()
+        .any(|keyword| item_type.contains(keyword) || target_user.contains(keyword))
+}
+
 /// 获取消费概览统计：总支出、日均、笔数等。
 #[tauri::command]
 pub async fn get_statistics_summary(
@@ -167,9 +177,21 @@ pub async fn get_statistics_summary(
         })?;
     let models = filter_models_by_date(models, &params.date_start, &params.date_end);
 
-    let expense: f64 = models.iter().map(|m| m.money.unwrap_or(0.0).abs()).sum();
-    let expense_count = models.len() as u32;
-    let (income, income_count) = (0.0, 0);
+    let mut expense = 0.0;
+    let mut income = 0.0;
+    let mut expense_count = 0u32;
+    let mut income_count = 0u32;
+
+    for model in &models {
+        let amount = model.money.unwrap_or(0.0).abs();
+        if is_income(model) {
+            income += amount;
+            income_count += 1;
+        } else {
+            expense += amount;
+            expense_count += 1;
+        }
+    }
 
     let days = {
         let unique_dates: std::collections::HashSet<&str> = models.iter()

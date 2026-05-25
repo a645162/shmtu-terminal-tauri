@@ -95,19 +95,19 @@ const CATEGORY_DISPLAY_NAMES: Record<string, string> = {
 
 // Category colors for charts
 const CATEGORY_COLORS: Record<string, string> = {
-  deposit: "#107C10",
-  electricity: "#D13438",
-  bath: "#0078D4",
-  hot_water: "#00B7C3",
-  cake: "#FF8C00",
-  canteen: "#8764B8",
-  library: "#FFB900",
-  hospital: "#E81123",
-  shop: "#0098BC",
-  laundry: "#881798",
-  network: "#498205",
-  transport: "#00B7C3",
-  other: "#8E8E8E",
+  deposit: "#17A34A",
+  electricity: "#E25555",
+  bath: "#2F80ED",
+  hot_water: "#06B6D4",
+  cake: "#F59E0B",
+  canteen: "#8B5CF6",
+  library: "#EAB308",
+  hospital: "#EF4444",
+  shop: "#0EA5A4",
+  laundry: "#D946EF",
+  network: "#65A30D",
+  transport: "#F97316",
+  other: "#64748B",
 };
 
 // ========== Schedule (from schedule.json) ==========

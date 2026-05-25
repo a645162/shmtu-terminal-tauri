@@ -45,14 +45,53 @@ function buildParams(identityId: number, rangeKey: string): tauri.StatisticsPara
   let dateEnd = formatLocalDate(now);
 
   switch (rangeKey) {
-    case 'week': {
+    case 'today': {
+      dateStart = dateEnd;
+      break;
+    }
+    case 'recent7days': {
       const d = new Date(now);
       d.setDate(d.getDate() - 6);
       dateStart = formatLocalDate(d);
       break;
     }
+    case 'week': {
+      const day = now.getDay();
+      const diff = day === 0 ? 6 : day - 1;
+      const d = new Date(now);
+      d.setDate(d.getDate() - diff);
+      dateStart = formatLocalDate(d);
+      break;
+    }
     case 'month': {
       const d = new Date(now.getFullYear(), now.getMonth(), 1);
+      dateStart = formatLocalDate(d);
+      break;
+    }
+    case 'recent30days': {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 29);
+      dateStart = formatLocalDate(d);
+      break;
+    }
+    case 'quarter': {
+      const d = new Date(now);
+      d.setMonth(d.getMonth() - 3);
+      d.setDate(d.getDate() + 1);
+      dateStart = formatLocalDate(d);
+      break;
+    }
+    case 'halfYear': {
+      const d = new Date(now);
+      d.setMonth(d.getMonth() - 6);
+      d.setDate(d.getDate() + 1);
+      dateStart = formatLocalDate(d);
+      break;
+    }
+    case 'year': {
+      const d = new Date(now);
+      d.setFullYear(d.getFullYear() - 1);
+      d.setDate(d.getDate() + 1);
       dateStart = formatLocalDate(d);
       break;
     }
@@ -190,17 +229,28 @@ export const StatisticsDialog: React.FC = () => {
               <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
                 <Dropdown
                   value={
+                    dateRange === 'today' ? '今天' :
+                    dateRange === 'recent7days' ? '最近7天' :
                     dateRange === 'week' ? '本周' :
                     dateRange === 'month' ? '本月' :
+                    dateRange === 'recent30days' ? '最近30天' :
+                    dateRange === 'quarter' ? '最近3个月' :
+                    dateRange === 'halfYear' ? '最近半年' :
+                    dateRange === 'year' ? '最近一年' :
                     dateRange === '30days' ? '近30天' : '本月'
                   }
                   selectedOptions={[dateRange]}
                   onOptionSelect={(_, data) => setDateRange(data.optionValue ?? 'month')}
                   style={{ minWidth: 120 }}
                 >
+                  <Option value="today">今天</Option>
+                  <Option value="recent7days">最近7天</Option>
                   <Option value="week">本周</Option>
                   <Option value="month">本月</Option>
-                  <Option value="30days">近30天</Option>
+                  <Option value="recent30days">最近30天</Option>
+                  <Option value="quarter">最近3个月</Option>
+                  <Option value="halfYear">最近半年</Option>
+                  <Option value="year">最近一年</Option>
                 </Dropdown>
                 <Dropdown
                   value={identities.find((i) => i.id.toString() === selectedIdentityId)?.name ?? ''}

@@ -139,12 +139,25 @@ export const FeaturesPage: React.FC = () => {
               className={feature.disabled ? 'motion-sheen' : 'motion-hover-lift motion-sheen'}
               style={{
                 cursor: feature.disabled ? 'not-allowed' : 'pointer',
-                opacity: feature.disabled ? 0.5 : 1,
+                opacity: feature.disabled ? 0.7 : 1,
+                filter: feature.disabled ? 'grayscale(1)' : 'none',
+                background: feature.disabled
+                  ? 'linear-gradient(135deg, var(--colorNeutralBackground3), var(--colorNeutralBackground2))'
+                  : undefined,
                 padding: 20,
               }}
               onClick={feature.disabled ? undefined : feature.action}
             >
-              <div className="motion-float" style={{ fontSize: 32, marginBottom: 8, color: 'var(--colorBrandForeground1)' }}>
+              <div
+                className={feature.disabled ? undefined : 'motion-float'}
+                style={{
+                  fontSize: 32,
+                  marginBottom: 8,
+                  color: feature.disabled
+                    ? 'var(--colorNeutralForeground3)'
+                    : 'var(--colorBrandForeground1)',
+                }}
+              >
                 {feature.icon}
               </div>
               <Subtitle2 block>{feature.title}</Subtitle2>

@@ -536,6 +536,26 @@ export const BillPage: React.FC = () => {
                 <BillDetail bill={detailBill} />
               </DialogContent>
               <DialogActions>
+                <Button
+                  appearance="secondary"
+                  icon={<Copy24Regular />}
+                  onClick={async () => {
+                    const detailString = buildBillFeedbackString(detailBill);
+                    await navigator.clipboard.writeText(detailString);
+                  }}
+                >
+                  复制字符串
+                </Button>
+                <Button
+                  appearance="secondary"
+                  icon={<Copy24Regular />}
+                  onClick={async () => {
+                    const payload = JSON.stringify(detailBill, null, 2);
+                    await navigator.clipboard.writeText(payload);
+                  }}
+                >
+                  复制JSON
+                </Button>
                 <Button appearance="secondary" onClick={() => setDetailBill(null)}>
                   关闭
                 </Button>
@@ -549,6 +569,23 @@ export const BillPage: React.FC = () => {
 };
 
 // Bill detail view
+function buildBillFeedbackString(bill: BillItem): string {
+  return [
+    `日期时间: ${bill.date_time_formatted || '—'}`,
+    `交易名称: ${normalizeTransactionName(bill)}`,
+    `交易号: ${normalizeTransactionNumber(bill)}`,
+    `对方账户: ${bill.target_user || '—'}`,
+    `位置: ${bill.position || '—'}`,
+    `房间/窗口: ${bill.room || '—'}`,
+    `金额: ${formatBillMoney(bill.money, bill.item_type || '')}`,
+    `支付方式: ${bill.method || '—'}`,
+    `状态: ${bill.status_str || '—'}`,
+    `来源学号: ${bill.source_account_id || '—'}`,
+    `同步时间: ${bill.synced_at || '—'}`,
+    `备注: ${bill.notes || '—'}`,
+  ].join('\n');
+}
+
 const BillDetail: React.FC<{ bill: BillItem }> = ({ bill }) => {
   const currentIdentity = useAppStore((s) => s.currentIdentity);
   const loadBills = useAppStore((s) => s.loadBills);
@@ -581,8 +618,31 @@ const BillDetail: React.FC<{ bill: BillItem }> = ({ bill }) => {
     { label: '同步时间', value: bill.synced_at || '—' },
   ];
 
+  const feedbackPayload = JSON.stringify(bill, null, 2);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div
+        style={{
+          padding: 10,
+          borderRadius: 8,
+          background: 'var(--colorNeutralBackground3)',
+          border: '1px solid var(--colorNeutralStroke2)',
+        }}
+      >
+        <Text size={100} style={{ color: 'var(--colorNeutralForeground3)', display: 'block', marginBottom: 4 }}>
+          JSON 预览
+        </Text>
+        <Text
+          size={100}
+          style={{
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+            wordBreak: 'break-all',
+          }}
+        >
+          {feedbackPayload}
+        </Text>
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '8px 16px' }}>
         {fields.map((f) => (
           <React.Fragment key={f.label}>
