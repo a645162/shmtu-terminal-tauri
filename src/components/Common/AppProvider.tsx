@@ -129,11 +129,12 @@ export const AppProvider: React.FC = () => {
       setSyncProgress({
         ...progress,
         message:
-          progress.status === 'completed'
-            ? `同步完成，本次新增 ${progress.new_items} 条记录`
-            : progress.status === 'captcha_required'
+          progress.message ??
+          (progress.status === 'captcha_required'
               ? progress.error ?? '需要输入验证码以继续'
-              : progress.message,
+              : progress.status === 'completed'
+                ? `同步完成，本次新增 ${progress.new_items} 条记录`
+                : undefined),
       });
     })
       .then((fn) => {

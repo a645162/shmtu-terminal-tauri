@@ -267,7 +267,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ config: nextConfig });
     tauri.save_config(nextConfig).catch(console.error);
   },
-
   startSync: async (identityId) => {
     try {
       set({
@@ -284,9 +283,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       const progress = await tauri.incremental_sync(identityId);
       // 检查是否需要手动输入验证码
       if (progress.captcha_required && progress.captcha_image && progress.execution) {
+        const previous = get().syncProgress;
         set({
           syncProgress: {
+            ...(previous && previous.status === 'captcha_required' ? previous : progress),
             ...progress,
+            account_id: progress.account_id || previous?.account_id || '',
+            current_account: progress.current_account || previous?.current_account || '',
+            account_index: progress.account_index ?? previous?.account_index,
+            total_accounts: progress.total_accounts ?? previous?.total_accounts,
             status: 'captcha_required',
             message: progress.error ?? '需要输入验证码以继续同步',
           },
@@ -299,7 +304,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({
         syncProgress: {
           ...progress,
-          message: `增量同步完成，本次新增 ${progress.new_items} 条记录`,
+          message: progress.message ?? `增量同步完成，本次新增 ${progress.new_items} 条记录`,
         },
       });
       get().loadBills();
@@ -325,9 +330,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
       const progress = await tauri.full_sync(identityId);
       if (progress.captcha_required && progress.captcha_image && progress.execution) {
+        const previous = get().syncProgress;
         set({
           syncProgress: {
+            ...(previous && previous.status === 'captcha_required' ? previous : progress),
             ...progress,
+            account_id: progress.account_id || previous?.account_id || '',
+            current_account: progress.current_account || previous?.current_account || '',
+            account_index: progress.account_index ?? previous?.account_index,
+            total_accounts: progress.total_accounts ?? previous?.total_accounts,
             status: 'captcha_required',
             message: progress.error ?? '需要输入验证码以继续全量同步',
           },
@@ -340,7 +351,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({
         syncProgress: {
           ...progress,
-          message: `全量同步完成，本次新增 ${progress.new_items} 条记录`,
+          message: progress.message ?? `全量同步完成，本次新增 ${progress.new_items} 条记录`,
         },
       });
       get().loadBills();
@@ -365,9 +376,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
       const progress = await tauri.incremental_sync_account(identityId, accountId);
       if (progress.captcha_required && progress.captcha_image && progress.execution) {
+        const previous = get().syncProgress;
         set({
           syncProgress: {
+            ...(previous && previous.status === 'captcha_required' ? previous : progress),
             ...progress,
+            account_id: progress.account_id || previous?.account_id || accountId,
+            current_account: progress.current_account || previous?.current_account || '',
+            account_index: progress.account_index ?? previous?.account_index,
+            total_accounts: progress.total_accounts ?? previous?.total_accounts,
             status: 'captcha_required',
             message: progress.error ?? `账号 ${accountId} 需要验证码`,
           },
@@ -380,7 +397,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({
         syncProgress: {
           ...progress,
-          message: `账号 ${accountId} 同步完成，本次新增 ${progress.new_items} 条记录`,
+          message: progress.message ?? `账号 ${accountId} 同步完成，本次新增 ${progress.new_items} 条记录`,
         },
       });
       get().loadBills();
@@ -405,9 +422,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
       const progress = await tauri.full_sync_account(identityId, accountId);
       if (progress.captcha_required && progress.captcha_image && progress.execution) {
+        const previous = get().syncProgress;
         set({
           syncProgress: {
+            ...(previous && previous.status === 'captcha_required' ? previous : progress),
             ...progress,
+            account_id: progress.account_id || previous?.account_id || accountId,
+            current_account: progress.current_account || previous?.current_account || '',
+            account_index: progress.account_index ?? previous?.account_index,
+            total_accounts: progress.total_accounts ?? previous?.total_accounts,
             status: 'captcha_required',
             message: progress.error ?? `账号 ${accountId} 需要验证码`,
           },
@@ -420,7 +443,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({
         syncProgress: {
           ...progress,
-          message: `账号 ${accountId} 全量同步完成，本次新增 ${progress.new_items} 条记录`,
+          message: progress.message ?? `账号 ${accountId} 全量同步完成，本次新增 ${progress.new_items} 条记录`,
         },
       });
       get().loadBills();
@@ -477,9 +500,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       );
 
       if (progress.captcha_required && progress.captcha_image && progress.execution) {
+        const previous = get().syncProgress;
         set({
           syncProgress: {
+            ...(previous && previous.status === 'captcha_required' ? previous : progress),
             ...progress,
+            account_id: progress.account_id || previous?.account_id || '',
+            current_account: progress.current_account || previous?.current_account || '',
+            account_index: progress.account_index ?? previous?.account_index,
+            total_accounts: progress.total_accounts ?? previous?.total_accounts,
             status: 'captcha_required',
             message: progress.error ?? '需要继续输入验证码',
           },
@@ -493,7 +522,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({
         syncProgress: {
           ...progress,
-          message: `同步完成，本次新增 ${progress.new_items} 条记录`,
+          message: progress.message ?? `同步完成，本次新增 ${progress.new_items} 条记录`,
         },
       });
       await get().loadBills();

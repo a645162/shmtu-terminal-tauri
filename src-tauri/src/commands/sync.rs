@@ -123,7 +123,7 @@ impl SyncProgressFrontend {
                     progress.total_new_count,
                     None,
                     Some(format!(
-                        "账号 {} 登录成功，正在准备拉取账单（{}/{}）...",
+                        "账号 {} 已通过登录检查，正在准备拉取账单（{}/{}）...",
                         progress.current_account,
                         progress.account_index + 1,
                         progress.total_accounts
@@ -134,13 +134,32 @@ impl SyncProgressFrontend {
                     page,
                     total,
                     true,
-                    progress.total_new_count,
+                    progress.new_count,
                     None,
                     Some(format!(
-                        "账号 {} 正在从校园平台拉取账单第 {}/{} 页（{}/{}）...",
+                        "账号 {} 正在从校园平台拉取账单第 {}/{} 页，当前账号新增 {} 条，累计新增 {} 条（{}/{}）...",
                         progress.current_account,
                         page,
                         total,
+                        progress.new_count,
+                        progress.total_new_count,
+                        progress.account_index + 1,
+                        progress.total_accounts
+                    )),
+                ),
+                SyncStatus::Persisting => (
+                    "running".to_string(),
+                    progress.pages_fetched,
+                    progress.pages_fetched,
+                    true,
+                    progress.new_count,
+                    None,
+                    Some(format!(
+                        "账号 {} 已拉取完成，正在写入原始账单并合并到身份：新增 {} 条，拉取 {} 页，累计新增 {} 条（{}/{}）",
+                        progress.current_account,
+                        progress.new_count,
+                        progress.pages_fetched,
+                        progress.total_new_count,
                         progress.account_index + 1,
                         progress.total_accounts
                     )),
@@ -174,7 +193,7 @@ impl SyncProgressFrontend {
             };
 
         Self {
-            account_id: progress.current_account.clone(),
+            account_id: progress.account_id,
             current_account: progress.current_account,
             account_index: progress.account_index as u32,
             total_accounts: progress.total_accounts as u32,
@@ -240,13 +259,11 @@ pub async fn incremental_sync(
                 parse_captcha_marker(&err_str, "MANUAL_CAPTCHA_REQUIRED|")
             {
                 tracing::info!("[Command] sync_identity requires manual captcha");
-                let progress = SyncProgressFrontend::captcha_required(
+                return Ok(SyncProgressFrontend::captcha_required(
                     image.to_string(),
                     execution.to_string(),
                     "请输入验证码",
-                );
-                let _ = app.emit("sync-progress", progress.clone());
-                return Ok(progress);
+                ));
             }
             tracing::error!("[Command] sync_identity FAILED: [{}]", err_str);
             Err(err_str)
@@ -286,13 +303,11 @@ pub async fn full_sync(
                 parse_captcha_marker(&err_str, "MANUAL_CAPTCHA_REQUIRED|")
             {
                 tracing::info!("[Command] full_sync requires manual captcha");
-                let progress = SyncProgressFrontend::captcha_required(
+                return Ok(SyncProgressFrontend::captcha_required(
                     image.to_string(),
                     execution.to_string(),
                     "请输入验证码",
-                );
-                let _ = app.emit("sync-progress", progress.clone());
-                return Ok(progress);
+                ));
             }
             tracing::error!("[Command] full_sync FAILED: [{}]", err_str);
             Err(err_str)
@@ -337,13 +352,11 @@ pub async fn incremental_sync_account(
                 parse_captcha_marker(&err_str, "MANUAL_CAPTCHA_REQUIRED|")
             {
                 tracing::info!("[Command] incremental_sync_account requires manual captcha");
-                let progress = SyncProgressFrontend::captcha_required(
+                return Ok(SyncProgressFrontend::captcha_required(
                     image.to_string(),
                     execution.to_string(),
                     "请输入验证码",
-                );
-                let _ = app.emit("sync-progress", progress.clone());
-                return Ok(progress);
+                ));
             }
             tracing::error!("[Command] incremental_sync_account FAILED: [{}]", err_str);
             Err(err_str)
@@ -388,13 +401,11 @@ pub async fn full_sync_account(
                 parse_captcha_marker(&err_str, "MANUAL_CAPTCHA_REQUIRED|")
             {
                 tracing::info!("[Command] full_sync_account requires manual captcha");
-                let progress = SyncProgressFrontend::captcha_required(
+                return Ok(SyncProgressFrontend::captcha_required(
                     image.to_string(),
                     execution.to_string(),
                     "请输入验证码",
-                );
-                let _ = app.emit("sync-progress", progress.clone());
-                return Ok(progress);
+                ));
             }
             tracing::error!("[Command] full_sync_account FAILED: [{}]", err_str);
             Err(err_str)
