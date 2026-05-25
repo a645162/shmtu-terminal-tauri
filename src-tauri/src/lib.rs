@@ -8,6 +8,7 @@ pub mod entity;
 pub mod error;
 pub mod export;
 pub mod models;
+pub mod session_refresh;
 pub mod state;
 pub mod sync;
 
@@ -84,6 +85,8 @@ pub fn run() {
             bill::dedupe_account_bills,
             cmd_sync::incremental_sync,
             cmd_sync::full_sync,
+            cmd_sync::incremental_sync_account,
+            cmd_sync::full_sync_account,
             cmd_sync::get_sync_progress,
             cmd_sync::cas_login,
             cmd_sync::check_login_status,
@@ -104,6 +107,9 @@ pub fn run() {
             cmd_config::set_startup_password,
             cmd_config::get_app_version,
             cmd_config::check_for_updates,
+            cmd_config::get_session_expiration_status,
+            cmd_config::check_session_expiration,
+            cmd_config::restart_session_expiration_service,
             statistics::get_statistics_summary,
             statistics::get_daily_trend,
             statistics::get_category_distribution,

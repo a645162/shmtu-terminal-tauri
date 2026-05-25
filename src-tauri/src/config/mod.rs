@@ -21,6 +21,8 @@ pub struct AppConfig {
     pub update: UpdateConfig,
     #[serde(default)]
     pub ui: UiConfig,
+    #[serde(default)]
+    pub session: SessionConfig,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -144,6 +146,20 @@ fn default_theme() -> String {
 }
 fn default_language() -> String {
     "zh-CN".to_string()
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SessionConfig {
+    /// Session 续期检查间隔（分钟），默认 10 分钟
+    #[serde(default = "default_session_refresh_interval")]
+    pub refresh_interval_minutes: u64,
+    /// 是否启用自动 session 续期
+    #[serde(default = "default_true")]
+    pub auto_refresh: bool,
+}
+
+fn default_session_refresh_interval() -> u64 {
+    10
 }
 
 pub struct TomlConfig {

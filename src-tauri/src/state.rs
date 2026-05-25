@@ -9,6 +9,7 @@ use crate::database::DatabaseFileManager;
 use crate::db::DatabaseManager;
 use crate::error::AppResult;
 use crate::export::ExportService;
+use crate::session_refresh::SessionExpirationService;
 use crate::sync::BillSyncService;
 
 /// 应用全局状态，通过 tauri::State 注入到所有命令中
@@ -21,6 +22,8 @@ pub struct AppState {
     pub classifier: Arc<RwLock<Option<BillClassifier>>>,
     /// 数据库文件管理器（支持本地+GitHub云端加载）
     pub db_file_manager: Arc<DatabaseFileManager>,
+    /// Session 过期检查服务
+    pub session_expiration_service: Arc<SessionExpirationService>,
 }
 
 impl AppState {
@@ -52,6 +55,20 @@ impl AppState {
 
         let export_service = ExportService::new(db_manager.clone_ref(), position_translator);
 
+        // Session 过期检查服务 - 创建 Arc 包装
+        let config_arc: Arc<RwLock<TomlConfig>> = Arc::new(RwLock::new(config));
+        let db_manager_arc = Arc::new(db_manager.clone_ref());
+        let session_expiration_service = Arc::new(SessionExpirationService::new(
+            config_arc.clone(),
+            db_manager_arc,
+            Arc::new(CryptoService::from_device_id("shmtu-terminal-device-key")),
+        ));
+        // 异步启动 session 过期检查服务
+        let expiration_service = session_expiration_service.clone();
+        tokio::spawn(async move {
+            expiration_service.start().await;
+        });
+
         // 从本地文件加载分类器
         let classifier = {
             let rules_path = db_file_manager.rules_path();
@@ -75,11 +92,12 @@ impl AppState {
         Ok(Self {
             db_manager: Arc::new(RwLock::new(db_manager)),
             crypto: Arc::new(RwLock::new(crypto)),
-            config: Arc::new(RwLock::new(config)),
+            config: config_arc,
             sync_service: Arc::new(RwLock::new(sync_service)),
             export_service: Arc::new(RwLock::new(export_service)),
             classifier: Arc::new(RwLock::new(classifier)),
             db_file_manager: Arc::new(db_file_manager),
+            session_expiration_service,
         })
     }
 

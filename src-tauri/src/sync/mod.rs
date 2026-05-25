@@ -467,6 +467,7 @@ impl BillSyncService {
         progress_callback: Option<&SyncProgressCallback>,
     ) -> AppResult<IdentitySyncResult> {
         tracing::info!("[Sync] full_sync_identity, identity_id={}", identity_id);
+        // 全量更新：清空旧数据
         self.db_manager.clear_merged_non_manual(identity_id).await?;
         let _ = self.db_manager.clear_operation_logs(identity_id, None).await;
         let accounts = self.get_enabled_accounts_for_identity(identity_id).await?;
@@ -474,7 +475,10 @@ impl BillSyncService {
         let mut total_new = 0;
 
         for (idx, account) in accounts.iter().enumerate() {
+            // 清除该账号的原始数据和 session
             let _ = self.db_manager.clear_account_original(&account.account_id).await;
+            // 全量更新时清除旧 session，强制重新登录
+            let _ = self.db_manager.invalidate_session(&account.account_id).await;
             if let Some(cb) = progress_callback {
                 cb(SyncProgress {
                     current_account: account.account_name.clone(),
@@ -499,6 +503,70 @@ impl BillSyncService {
         Ok(IdentitySyncResult {
             results,
             total_new_count: total_new,
+        })
+    }
+
+    /// 增量同步单个账号
+    pub async fn sync_single_account_by_id(
+        &self,
+        identity_id: i64,
+        account_id: &str,
+        progress_callback: Option<&SyncProgressCallback>,
+    ) -> AppResult<IdentitySyncResult> {
+        tracing::info!("[Sync] sync_single_account_by_id, identity_id={}, account_id={}", identity_id, account_id);
+        let accounts = self.get_enabled_accounts_for_identity(identity_id).await?;
+        let account = accounts
+            .into_iter()
+            .find(|a| a.account_id == account_id)
+            .ok_or_else(|| AppError::Sync(format!("账号 {} 不存在或已禁用", account_id)))?;
+
+        let sync_options = Self::default_incremental_sync_options();
+        let sync_options = SyncOptions {
+            start_page: sync_options.start_page,
+            max_pages: sync_options.max_pages,
+            bill_type: BillType::All,
+            early_stop_threshold: sync_options.early_stop_threshold,
+        };
+        let account_result = self.sync_single_account(&account, &sync_options, progress_callback).await?;
+
+        Ok(IdentitySyncResult {
+            total_new_count: account_result.new_count,
+            results: vec![account_result],
+        })
+    }
+
+    /// 全量同步单个账号（清空旧数据 + 清空旧 session 后重新同步）
+    pub async fn full_sync_single_account(
+        &self,
+        identity_id: i64,
+        account_id: &str,
+        progress_callback: Option<&SyncProgressCallback>,
+    ) -> AppResult<IdentitySyncResult> {
+        tracing::info!("[Sync] full_sync_single_account, identity_id={}, account_id={}", identity_id, account_id);
+        let accounts = self.get_enabled_accounts_for_identity(identity_id).await?;
+        let account = accounts
+            .into_iter()
+            .find(|a| a.account_id == account_id)
+            .ok_or_else(|| AppError::Sync(format!("账号 {} 不存在或已禁用", account_id)))?;
+
+        // 全量更新：清除该账号的旧数据和 session
+        let _ = self.db_manager.clear_account_original(&account.account_id).await;
+        // 清除旧 session，强制重新登录
+        let _ = self.db_manager.invalidate_session(&account.account_id).await;
+        // 清除该账号在合并表中的相关记录（非手动）
+        let _ = self.db_manager.clear_merged_by_account(identity_id, &account.account_id).await;
+
+        let sync_options = SyncOptions {
+            start_page: 1,
+            max_pages: 1000,
+            bill_type: BillType::All,
+            early_stop_threshold: u32::MAX,
+        };
+        let account_result = self.sync_single_account(&account, &sync_options, progress_callback).await?;
+
+        Ok(IdentitySyncResult {
+            total_new_count: account_result.new_count,
+            results: vec![account_result],
         })
     }
 

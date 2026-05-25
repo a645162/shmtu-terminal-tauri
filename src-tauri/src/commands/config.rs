@@ -1,7 +1,30 @@
 use tauri::State;
 
 use crate::config::AppConfig;
+use crate::session_refresh::{SessionExpirationResult, SessionExpirationStatus};
 use crate::state::AppState;
+
+#[tauri::command]
+pub async fn get_session_expiration_status(
+    state: State<'_, AppState>,
+) -> Result<SessionExpirationStatus, String> {
+    Ok(state.session_expiration_service.get_status().await)
+}
+
+#[tauri::command]
+pub async fn check_session_expiration(
+    state: State<'_, AppState>,
+) -> Result<SessionExpirationResult, String> {
+    Ok(state.session_expiration_service.check_now().await)
+}
+
+#[tauri::command]
+pub async fn restart_session_expiration_service(
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state.session_expiration_service.restart().await;
+    Ok(())
+}
 
 #[tauri::command]
 pub async fn load_config(state: State<'_, AppState>) -> Result<AppConfig, String> {
@@ -16,7 +39,11 @@ pub async fn save_config(state: State<'_, AppState>, config: AppConfig) -> Resul
 
     // 重新加载分类器
     drop(cfg);
-    state.reload_classifier().await.map_err(|e| e.to_string())
+    state.reload_classifier().await.map_err(|e| e.to_string())?;
+
+    // 重启 session 过期检查服务（配置可能已变更）
+    state.session_expiration_service.restart().await;
+    Ok(())
 }
 
 #[tauri::command]

@@ -150,6 +150,94 @@ pub async fn full_sync(
     Ok(SyncProgressFrontend::success(result.total_new_count))
 }
 
+/// 增量同步单个账号
+#[tauri::command]
+pub async fn incremental_sync_account(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    identity_id: i64,
+    account_id: String,
+) -> Result<SyncProgressFrontend, String> {
+    tracing::info!(
+        "[Command] incremental_sync_account called, identity_id={}, account_id={}",
+        identity_id, account_id
+    );
+
+    let sync_service = state.sync_service.read().await;
+    let result = sync_service.sync_single_account_by_id(
+        identity_id, &account_id, None,
+    ).await;
+
+    match result {
+        Ok(r) => {
+            let _ = app.emit(
+                "sync-progress",
+                SyncProgressFrontend::success(r.total_new_count),
+            );
+            tracing::info!(
+                "[Command] incremental_sync_account completed, account_id={}, new_items={}",
+                account_id, r.total_new_count
+            );
+            Ok(SyncProgressFrontend::success(r.total_new_count))
+        }
+        Err(e) => {
+            let err_str = e.to_string();
+            tracing::error!("[Command] incremental_sync_account FAILED: [{}]", err_str);
+            Err(err_str)
+        }
+    }
+}
+
+/// 全量同步单个账号（清除旧数据后重新同步）
+#[tauri::command]
+pub async fn full_sync_account(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    identity_id: i64,
+    account_id: String,
+) -> Result<SyncProgressFrontend, String> {
+    tracing::info!(
+        "[Command] full_sync_account called, identity_id={}, account_id={}",
+        identity_id, account_id
+    );
+
+    let sync_service = state.sync_service.read().await;
+    let result = sync_service.full_sync_single_account(
+        identity_id, &account_id, None,
+    ).await;
+
+    match result {
+        Ok(r) => {
+            let _ = app.emit(
+                "sync-progress",
+                SyncProgressFrontend::success(r.total_new_count),
+            );
+            tracing::info!(
+                "[Command] full_sync_account completed, account_id={}, new_items={}",
+                account_id, r.total_new_count
+            );
+            Ok(SyncProgressFrontend::success(r.total_new_count))
+        }
+        Err(e) => {
+            let err_str = e.to_string();
+            if let Some((image, execution)) =
+                parse_captcha_marker(&err_str, "MANUAL_CAPTCHA_REQUIRED|")
+            {
+                tracing::info!("[Command] full_sync_account requires manual captcha");
+                let progress = SyncProgressFrontend::captcha_required(
+                    image.to_string(),
+                    execution.to_string(),
+                    "请输入验证码",
+                );
+                let _ = app.emit("sync-progress", progress.clone());
+                return Ok(progress);
+            }
+            tracing::error!("[Command] full_sync_account FAILED: [{}]", err_str);
+            Err(err_str)
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn get_sync_progress() -> Result<SyncProgressFrontend, String> {
     Ok(SyncProgressFrontend::idle())
