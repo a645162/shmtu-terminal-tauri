@@ -98,6 +98,9 @@ interface AppState {
   setShowStatisticsDialog: (show: boolean) => void;
   setShowManualCaptchaDialog: (show: boolean) => void;
   setCaptchaForManualLogin: (image: string | null, execution: string | null) => void;
+  submitManualCaptcha: (captchaCode: string, execution: string) => Promise<void>;
+  setSyncProgress: (progress: SyncProgress | null) => void;
+  clearSyncProgress: () => void;
   showError: (message: string) => void;
   setShowErrorDialog: (show: boolean) => void;
   loadStatisticsSummary: (params: tauri.StatisticsParams) => Promise<void>;
@@ -267,18 +270,38 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   startSync: async (identityId) => {
     try {
+      set({
+        syncProgress: {
+          account_id: '',
+          current_page: 0,
+          total_pages: 0,
+          new_items: 0,
+          is_running: true,
+          status: 'running',
+          message: '正在执行增量同步...',
+        },
+      });
       const progress = await tauri.incremental_sync(identityId);
       // 检查是否需要手动输入验证码
       if (progress.captcha_required && progress.captcha_image && progress.execution) {
         set({
-          syncProgress: { ...progress, status: 'captcha_required' },
+          syncProgress: {
+            ...progress,
+            status: 'captcha_required',
+            message: progress.error ?? '需要输入验证码以继续同步',
+          },
           captchaImage: progress.captcha_image,
           captchaExecution: progress.execution,
           showManualCaptchaDialog: true,
         });
         return;
       }
-      set({ syncProgress: progress });
+      set({
+        syncProgress: {
+          ...progress,
+          message: `增量同步完成，本次新增 ${progress.new_items} 条记录`,
+        },
+      });
       get().loadBills();
       // 同步完成后刷新统计数据
       get().refreshStatistics();
@@ -289,17 +312,37 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   startFullSync: async (identityId) => {
     try {
+      set({
+        syncProgress: {
+          account_id: '',
+          current_page: 0,
+          total_pages: 0,
+          new_items: 0,
+          is_running: true,
+          status: 'running',
+          message: '正在执行全量同步，可能需要一点时间...',
+        },
+      });
       const progress = await tauri.full_sync(identityId);
       if (progress.captcha_required && progress.captcha_image && progress.execution) {
         set({
-          syncProgress: { ...progress, status: 'captcha_required' },
+          syncProgress: {
+            ...progress,
+            status: 'captcha_required',
+            message: progress.error ?? '需要输入验证码以继续全量同步',
+          },
           captchaImage: progress.captcha_image,
           captchaExecution: progress.execution,
           showManualCaptchaDialog: true,
         });
         return;
       }
-      set({ syncProgress: progress });
+      set({
+        syncProgress: {
+          ...progress,
+          message: `全量同步完成，本次新增 ${progress.new_items} 条记录`,
+        },
+      });
       get().loadBills();
       get().refreshStatistics();
     } catch (e) {
@@ -309,17 +352,37 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   startSyncAccount: async (identityId, accountId) => {
     try {
+      set({
+        syncProgress: {
+          account_id: accountId,
+          current_page: 0,
+          total_pages: 0,
+          new_items: 0,
+          is_running: true,
+          status: 'running',
+          message: `正在同步账号 ${accountId}...`,
+        },
+      });
       const progress = await tauri.incremental_sync_account(identityId, accountId);
       if (progress.captcha_required && progress.captcha_image && progress.execution) {
         set({
-          syncProgress: { ...progress, status: 'captcha_required' },
+          syncProgress: {
+            ...progress,
+            status: 'captcha_required',
+            message: progress.error ?? `账号 ${accountId} 需要验证码`,
+          },
           captchaImage: progress.captcha_image,
           captchaExecution: progress.execution,
           showManualCaptchaDialog: true,
         });
         return;
       }
-      set({ syncProgress: progress });
+      set({
+        syncProgress: {
+          ...progress,
+          message: `账号 ${accountId} 同步完成，本次新增 ${progress.new_items} 条记录`,
+        },
+      });
       get().loadBills();
       get().refreshStatistics();
     } catch (e) {
@@ -329,17 +392,37 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   startFullSyncAccount: async (identityId, accountId) => {
     try {
+      set({
+        syncProgress: {
+          account_id: accountId,
+          current_page: 0,
+          total_pages: 0,
+          new_items: 0,
+          is_running: true,
+          status: 'running',
+          message: `正在全量同步账号 ${accountId}...`,
+        },
+      });
       const progress = await tauri.full_sync_account(identityId, accountId);
       if (progress.captcha_required && progress.captcha_image && progress.execution) {
         set({
-          syncProgress: { ...progress, status: 'captcha_required' },
+          syncProgress: {
+            ...progress,
+            status: 'captcha_required',
+            message: progress.error ?? `账号 ${accountId} 需要验证码`,
+          },
           captchaImage: progress.captcha_image,
           captchaExecution: progress.execution,
           showManualCaptchaDialog: true,
         });
         return;
       }
-      set({ syncProgress: progress });
+      set({
+        syncProgress: {
+          ...progress,
+          message: `账号 ${accountId} 全量同步完成，本次新增 ${progress.new_items} 条记录`,
+        },
+      });
       get().loadBills();
       get().refreshStatistics();
     } catch (e) {
@@ -366,6 +449,61 @@ export const useAppStore = create<AppState>((set, get) => ({
           }
     ),
   setCaptchaForManualLogin: (image, execution) => set({ captchaImage: image, captchaExecution: execution, showManualCaptchaDialog: true }),
+  submitManualCaptcha: async (captchaCode, execution) => {
+    const { currentIdentity } = get();
+    if (!currentIdentity || !captchaCode.trim()) return;
+
+    // Close the dialog immediately and continue syncing in the background.
+    set({
+      syncProgress: {
+        account_id: '',
+        current_page: 0,
+        total_pages: 0,
+        new_items: 0,
+        is_running: true,
+        status: 'running',
+        message: '验证码已提交，正在继续同步...',
+      },
+      showManualCaptchaDialog: false,
+      captchaImage: null,
+      captchaExecution: null,
+    });
+
+    try {
+      const progress = await tauri.sync_with_captcha(
+        currentIdentity.id,
+        captchaCode.trim(),
+        execution
+      );
+
+      if (progress.captcha_required && progress.captcha_image && progress.execution) {
+        set({
+          syncProgress: {
+            ...progress,
+            status: 'captcha_required',
+            message: progress.error ?? '需要继续输入验证码',
+          },
+          captchaImage: progress.captcha_image,
+          captchaExecution: progress.execution,
+          showManualCaptchaDialog: true,
+        });
+        return;
+      }
+
+      set({
+        syncProgress: {
+          ...progress,
+          message: `同步完成，本次新增 ${progress.new_items} 条记录`,
+        },
+      });
+      await get().loadBills();
+      await get().refreshStatistics();
+    } catch (e) {
+      get().showError(`验证码提交后继续同步失败: ${e}`);
+    }
+  },
+  setSyncProgress: (progress) => set({ syncProgress: progress }),
+  clearSyncProgress: () => set({ syncProgress: null }),
 
   showError: (message) => {
     console.error('[App Error]', message);

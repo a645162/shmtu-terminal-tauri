@@ -4,15 +4,20 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 
 use crate::state::AppState;
+use crate::sync::{SyncProgress, SyncProgressCallback, SyncStatus};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncProgressFrontend {
     pub account_id: String,
+    pub current_account: String,
+    pub account_index: u32,
+    pub total_accounts: u32,
     pub current_page: u32,
     pub total_pages: u32,
     pub new_items: usize,
     pub is_running: bool,
     pub status: String,
+    pub message: Option<String>,
     pub error: Option<String>,
     pub captcha_required: bool,
     pub captcha_image: Option<String>,
@@ -23,11 +28,15 @@ impl SyncProgressFrontend {
     fn idle() -> Self {
         Self {
             account_id: String::new(),
+            current_account: String::new(),
+            account_index: 0,
+            total_accounts: 0,
             current_page: 0,
             total_pages: 0,
             new_items: 0,
             is_running: false,
             status: "idle".to_string(),
+            message: None,
             error: None,
             captcha_required: false,
             captcha_image: None,
@@ -38,11 +47,15 @@ impl SyncProgressFrontend {
     fn captcha_required(image: String, execution: String, message: &str) -> Self {
         Self {
             account_id: String::new(),
+            current_account: String::new(),
+            account_index: 0,
+            total_accounts: 0,
             current_page: 0,
             total_pages: 0,
             new_items: 0,
             is_running: false,
             status: "captcha_required".to_string(),
+            message: Some(message.to_string()),
             error: Some(message.to_string()),
             captcha_required: true,
             captcha_image: Some(image),
@@ -53,17 +66,136 @@ impl SyncProgressFrontend {
     fn success(new_items: usize) -> Self {
         Self {
             account_id: String::new(),
+            current_account: String::new(),
+            account_index: 0,
+            total_accounts: 0,
             current_page: 0,
             total_pages: 0,
             new_items,
             is_running: false,
             status: "completed".to_string(),
+            message: Some(format!("同步完成，本次新增 {} 条记录", new_items)),
             error: None,
             captcha_required: false,
             captcha_image: None,
             execution: None,
         }
     }
+}
+
+impl SyncProgressFrontend {
+    fn from_runtime(progress: SyncProgress) -> Self {
+        let (status, current_page, total_pages, is_running, new_items, error, message) =
+            match progress.status {
+                SyncStatus::ProbingLogin => (
+                    "running".to_string(),
+                    0,
+                    0,
+                    true,
+                    progress.total_new_count,
+                    None,
+                    Some(format!(
+                        "正在检查账号 {} 的登录状态（{}/{}）...",
+                        progress.current_account,
+                        progress.account_index + 1,
+                        progress.total_accounts
+                    )),
+                ),
+                SyncStatus::GettingCaptcha => (
+                    "captcha_required".to_string(),
+                    0,
+                    0,
+                    false,
+                    progress.total_new_count,
+                    Some("请输入验证码".to_string()),
+                    Some(format!(
+                        "账号 {} 需要验证码（{}/{}）",
+                        progress.current_account,
+                        progress.account_index + 1,
+                        progress.total_accounts
+                    )),
+                ),
+                SyncStatus::LoggingIn => (
+                    "running".to_string(),
+                    0,
+                    0,
+                    true,
+                    progress.total_new_count,
+                    None,
+                    Some(format!(
+                        "账号 {} 登录成功，正在准备拉取账单（{}/{}）...",
+                        progress.current_account,
+                        progress.account_index + 1,
+                        progress.total_accounts
+                    )),
+                ),
+                SyncStatus::Syncing { page, total } => (
+                    "running".to_string(),
+                    page,
+                    total,
+                    true,
+                    progress.total_new_count,
+                    None,
+                    Some(format!(
+                        "账号 {} 正在从校园平台拉取账单第 {}/{} 页（{}/{}）...",
+                        progress.current_account,
+                        page,
+                        total,
+                        progress.account_index + 1,
+                        progress.total_accounts
+                    )),
+                ),
+                SyncStatus::Completed => (
+                    "running".to_string(),
+                    progress.pages_fetched,
+                    progress.pages_fetched,
+                    true,
+                    progress.total_new_count,
+                    None,
+                    Some(format!(
+                        "账号 {} 拉取完成并已写入原始账单、合并到身份：新增 {} 条，拉取 {} 页，累计新增 {} 条（{}/{}）",
+                        progress.current_account,
+                        progress.new_count,
+                        progress.pages_fetched,
+                        progress.total_new_count,
+                        progress.account_index + 1,
+                        progress.total_accounts
+                    )),
+                ),
+                SyncStatus::Failed(err) => (
+                    "error".to_string(),
+                    0,
+                    0,
+                    false,
+                    progress.total_new_count,
+                    Some(err.clone()),
+                    Some(err),
+                ),
+            };
+
+        Self {
+            account_id: progress.current_account.clone(),
+            current_account: progress.current_account,
+            account_index: progress.account_index as u32,
+            total_accounts: progress.total_accounts as u32,
+            current_page,
+            total_pages,
+            new_items,
+            is_running,
+            status,
+            message,
+            error,
+            captcha_required: false,
+            captcha_image: None,
+            execution: None,
+        }
+    }
+}
+
+fn create_progress_callback(app: AppHandle) -> SyncProgressCallback {
+    Box::new(move |progress: SyncProgress| {
+        let _ = app.emit("sync-progress", SyncProgressFrontend::from_runtime(progress));
+    })
 }
 
 fn parse_captcha_marker<'a>(error: &'a str, marker: &str) -> Option<(&'a str, &'a str)> {
@@ -87,7 +219,8 @@ pub async fn incremental_sync(
     );
 
     let sync_service = state.sync_service.read().await;
-    let result = sync_service.sync_identity(identity_id, None).await;
+    let progress_callback = create_progress_callback(app.clone());
+    let result = sync_service.sync_identity(identity_id, Some(&progress_callback)).await;
 
     match result {
         Ok(r) => {
@@ -130,8 +263,9 @@ pub async fn full_sync(
     tracing::info!("[Command] full_sync called, identity_id={}", identity_id);
 
     let sync_service = state.sync_service.read().await;
+    let progress_callback = create_progress_callback(app.clone());
     let result = sync_service
-        .full_sync_identity(identity_id, None)
+        .full_sync_identity(identity_id, Some(&progress_callback))
         .await;
 
     match result {
@@ -180,8 +314,9 @@ pub async fn incremental_sync_account(
     );
 
     let sync_service = state.sync_service.read().await;
+    let progress_callback = create_progress_callback(app.clone());
     let result = sync_service.sync_single_account_by_id(
-        identity_id, &account_id, None,
+        identity_id, &account_id, Some(&progress_callback),
     ).await;
 
     match result {
@@ -230,8 +365,9 @@ pub async fn full_sync_account(
     );
 
     let sync_service = state.sync_service.read().await;
+    let progress_callback = create_progress_callback(app.clone());
     let result = sync_service.full_sync_single_account(
-        identity_id, &account_id, None,
+        identity_id, &account_id, Some(&progress_callback),
     ).await;
 
     match result {
@@ -287,9 +423,10 @@ pub async fn sync_with_captcha(
     );
 
     let sync_service = state.sync_service.read().await;
+    let progress_callback = create_progress_callback(app.clone());
 
     match sync_service
-        .sync_with_captcha(identity_id, &captcha_code, &execution)
+        .sync_with_captcha(identity_id, &captcha_code, &execution, Some(&progress_callback))
         .await
     {
         Ok(result) => {

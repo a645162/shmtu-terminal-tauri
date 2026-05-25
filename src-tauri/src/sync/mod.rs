@@ -19,6 +19,9 @@ pub struct SyncProgress {
     pub current_account: String,
     pub account_index: usize,
     pub total_accounts: usize,
+    pub new_count: usize,
+    pub pages_fetched: u32,
+    pub total_new_count: usize,
     pub status: SyncStatus,
 }
 
@@ -57,6 +60,7 @@ pub struct BillSyncService {
 
 struct PendingManualSync {
     identity_id: i64,
+    total_accounts: usize,
     sync_options: SyncOptions,
     current_account: Account,
     remaining_accounts: VecDeque<Account>,
@@ -172,6 +176,9 @@ impl BillSyncService {
                     current_account: account.account_name.clone(),
                     account_index: idx,
                     total_accounts: accounts.len(),
+                    new_count: 0,
+                    pages_fetched: 0,
+                    total_new_count: total_new,
                     status: SyncStatus::ProbingLogin,
                 });
             }
@@ -179,6 +186,17 @@ impl BillSyncService {
                 .sync_single_account(account, sync_options, progress_callback)
                 .await?;
             total_new += account_result.new_count;
+            if let Some(cb) = progress_callback {
+                cb(SyncProgress {
+                    current_account: account.account_name.clone(),
+                    account_index: idx,
+                    total_accounts: accounts.len(),
+                    new_count: account_result.new_count,
+                    pages_fetched: account_result.pages_fetched,
+                    total_new_count: total_new,
+                    status: SyncStatus::Completed,
+                });
+            }
             results.push(account_result);
         }
 
@@ -192,7 +210,7 @@ impl BillSyncService {
         &self,
         account: &Account,
         sync_options: &SyncOptions,
-        _progress_callback: Option<&SyncProgressCallback>,
+        progress_callback: Option<&SyncProgressCallback>,
     ) -> AppResult<AccountSyncResult> {
         tracing::info!("[Sync] sync_single_account: {}", account.account_id);
 
@@ -219,6 +237,7 @@ impl BillSyncService {
 
                     self.store_pending_manual_sync(PendingManualSync {
                         identity_id: account.identity_id,
+                        total_accounts: 1,
                         sync_options: sync_options.clone(),
                         current_account: account.clone(),
                         remaining_accounts: VecDeque::new(),
@@ -240,6 +259,17 @@ impl BillSyncService {
         let password = self
             .db_manager
             .decrypt_account_password(account, &self.crypto)?;
+        if let Some(cb) = progress_callback {
+            cb(SyncProgress {
+                current_account: account.account_name.clone(),
+                account_index: 0,
+                total_accounts: 1,
+                new_count: 0,
+                pages_fetched: 0,
+                total_new_count: 0,
+                status: SyncStatus::Syncing { page: 0, total: 0 },
+            });
+        }
         let epay = self.login_auto(&account.account_id, &password).await?;
         self.save_session(&epay, &account.account_id).await?;
 
@@ -266,6 +296,9 @@ impl BillSyncService {
                     current_account: account.account_name.clone(),
                     account_index: processed_accounts,
                     total_accounts,
+                    new_count: 0,
+                    pages_fetched: 0,
+                    total_new_count,
                     status: SyncStatus::ProbingLogin,
                 });
             }
@@ -275,6 +308,17 @@ impl BillSyncService {
                 .await?
             {
                 total_new_count += result.new_count;
+                if let Some(cb) = progress_callback {
+                    cb(SyncProgress {
+                        current_account: account.account_name.clone(),
+                        account_index: processed_accounts,
+                        total_accounts,
+                        new_count: result.new_count,
+                        pages_fetched: result.pages_fetched,
+                        total_new_count,
+                        status: SyncStatus::Completed,
+                    });
+                }
                 results.push(result);
                 processed_accounts += 1;
                 continue;
@@ -287,6 +331,17 @@ impl BillSyncService {
                         .sync_logged_in_account(&account, &epay, &sync_options)
                         .await?;
                     total_new_count += result.new_count;
+                    if let Some(cb) = progress_callback {
+                        cb(SyncProgress {
+                            current_account: account.account_name.clone(),
+                            account_index: processed_accounts,
+                            total_accounts,
+                            new_count: result.new_count,
+                            pages_fetched: result.pages_fetched,
+                            total_new_count,
+                            status: SyncStatus::Completed,
+                        });
+                    }
                     results.push(result);
                     processed_accounts += 1;
                 }
@@ -297,6 +352,7 @@ impl BillSyncService {
 
                     self.store_pending_manual_sync(PendingManualSync {
                         identity_id,
+                        total_accounts,
                         sync_options,
                         current_account: account,
                         remaining_accounts,
@@ -380,6 +436,7 @@ impl BillSyncService {
         identity_id: i64,
         captcha_code: &str,
         execution: &str,
+        progress_callback: Option<&SyncProgressCallback>,
     ) -> AppResult<IdentitySyncResult> {
         tracing::info!(
             "[Sync] sync_with_captcha, identity_id={}, captcha={}, execution_len={}",
@@ -416,6 +473,17 @@ impl BillSyncService {
         {
             LoginSubmitResult::Success => {
                 tracing::info!("[Sync] Login OK for {}", pending.current_account.account_id);
+                if let Some(cb) = progress_callback {
+                    cb(SyncProgress {
+                        current_account: pending.current_account.account_name.clone(),
+                        account_index: pending.results.len(),
+                        total_accounts: pending.total_accounts,
+                        new_count: 0,
+                        pages_fetched: 0,
+                        total_new_count: pending.total_new_count,
+                        status: SyncStatus::Syncing { page: 0, total: 0 },
+                    });
+                }
                 self.save_session(&pending.epay, &pending.current_account.account_id)
                     .await?;
                 let result = self
@@ -426,7 +494,20 @@ impl BillSyncService {
                     )
                     .await?;
                 pending.push_result(result);
-                self.continue_pending_manual_sync(pending).await
+                if let Some(cb) = progress_callback {
+                    if let Some(last) = pending.results.last() {
+                        cb(SyncProgress {
+                            current_account: pending.current_account.account_name.clone(),
+                            account_index: pending.results.len() - 1,
+                            total_accounts: pending.total_accounts,
+                            new_count: last.new_count,
+                            pages_fetched: last.pages_fetched,
+                            total_new_count: pending.total_new_count,
+                            status: SyncStatus::Completed,
+                        });
+                    }
+                }
+                self.continue_pending_manual_sync(pending, progress_callback).await
             }
             LoginSubmitResult::ValidateCodeError => {
                 tracing::error!("[Sync] Captcha WRONG!");
@@ -544,6 +625,9 @@ impl BillSyncService {
                     current_account: account.account_name.clone(),
                     account_index: idx,
                     total_accounts: accounts.len(),
+                    new_count: 0,
+                    pages_fetched: 0,
+                    total_new_count: total_new,
                     status: SyncStatus::ProbingLogin,
                 });
             }
@@ -551,6 +635,17 @@ impl BillSyncService {
                 .sync_single_account(account, &sync_options, progress_callback)
                 .await?;
             total_new += account_result.new_count;
+            if let Some(cb) = progress_callback {
+                cb(SyncProgress {
+                    current_account: account.account_name.clone(),
+                    account_index: idx,
+                    total_accounts: accounts.len(),
+                    new_count: account_result.new_count,
+                    pages_fetched: account_result.pages_fetched,
+                    total_new_count: total_new,
+                    status: SyncStatus::Completed,
+                });
+            }
             results.push(account_result);
         }
 
@@ -627,15 +722,40 @@ impl BillSyncService {
     async fn continue_pending_manual_sync(
         &self,
         mut pending: PendingManualSync,
+        progress_callback: Option<&SyncProgressCallback>,
     ) -> AppResult<IdentitySyncResult> {
         while let Some(account) = pending.remaining_accounts.pop_front() {
             tracing::info!("[Sync] Processing: {}", account.account_id);
+            if let Some(cb) = progress_callback {
+                cb(SyncProgress {
+                    current_account: account.account_name.clone(),
+                    account_index: pending.results.len(),
+                    total_accounts: pending.total_accounts,
+                    new_count: 0,
+                    pages_fetched: 0,
+                    total_new_count: pending.total_new_count,
+                    status: SyncStatus::ProbingLogin,
+                });
+            }
 
             if let Some(result) = self
                 .try_sync_with_saved_session(&account, &pending.sync_options)
                 .await?
             {
                 pending.push_result(result);
+                if let Some(cb) = progress_callback {
+                    if let Some(last) = pending.results.last() {
+                        cb(SyncProgress {
+                            current_account: account.account_name.clone(),
+                            account_index: pending.results.len() - 1,
+                            total_accounts: pending.total_accounts,
+                            new_count: last.new_count,
+                            pages_fetched: last.pages_fetched,
+                            total_new_count: pending.total_new_count,
+                            status: SyncStatus::Completed,
+                        });
+                    }
+                }
                 continue;
             }
 
@@ -646,6 +766,19 @@ impl BillSyncService {
                         .sync_logged_in_account(&account, &epay, &pending.sync_options)
                         .await?;
                     pending.push_result(result);
+                    if let Some(cb) = progress_callback {
+                        if let Some(last) = pending.results.last() {
+                            cb(SyncProgress {
+                                current_account: account.account_name.clone(),
+                                account_index: pending.results.len() - 1,
+                                total_accounts: pending.total_accounts,
+                                new_count: last.new_count,
+                                pages_fetched: last.pages_fetched,
+                                total_new_count: pending.total_new_count,
+                                status: SyncStatus::Completed,
+                            });
+                        }
+                    }
                 }
                 LoginProbe::NeedLogin { .. } => {
                     let challenge = epay.prepare_challenge().await?;
@@ -712,9 +845,25 @@ impl BillSyncService {
             error: None,
         };
 
+        tracing::info!(
+            "[Sync] begin fetching bills for account={}, identity_id={}",
+            account.account_id,
+            account.identity_id
+        );
         match shmtu_cas::sync::incremental_sync(epay, &mut store, sync_options).await {
             Ok(sync_result) => {
+                tracing::info!(
+                    "[Sync] fetched bills for account={}, pages_fetched={}, new_count={}, flushing_to_db=true",
+                    account.account_id,
+                    sync_result.pages_fetched,
+                    sync_result.new_count
+                );
                 store.flush_pending_bills().await?;
+                tracing::info!(
+                    "[Sync] flush complete for account={}, merged_into_identity_id={}",
+                    account.account_id,
+                    account.identity_id
+                );
                 result.new_count = sync_result.new_count;
                 result.pages_fetched = sync_result.pages_fetched;
                 result.early_stopped = sync_result.early_stopped;

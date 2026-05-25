@@ -106,12 +106,16 @@ export interface CaptchaTestResult {
 // Sync progress
 export interface SyncProgress {
   account_id: string;
+  current_account?: string;
+  account_index?: number;
+  total_accounts?: number;
   current_page: number;
   total_pages: number;
   new_items: number;
   is_running: boolean;
   status: 'idle' | 'running' | 'completed' | 'error' | 'captcha_required';
   error?: string;
+  message?: string;
   captcha_required?: boolean;
   captcha_image?: string;
   execution?: string;

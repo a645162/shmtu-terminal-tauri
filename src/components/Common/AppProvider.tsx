@@ -5,6 +5,7 @@ import {
   webDarkTheme,
   Toaster,
 } from '@fluentui/react-components';
+import { listen } from '@tauri-apps/api/event';
 import { useAppStore } from '../../stores/appStore';
 import { AppLayout } from '../Layout/AppLayout';
 import { StartupPasswordDialog } from './StartupPasswordDialog';
@@ -17,6 +18,8 @@ import { DataTransferDialog } from '../../pages/DataTransfer/DataTransferDialog'
 import { StatisticsDialog } from '../../pages/Statistics/StatisticsDialog';
 import { ManualCaptchaDialog } from './ManualCaptchaDialog';
 import { ErrorDialog } from './ErrorDialog';
+import { SyncStatusPanel } from './SyncStatusPanel';
+import type { SyncProgress } from '../../types';
 
 export const AppProvider: React.FC = () => {
   const theme = useAppStore((s) => s.theme);
@@ -65,6 +68,9 @@ export const AppProvider: React.FC = () => {
   const captchaImage = useAppStore((s) => s.captchaImage);
   const captchaExecution = useAppStore((s) => s.captchaExecution);
   const setShowManualCaptchaDialog = useAppStore((s) => s.setShowManualCaptchaDialog);
+  const setSyncProgress = useAppStore((s) => s.setSyncProgress);
+  const clearSyncProgress = useAppStore((s) => s.clearSyncProgress);
+  const syncProgress = useAppStore((s) => s.syncProgress);
 
   useEffect(() => {
     if (config?.security?.enable_startup_protection && hasRequestedStartupDialog && !showStartupDialog) {
@@ -110,12 +116,58 @@ export const AppProvider: React.FC = () => {
     setShowIdentitySelectDialog,
   ]);
 
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    listen<SyncProgress>('sync-progress', (event) => {
+      if (disposed) {
+        return;
+      }
+
+      const progress = event.payload;
+      setSyncProgress({
+        ...progress,
+        message:
+          progress.status === 'completed'
+            ? `同步完成，本次新增 ${progress.new_items} 条记录`
+            : progress.status === 'captcha_required'
+              ? progress.error ?? '需要输入验证码以继续'
+              : progress.message,
+      });
+    })
+      .then((fn) => {
+        unlisten = fn;
+      })
+      .catch(console.error);
+
+    return () => {
+      disposed = true;
+      if (unlisten) {
+        void unlisten();
+      }
+    };
+  }, [setSyncProgress]);
+
+  useEffect(() => {
+    if (syncProgress?.status !== 'completed') {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      clearSyncProgress();
+    }, 3200);
+
+    return () => window.clearTimeout(timer);
+  }, [clearSyncProgress, syncProgress]);
+
   const fluentTheme = theme === 'dark' ? webDarkTheme : webLightTheme;
 
   return (
     <FluentProvider theme={fluentTheme}>
       <AppLayout />
       <Toaster />
+      <SyncStatusPanel />
 
       {/* Modal Dialogs */}
       {showStartupDialog && <StartupPasswordDialog />}
