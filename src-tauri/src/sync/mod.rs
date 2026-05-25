@@ -154,10 +154,16 @@ impl BillSyncService {
 
     pub async fn get_enabled_accounts_for_identity(&self, identity_id: i64) -> AppResult<Vec<Account>> {
         let accounts = self.db_manager.list_accounts_by_identity(identity_id).await?;
-        Ok(accounts
+        let enabled_accounts = accounts
             .into_iter()
             .filter(|a| a.enable && a.enable_update)
-            .collect())
+            .collect::<Vec<_>>();
+        tracing::info!(
+            "[Sync] get_enabled_accounts_for_identity identity_id={} => {} enabled accounts",
+            identity_id,
+            enabled_accounts.len()
+        );
+        Ok(enabled_accounts)
     }
 
     pub async fn sync_identity(
@@ -188,6 +194,14 @@ impl BillSyncService {
         progress_callback: Option<&SyncProgressCallback>,
     ) -> AppResult<IdentitySyncResult> {
         let accounts = self.get_enabled_accounts_for_identity(identity_id).await?;
+        tracing::info!(
+            "[Sync] do_sync identity_id={} with {} accounts, options=start_page={}, max_pages={}, early_stop_threshold={}",
+            identity_id,
+            accounts.len(),
+            sync_options.start_page,
+            sync_options.max_pages,
+            sync_options.early_stop_threshold
+        );
         self.run_accounts(&accounts, sync_options, progress_callback).await
     }
 
@@ -199,7 +213,12 @@ impl BillSyncService {
         progress_context: &AccountProgressContext,
         total_new_before: usize,
     ) -> AppResult<AccountSyncResult> {
-        tracing::info!("[Sync] sync_single_account: {}", account.account_id);
+        tracing::info!(
+            "[Sync] sync_single_account account_id={}, account_name={}, total_new_before={}",
+            account.account_id,
+            account.account_name,
+            total_new_before
+        );
 
         if let Some(cached_result) = self
             .try_sync_with_saved_session(
@@ -216,9 +235,17 @@ impl BillSyncService {
 
         let cfg = ConfigAccess::new(&self.db_manager);
         if matches!(cfg.captcha_mode(), crate::config::CaptchaMode::Manual) {
+            tracing::info!(
+                "[Sync] manual captcha mode for account_id={}, probing fresh login state",
+                account.account_id
+            );
             let mut epay = EpayAuth::new()?;
             match epay.probe_login().await? {
                 LoginProbe::AlreadyLoggedIn => {
+                    tracing::info!(
+                        "[Sync] account_id={} already logged in without re-entering credentials",
+                        account.account_id
+                    );
                     Self::emit_progress(
                         progress_callback,
                         progress_context,
@@ -239,6 +266,10 @@ impl BillSyncService {
                         .await;
                 }
                 LoginProbe::NeedLogin { .. } => {
+                    tracing::info!(
+                        "[Sync] account_id={} needs manual captcha login, storing pending state",
+                        account.account_id
+                    );
                     let challenge = epay.prepare_challenge().await?;
                     let image = Self::encode_captcha_image(&challenge.captcha_image);
                     let execution = challenge.execution.clone();
@@ -276,6 +307,10 @@ impl BillSyncService {
         let password = self
             .db_manager
             .decrypt_account_password(account, &self.crypto)?;
+        tracing::info!(
+            "[Sync] account_id={} will use automatic login flow",
+            account.account_id
+        );
         let epay = self.login_auto(&account.account_id, &password).await?;
         self.save_session(&epay, &account.account_id).await?;
         Self::emit_progress(
@@ -306,6 +341,14 @@ impl BillSyncService {
     ) -> AppResult<IdentitySyncResult> {
         let accounts = self.get_enabled_accounts_for_identity(identity_id).await?;
         let total_accounts = accounts.len();
+        tracing::info!(
+            "[Sync] sync_identity_manual identity_id={} with {} accounts, options=start_page={}, max_pages={}, early_stop_threshold={}",
+            identity_id,
+            total_accounts,
+            sync_options.start_page,
+            sync_options.max_pages,
+            sync_options.early_stop_threshold
+        );
         let mut remaining_accounts: VecDeque<Account> = accounts.into();
         let mut results = Vec::new();
         let mut total_new_count = 0usize;
@@ -333,6 +376,11 @@ impl BillSyncService {
                 )
                 .await?
             {
+                tracing::info!(
+                    "[Sync] manual flow reused saved session for account_id={}, new_count={}",
+                    account.account_id,
+                    result.new_count
+                );
                 total_new_count += result.new_count;
                 Self::emit_progress(
                     progress_callback,
@@ -350,6 +398,10 @@ impl BillSyncService {
             let mut epay = EpayAuth::new()?;
             match epay.probe_login().await? {
                 LoginProbe::AlreadyLoggedIn => {
+                    tracing::info!(
+                        "[Sync] manual flow probe indicates already logged in for account_id={}",
+                        account.account_id
+                    );
                     Self::emit_progress(
                         progress_callback,
                         &progress_context,
@@ -381,6 +433,12 @@ impl BillSyncService {
                     processed_accounts += 1;
                 }
                 LoginProbe::NeedLogin { .. } => {
+                    tracing::info!(
+                        "[Sync] manual flow requires captcha for account_id={}, processed_accounts={}, remaining_accounts={}",
+                        account.account_id,
+                        processed_accounts,
+                        remaining_accounts.len()
+                    );
                     let challenge = epay.prepare_challenge().await?;
                     let image = Self::encode_captcha_image(&challenge.captcha_image);
                     let execution = challenge.execution.clone();
@@ -495,6 +553,11 @@ impl BillSyncService {
             .ok_or_else(|| AppError::Sync("当前没有待处理的验证码登录".to_string()))?;
 
         if pending.identity_id != identity_id {
+            tracing::warn!(
+                "[Sync] pending captcha identity mismatch: pending_identity_id={}, requested_identity_id={}",
+                pending.identity_id,
+                identity_id
+            );
             self.store_pending_manual_sync(pending).await;
             return Err(AppError::Sync(
                 "待处理的验证码身份不匹配，请重新开始同步".to_string(),
@@ -621,6 +684,11 @@ impl BillSyncService {
         tracing::info!("[Sync] get_captcha_for_manual_login");
 
         if let Some(mut pending) = self.take_pending_manual_sync().await {
+            tracing::info!(
+                "[Sync] refresh captcha from pending manual sync account_id={}, remaining_accounts={}",
+                pending.current_account.account_id,
+                pending.remaining_accounts.len()
+            );
             let challenge = pending.epay.prepare_challenge().await?;
             let image = Self::encode_captcha_image(&challenge.captcha_image);
             pending.execution = challenge.execution.clone();
@@ -630,6 +698,7 @@ impl BillSyncService {
         }
 
         let mut epay = EpayAuth::new()?;
+        tracing::info!("[Sync] refresh captcha from fresh epay session");
         epay.probe_login().await?;
         let challenge = epay.prepare_challenge().await?;
         Ok((
@@ -641,6 +710,11 @@ impl BillSyncService {
     async fn save_session(&self, epay: &EpayAuth, account_id: &str) -> AppResult<()> {
         let cookies_json = epay.extract_session()?;
         self.db_manager.save_session(account_id, &cookies_json, &self.crypto).await?;
+        tracing::info!(
+            "[Sync] saved encrypted session for account_id={}, cookies_len={}",
+            account_id,
+            cookies_json.len()
+        );
         Ok(())
     }
 
@@ -690,6 +764,10 @@ impl BillSyncService {
         let account = self
             .find_enabled_account(identity_id, account_id)
             .await?;
+        tracing::info!(
+            "[Sync] full_sync_single_account clearing original/session/merged data for account_id={}",
+            account.account_id
+        );
 
         let sync_options = Self::default_incremental_sync_options();
         let sync_options = SyncOptions {
@@ -735,7 +813,12 @@ impl BillSyncService {
         progress_callback: Option<&SyncProgressCallback>,
     ) -> AppResult<IdentitySyncResult> {
         while let Some(account) = pending.remaining_accounts.pop_front() {
-            tracing::info!("[Sync] Processing: {}", account.account_id);
+            tracing::info!(
+                "[Sync] continue_pending_manual_sync processing account_id={}, completed_accounts={}, remaining_after_pop={}",
+                account.account_id,
+                pending.results.len(),
+                pending.remaining_accounts.len()
+            );
             let progress_context =
                 AccountProgressContext::new(&account, pending.results.len(), pending.total_accounts);
             Self::emit_progress(
@@ -757,6 +840,11 @@ impl BillSyncService {
                 )
                 .await?
             {
+                tracing::info!(
+                    "[Sync] continue_pending_manual_sync reused saved session for account_id={}, total_new_count={}",
+                    account.account_id,
+                    pending.total_new_count
+                );
                 pending.push_result(result);
                 if let Some(last) = pending.results.last() {
                     Self::emit_progress(
@@ -774,6 +862,10 @@ impl BillSyncService {
             let mut epay = EpayAuth::new()?;
             match epay.probe_login().await? {
                 LoginProbe::AlreadyLoggedIn => {
+                    tracing::info!(
+                        "[Sync] continue_pending_manual_sync probe indicates already logged in for account_id={}",
+                        account.account_id
+                    );
                     Self::emit_progress(
                         progress_callback,
                         &progress_context,
@@ -805,6 +897,11 @@ impl BillSyncService {
                     }
                 }
                 LoginProbe::NeedLogin { .. } => {
+                    tracing::info!(
+                        "[Sync] continue_pending_manual_sync needs captcha for next account_id={}, remaining_accounts={}",
+                        account.account_id,
+                        pending.remaining_accounts.len()
+                    );
                     let challenge = epay.prepare_challenge().await?;
                     let image = Self::encode_captcha_image(&challenge.captcha_image);
                     pending.current_account = account;
@@ -844,8 +941,18 @@ impl BillSyncService {
         progress_context: &AccountProgressContext,
         total_new_before: usize,
     ) -> AppResult<Option<AccountSyncResult>> {
+        tracing::info!(
+            "[Sync] try_sync_with_saved_session account_id={}, total_new_before={}",
+            account.account_id,
+            total_new_before
+        );
         if let Some(session) = self.db_manager.get_session(&account.account_id, &self.crypto).await?
         {
+            tracing::info!(
+                "[Sync] found saved session for account_id={}, expire_time={:?}",
+                account.account_id,
+                session.expire_time
+            );
             let mut epay = EpayAuth::new()?;
             epay.restore_session(&session.cookies)?;
             if let Ok(LoginProbe::AlreadyLoggedIn) = epay.probe_login().await {
@@ -870,6 +977,15 @@ impl BillSyncService {
                     .await?,
                 ));
             }
+            tracing::info!(
+                "[Sync] saved session exists but is no longer valid for account_id={}",
+                account.account_id
+            );
+        } else {
+            tracing::info!(
+                "[Sync] no saved session available for account_id={}",
+                account.account_id
+            );
         }
 
         Ok(None)
@@ -881,6 +997,16 @@ impl BillSyncService {
         sync_options: &SyncOptions,
         progress_callback: Option<&SyncProgressCallback>,
     ) -> AppResult<IdentitySyncResult> {
+        let account_labels = accounts
+            .iter()
+            .map(|a| format!("{}({})", a.account_name, a.account_id))
+            .collect::<Vec<_>>()
+            .join(", ");
+        tracing::info!(
+            "[Sync] run_accounts start total_accounts={}, accounts=[{}]",
+            accounts.len(),
+            account_labels
+        );
         let mut results = Vec::with_capacity(accounts.len());
         let mut total_new_count = 0usize;
 
@@ -899,6 +1025,12 @@ impl BillSyncService {
             results.push(account_result);
         }
 
+        tracing::info!(
+            "[Sync] run_accounts completed total_accounts={}, total_new_count={}",
+            accounts.len(),
+            total_new_count
+        );
+
         Ok(IdentitySyncResult {
             results,
             total_new_count,
@@ -914,6 +1046,13 @@ impl BillSyncService {
         total_accounts: usize,
         total_new_before: usize,
     ) -> AppResult<AccountSyncResult> {
+        tracing::info!(
+            "[Sync] run_account_with_progress account_id={}, account_index={}/{}, total_new_before={}",
+            account.account_id,
+            account_index + 1,
+            total_accounts,
+            total_new_before
+        );
         let progress_context = AccountProgressContext::new(account, account_index, total_accounts);
         Self::emit_progress(
             progress_callback,
@@ -947,11 +1086,30 @@ impl BillSyncService {
     }
 
     async fn find_enabled_account(&self, identity_id: i64, account_id: &str) -> AppResult<Account> {
+        tracing::info!(
+            "[Sync] find_enabled_account identity_id={}, account_id={}",
+            identity_id,
+            account_id
+        );
         let accounts = self.get_enabled_accounts_for_identity(identity_id).await?;
-        accounts
+        let result = accounts
             .into_iter()
             .find(|a| a.account_id == account_id)
-            .ok_or_else(|| AppError::Sync(format!("账号 {} 不存在或已禁用", account_id)))
+            .ok_or_else(|| AppError::Sync(format!("账号 {} 不存在或已禁用", account_id)));
+        if result.is_ok() {
+            tracing::info!(
+                "[Sync] find_enabled_account matched identity_id={}, account_id={}",
+                identity_id,
+                account_id
+            );
+        } else {
+            tracing::warn!(
+                "[Sync] find_enabled_account missing or disabled identity_id={}, account_id={}",
+                identity_id,
+                account_id
+            );
+        }
+        result
     }
 
     async fn sync_logged_in_account(
@@ -1006,10 +1164,11 @@ impl BillSyncService {
         {
             Ok(sync_result) => {
                 tracing::info!(
-                    "[Sync] fetched bills for account={}, pages_fetched={}, new_count={}, flushing_to_db=true",
+                    "[Sync] fetched bills for account={}, pages_fetched={}, new_count={}, early_stopped={}, flushing_to_db=true",
                     account.account_id,
                     sync_result.pages_fetched,
-                    sync_result.new_count
+                    sync_result.new_count,
+                    sync_result.early_stopped
                 );
                 Self::emit_progress(
                     progress_callback,
@@ -1031,6 +1190,11 @@ impl BillSyncService {
                 let _ = self.db_manager.update_account_last_sync(account.id).await;
             }
             Err(e) => {
+                tracing::error!(
+                    "[Sync] incremental_sync_with_progress failed for account_id={}: {}",
+                    account.account_id,
+                    e
+                );
                 result.error = Some(format!("同步失败: {}", e));
             }
         }
@@ -1046,6 +1210,65 @@ impl BillSyncService {
         total_new_count: usize,
         status: SyncStatus,
     ) {
+        let progress_message = match &status {
+            SyncStatus::ProbingLogin => format!(
+                "账号 {} 正在检查登录状态（{}/{}）",
+                progress_context.account_name,
+                progress_context.account_index + 1,
+                progress_context.total_accounts
+            ),
+            SyncStatus::GettingCaptcha => format!(
+                "账号 {} 需要验证码（{}/{}），累计新增 {} 条",
+                progress_context.account_name,
+                progress_context.account_index + 1,
+                progress_context.total_accounts,
+                total_new_count
+            ),
+            SyncStatus::LoggingIn => format!(
+                "账号 {} 已通过登录检查，正在准备拉取账单（{}/{}），累计新增 {} 条",
+                progress_context.account_name,
+                progress_context.account_index + 1,
+                progress_context.total_accounts,
+                total_new_count
+            ),
+            SyncStatus::Syncing { page, total } => format!(
+                "账号 {} 正在从校园平台拉取账单第 {}/{} 页，当前账号新增 {} 条，累计新增 {} 条（{}/{}）",
+                progress_context.account_name,
+                page,
+                total,
+                new_count,
+                total_new_count,
+                progress_context.account_index + 1,
+                progress_context.total_accounts
+            ),
+            SyncStatus::Persisting => format!(
+                "账号 {} 已拉取完成，正在写入原始账单并合并到身份：新增 {} 条，拉取 {} 页，累计新增 {} 条（{}/{}）",
+                progress_context.account_name,
+                new_count,
+                pages_fetched,
+                total_new_count,
+                progress_context.account_index + 1,
+                progress_context.total_accounts
+            ),
+            SyncStatus::Completed => format!(
+                "账号 {} 拉取完成并已写入原始账单、合并到身份：新增 {} 条，拉取 {} 页，累计新增 {} 条（{}/{}）",
+                progress_context.account_name,
+                new_count,
+                pages_fetched,
+                total_new_count,
+                progress_context.account_index + 1,
+                progress_context.total_accounts
+            ),
+            SyncStatus::Failed(err) => format!(
+                "账号 {} 同步失败（{}/{}）：{}",
+                progress_context.account_name,
+                progress_context.account_index + 1,
+                progress_context.total_accounts,
+                err
+            ),
+        };
+        tracing::info!("[SyncProgress] {}", progress_message);
+
         if let Some(cb) = progress_callback {
             cb(SyncProgress {
                 account_id: progress_context.account_id.clone(),
@@ -1061,15 +1284,34 @@ impl BillSyncService {
     }
 
     async fn clear_pending_manual_sync(&self) {
+        tracing::info!("[Sync] clear_pending_manual_sync");
         *self.pending_manual_sync.lock().await = None;
     }
 
     async fn store_pending_manual_sync(&self, pending: PendingManualSync) {
+        tracing::info!(
+            "[Sync] store_pending_manual_sync identity_id={}, current_account_id={}, total_accounts={}, completed_accounts={}, remaining_accounts={}",
+            pending.identity_id,
+            pending.current_account.account_id,
+            pending.total_accounts,
+            pending.results.len(),
+            pending.remaining_accounts.len()
+        );
         *self.pending_manual_sync.lock().await = Some(pending);
     }
 
     async fn take_pending_manual_sync(&self) -> Option<PendingManualSync> {
-        self.pending_manual_sync.lock().await.take()
+        let pending = self.pending_manual_sync.lock().await.take();
+        match &pending {
+            Some(p) => tracing::info!(
+                "[Sync] take_pending_manual_sync hit identity_id={}, current_account_id={}, remaining_accounts={}",
+                p.identity_id,
+                p.current_account.account_id,
+                p.remaining_accounts.len()
+            ),
+            None => tracing::info!("[Sync] take_pending_manual_sync miss"),
+        }
+        pending
     }
 
     fn default_incremental_sync_options() -> SyncOptions {

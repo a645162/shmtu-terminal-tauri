@@ -243,6 +243,10 @@ pub async fn incremental_sync(
 
     match result {
         Ok(r) => {
+            tracing::info!(
+                "[Command] incremental_sync service returned {} account results",
+                r.results.len()
+            );
             let _ = app.emit(
                 "sync-progress",
                 SyncProgressFrontend::success(r.total_new_count),
@@ -258,7 +262,11 @@ pub async fn incremental_sync(
             if let Some((image, execution)) =
                 parse_captcha_marker(&err_str, "MANUAL_CAPTCHA_REQUIRED|")
             {
-                tracing::info!("[Command] sync_identity requires manual captcha");
+                tracing::info!(
+                    "[Command] sync_identity requires manual captcha, image_len={}, execution_len={}",
+                    image.len(),
+                    execution.len()
+                );
                 return Ok(SyncProgressFrontend::captcha_required(
                     image.to_string(),
                     execution.to_string(),
@@ -287,6 +295,10 @@ pub async fn full_sync(
 
     match result {
         Ok(r) => {
+            tracing::info!(
+                "[Command] full_sync service returned {} account results",
+                r.results.len()
+            );
             let _ = app.emit(
                 "sync-progress",
                 SyncProgressFrontend::success(r.total_new_count),
@@ -302,7 +314,11 @@ pub async fn full_sync(
             if let Some((image, execution)) =
                 parse_captcha_marker(&err_str, "MANUAL_CAPTCHA_REQUIRED|")
             {
-                tracing::info!("[Command] full_sync requires manual captcha");
+                tracing::info!(
+                    "[Command] full_sync requires manual captcha, image_len={}, execution_len={}",
+                    image.len(),
+                    execution.len()
+                );
                 return Ok(SyncProgressFrontend::captcha_required(
                     image.to_string(),
                     execution.to_string(),
@@ -336,6 +352,10 @@ pub async fn incremental_sync_account(
 
     match result {
         Ok(r) => {
+            tracing::info!(
+                "[Command] incremental_sync_account service returned {} account results",
+                r.results.len()
+            );
             let _ = app.emit(
                 "sync-progress",
                 SyncProgressFrontend::success(r.total_new_count),
@@ -351,7 +371,11 @@ pub async fn incremental_sync_account(
             if let Some((image, execution)) =
                 parse_captcha_marker(&err_str, "MANUAL_CAPTCHA_REQUIRED|")
             {
-                tracing::info!("[Command] incremental_sync_account requires manual captcha");
+                tracing::info!(
+                    "[Command] incremental_sync_account requires manual captcha, image_len={}, execution_len={}",
+                    image.len(),
+                    execution.len()
+                );
                 return Ok(SyncProgressFrontend::captcha_required(
                     image.to_string(),
                     execution.to_string(),
@@ -385,6 +409,10 @@ pub async fn full_sync_account(
 
     match result {
         Ok(r) => {
+            tracing::info!(
+                "[Command] full_sync_account service returned {} account results",
+                r.results.len()
+            );
             let _ = app.emit(
                 "sync-progress",
                 SyncProgressFrontend::success(r.total_new_count),
@@ -400,7 +428,11 @@ pub async fn full_sync_account(
             if let Some((image, execution)) =
                 parse_captcha_marker(&err_str, "MANUAL_CAPTCHA_REQUIRED|")
             {
-                tracing::info!("[Command] full_sync_account requires manual captcha");
+                tracing::info!(
+                    "[Command] full_sync_account requires manual captcha, image_len={}, execution_len={}",
+                    image.len(),
+                    execution.len()
+                );
                 return Ok(SyncProgressFrontend::captcha_required(
                     image.to_string(),
                     execution.to_string(),
@@ -441,6 +473,10 @@ pub async fn sync_with_captcha(
         .await
     {
         Ok(result) => {
+            tracing::info!(
+                "[Command] sync_with_captcha service returned {} account results",
+                result.results.len()
+            );
             let _ = app.emit(
                 "sync-progress",
                 SyncProgressFrontend::success(result.total_new_count),
@@ -454,7 +490,11 @@ pub async fn sync_with_captcha(
         Err(e) => {
             let err_str = e.to_string();
             if let Some((image, execution)) = parse_captcha_marker(&err_str, "CAPTCHA_WRONG|") {
-                tracing::warn!("[Command] sync_with_captcha captcha wrong, refreshing image");
+                tracing::warn!(
+                    "[Command] sync_with_captcha captcha wrong, refreshing image image_len={}, execution_len={}",
+                    image.len(),
+                    execution.len()
+                );
                 return Ok(SyncProgressFrontend::captcha_required(
                     image.to_string(),
                     execution.to_string(),
@@ -464,7 +504,11 @@ pub async fn sync_with_captcha(
             if let Some((image, execution)) =
                 parse_captcha_marker(&err_str, "MANUAL_CAPTCHA_REQUIRED|")
             {
-                tracing::info!("[Command] sync_with_captcha requires captcha for next account");
+                tracing::info!(
+                    "[Command] sync_with_captcha requires captcha for next account, image_len={}, execution_len={}",
+                    image.len(),
+                    execution.len()
+                );
                 return Ok(SyncProgressFrontend::captcha_required(
                     image.to_string(),
                     execution.to_string(),
@@ -486,7 +530,11 @@ pub async fn refresh_captcha(state: State<'_, AppState>) -> Result<SyncProgressF
 
     match sync_service.get_captcha_for_manual_login().await {
         Ok((image, execution)) => {
-            tracing::info!("[Command] refresh_captcha success");
+            tracing::info!(
+                "[Command] refresh_captcha success image_len={}, execution_len={}",
+                image.len(),
+                execution.len()
+            );
             Ok(SyncProgressFrontend::captcha_required(
                 image,
                 execution,
