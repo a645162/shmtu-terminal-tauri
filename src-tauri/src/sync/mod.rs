@@ -146,6 +146,24 @@ impl ConfigAccess {
         config.map(|c| c.captcha.remote_ocr_port).unwrap_or(0)
     }
 
+    fn ocr_server_type(&self) -> crate::config::OcrServerType {
+        let config_path = self.data_dir.join("app_config.toml");
+        let content = std::fs::read_to_string(&config_path).ok();
+        let config = content.and_then(|c| toml::from_str::<crate::config::AppConfig>(&c).ok());
+        config
+            .map(|c| c.captcha.ocr_server_type.clone())
+            .unwrap_or(crate::config::OcrServerType::Tcp)
+    }
+
+    fn remote_ocr_http_url(&self) -> String {
+        let config_path = self.data_dir.join("app_config.toml");
+        let content = std::fs::read_to_string(&config_path).ok();
+        let config = content.and_then(|c| toml::from_str::<crate::config::AppConfig>(&c).ok());
+        config
+            .map(|c| c.captcha.remote_ocr_http_url.clone())
+            .unwrap_or_else(|| "http://127.0.0.1:5000".to_string())
+    }
+
     fn ocr_retry_count(&self) -> usize {
         let config_path = self.data_dir.join("app_config.toml");
         let content = std::fs::read_to_string(&config_path).ok();
@@ -506,18 +524,33 @@ impl BillSyncService {
             epay.probe_login().await?;
             let challenge = epay.prepare_challenge().await?;
 
-            let host = cfg.remote_ocr_host();
-            let port = cfg.remote_ocr_port();
-            if host.is_empty() || port == 0 {
-                return Err(AppError::Sync("未配置远程OCR服务器".to_string()));
-            }
-
-            tracing::info!("[Sync] Using remote OCR {}:{}", host, port);
-            let captcha_code = shmtu_cas::captcha::OcrCaptchaResolver::new(&host, port)
-                .with_retries(max_attempts)
-                .resolve(&challenge.captcha_image)
-                .await?
-                .into_final_answer();
+            let captcha_code = match cfg.ocr_server_type() {
+                crate::config::OcrServerType::Tcp => {
+                    let host = cfg.remote_ocr_host();
+                    let port = cfg.remote_ocr_port();
+                    if host.is_empty() || port == 0 {
+                        return Err(AppError::Sync("未配置远程OCR服务器".to_string()));
+                    }
+                    tracing::info!("[Sync] Using remote OCR (TCP) {}:{}", host, port);
+                    shmtu_cas::captcha::OcrCaptchaResolver::new(&host, port)
+                        .with_retries(max_attempts)
+                        .resolve(&challenge.captcha_image)
+                        .await?
+                        .into_final_answer()
+                }
+                crate::config::OcrServerType::Restful => {
+                    let http_url = cfg.remote_ocr_http_url();
+                    if http_url.is_empty() {
+                        return Err(AppError::Sync("未配置RESTful OCR服务器地址".to_string()));
+                    }
+                    tracing::info!("[Sync] Using remote OCR (RESTful) {}", http_url);
+                    shmtu_cas::captcha::OcrHttpCaptchaResolver::new(&http_url)
+                        .with_retries(max_attempts)
+                        .resolve(&challenge.captcha_image)
+                        .await?
+                        .into_final_answer()
+                }
+            };
 
             tracing::info!("[Sync] Captcha: {}", captcha_code);
 

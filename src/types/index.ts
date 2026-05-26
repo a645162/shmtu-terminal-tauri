@@ -83,12 +83,22 @@ export type BillItemStatus = 'all' | 'wait_for' | 'success' | 'failure';
 // Captcha mode
 export type CaptchaMode = 'manual' | 'remote_ocr' | 'local_onnx';
 
+// OCR server type
+export type OcrServerType = 'tcp' | 'restful';
+
 // Captcha answer kind
 export type CaptchaAnswerKind = 'answer' | 'expression';
 export type SyncRangePreset = 'week' | 'half_month' | 'month' | 'half_year' | 'year' | 'all';
 
 // App theme
 export type AppTheme = 'light' | 'dark' | 'system';
+
+// App UI config
+export interface AppUiConfig {
+  theme: AppTheme;
+  language: string;
+  decimal_places: number;
+}
 
 // Captcha test result
 export interface CaptchaTestResult {

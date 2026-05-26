@@ -6,6 +6,12 @@ use tauri::State;
 use crate::entity::bill_merged;
 use crate::state::AppState;
 
+/// 将浮点数四舍五入到指定小数位数。
+fn round_to_n(value: f64, n: u32) -> f64 {
+    let factor = 10f64.powi(n as i32);
+    (value * factor).round() / factor
+}
+
 /// 统计查询通用参数
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -203,11 +209,14 @@ pub async fn get_statistics_summary(
     tracing::info!("[Statistics] expense={}, expense_count={}, days={}, daily_average={}",
         expense, expense_count, days, expense / days);
 
+    let config = state.config.read().await;
+    let dp = config.decimal_places();
+
     Ok(StatisticsSummary {
-        total_expense: expense,
-        total_income: income,
-        net_expense: expense - income,
-        daily_average: expense / days,
+        total_expense: round_to_n(expense, dp),
+        total_income: round_to_n(income, dp),
+        net_expense: round_to_n(expense - income, dp),
+        daily_average: round_to_n(expense / days, dp),
         expense_count,
         income_count,
     })
@@ -246,11 +255,14 @@ pub async fn get_daily_trend(
         tracing::debug!("[Statistics]   {} -> {}", date, expense);
     }
 
+    let config = state.config.read().await;
+    let dp = config.decimal_places();
+
     Ok(daily_map
         .into_iter()
         .map(|(date, expense)| DailyTrendItem {
             date,
-            expense,
+            expense: round_to_n(expense, dp),
             income: 0.0,
         })
         .collect())
@@ -333,6 +345,13 @@ pub async fn get_category_distribution(
         .collect();
 
     items.sort_by(|a, b| b.value.partial_cmp(&a.value).unwrap_or(std::cmp::Ordering::Equal));
+
+    let config = state.config.read().await;
+    let dp = config.decimal_places();
+    for item in &mut items {
+        item.value = round_to_n(item.value, dp);
+    }
+
     Ok(items)
 }
 
@@ -401,6 +420,13 @@ pub async fn get_meal_distribution(
         .collect();
 
     items.sort_by(|a, b| b.amount.partial_cmp(&a.amount).unwrap_or(std::cmp::Ordering::Equal));
+
+    let config = state.config.read().await;
+    let dp = config.decimal_places();
+    for item in &mut items {
+        item.amount = round_to_n(item.amount, dp);
+    }
+
     Ok(items)
 }
 
@@ -455,12 +481,15 @@ pub async fn get_consumption_distribution(
         tracing::info!("[Statistics]   {} -> count={}, amount={}", range, count, amount);
     }
 
+    let config = state.config.read().await;
+    let dp = config.decimal_places();
+
     Ok(buckets
         .iter()
         .map(|(range, count, amount)| ConsumptionBucketItem {
             range: range.to_string(),
             count: *count,
-            amount: *amount,
+            amount: round_to_n(*amount, dp),
         })
         .collect())
 }
@@ -514,11 +543,14 @@ pub async fn get_merchant_ranking(
         tracing::info!("[Statistics]   {} -> amount={}, count={}", merchant, amount, count);
     }
 
+    let config = state.config.read().await;
+    let dp = config.decimal_places();
+
     Ok(items
         .into_iter()
         .map(|(merchant, amount, count)| MerchantRankingItem {
             merchant,
-            amount,
+            amount: round_to_n(amount, dp),
             count,
         })
         .collect())
@@ -592,11 +624,14 @@ pub async fn get_category_summary(
         category_name, total_amount, count, total_amount / days, avg_per_transaction
     );
 
+    let config = state.config.read().await;
+    let dp = config.decimal_places();
+
     Ok(CategorySummary {
         category: category_name,
-        total_amount,
+        total_amount: round_to_n(total_amount, dp),
         count,
-        daily_average: total_amount / days,
-        avg_per_transaction,
+        daily_average: round_to_n(total_amount / days, dp),
+        avg_per_transaction: round_to_n(avg_per_transaction, dp),
     })
 }

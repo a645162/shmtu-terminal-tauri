@@ -1,9 +1,10 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::Serialize;
 use shmtu_cas::captcha::CaptchaResolver;
+use shmtu_ocr::backend::CasOnnxBackend;
 use tauri::State;
 
-use crate::config::CaptchaMode;
+use crate::config::{CaptchaMode, OcrServerType};
 use crate::state::AppState;
 
 /// 验证码测试结果（前端展示用）
@@ -178,62 +179,156 @@ async fn do_test_captcha(
             )
         }
         CaptchaMode::RemoteOcr => {
-            let (host, port, retry_count) = if let Some(state) = state {
+            let (host, port, retry_count, ocr_server_type, http_url) = if let Some(state) = state {
                 let config = state.config.read().await;
                 let captcha_config = &config.get().captcha;
                 (
                     captcha_config.remote_ocr_host.clone(),
                     captcha_config.remote_ocr_port,
                     captcha_config.ocr_retry_count,
+                    captcha_config.ocr_server_type.clone(),
+                    captcha_config.remote_ocr_http_url.clone(),
                 )
             } else {
-                (String::new(), 0, 3)
+                (String::new(), 0, 3, OcrServerType::Tcp, String::new())
             };
 
-            if host.is_empty() || port == 0 {
-                tracing::error!("[Captcha] do_test_captcha: remote OCR not configured");
-                (
-                    String::new(),
-                    String::new(),
-                    false,
-                    Some("未配置远程OCR服务器地址".to_string()),
-                )
-            } else {
-                tracing::info!(
-                    "[Captcha] do_test_captcha: using remote OCR {}:{}",
-                    host,
-                    port
-                );
-                let resolver = shmtu_cas::captcha::OcrCaptchaResolver::new(&host, port)
-                    .with_retries(retry_count);
-                match resolver.resolve(&challenge.captcha_image).await {
-                    Ok(result) => {
-                        // OCR 返回表达式（如 "3+5="）和计算后的答案
-                        let expr = result.value.clone();
-                        let ans = result.into_final_answer();
-                        tracing::info!("[Captcha] do_test_captcha: OCR success, answer={}", ans);
-                        (expr, ans, true, None)
-                    }
-                    Err(e) => {
-                        tracing::error!("[Captcha] do_test_captcha: OCR failed: {}", e);
+            match ocr_server_type {
+                OcrServerType::Tcp => {
+                    if host.is_empty() || port == 0 {
+                        tracing::error!("[Captcha] do_test_captcha: remote OCR not configured");
                         (
                             String::new(),
                             String::new(),
                             false,
-                            Some(format!("远程OCR识别失败: {}", e)),
+                            Some("未配置远程OCR服务器地址".to_string()),
                         )
+                    } else {
+                        tracing::info!(
+                            "[Captcha] do_test_captcha: using remote OCR (TCP) {}:{}",
+                            host,
+                            port
+                        );
+                        let resolver = shmtu_cas::captcha::OcrCaptchaResolver::new(&host, port)
+                            .with_retries(retry_count);
+                        match resolver.resolve(&challenge.captcha_image).await {
+                            Ok(result) => {
+                                let expr = result.value.clone();
+                                let ans = result.into_final_answer();
+                                tracing::info!("[Captcha] do_test_captcha: OCR (TCP) success, answer={}", ans);
+                                (expr, ans, true, None)
+                            }
+                            Err(e) => {
+                                tracing::error!("[Captcha] do_test_captcha: OCR (TCP) failed: {}", e);
+                                (
+                                    String::new(),
+                                    String::new(),
+                                    false,
+                                    Some(format!("远程OCR识别失败: {}", e)),
+                                )
+                            }
+                        }
+                    }
+                }
+                OcrServerType::Restful => {
+                    if http_url.is_empty() {
+                        tracing::error!("[Captcha] do_test_captcha: RESTful OCR URL not configured");
+                        (
+                            String::new(),
+                            String::new(),
+                            false,
+                            Some("未配置RESTful OCR服务器地址".to_string()),
+                        )
+                    } else {
+                        tracing::info!(
+                            "[Captcha] do_test_captcha: using remote OCR (RESTful) {}",
+                            http_url
+                        );
+                        let resolver = shmtu_cas::captcha::OcrHttpCaptchaResolver::new(&http_url)
+                            .with_retries(retry_count);
+                        match resolver.resolve(&challenge.captcha_image).await {
+                            Ok(result) => {
+                                let expr = result.value.clone();
+                                let ans = result.into_final_answer();
+                                tracing::info!("[Captcha] do_test_captcha: OCR (RESTful) success, answer={}", ans);
+                                (expr, ans, true, None)
+                            }
+                            Err(e) => {
+                                tracing::error!("[Captcha] do_test_captcha: OCR (RESTful) failed: {}", e);
+                                (
+                                    String::new(),
+                                    String::new(),
+                                    false,
+                                    Some(format!("RESTful OCR识别失败: {}", e)),
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
         CaptchaMode::LocalOnnx => {
-            tracing::error!("[Captcha] do_test_captcha: local ONNX not implemented");
-            (
-                String::new(),
-                String::new(),
-                false,
-                Some("本地ONNX模式暂未实现，请使用远程OCR或手动模式".to_string()),
-            )
+            let state_ref = state.ok_or_else(|| "LocalOnnx模式需要应用状态".to_string())?;
+            let local_ocr = state_ref.local_ocr.clone();
+
+            // 检查是否已初始化，未初始化则尝试加载模型
+            let needs_load = {
+                let guard = local_ocr.lock().map_err(|e| format!("获取ONNX锁失败: {}", e))?;
+                guard.is_none()
+            };
+            // guard 已释放，可以安全 await
+
+            if needs_load {
+                let config = state_ref.config.read().await;
+                let model_path = config.onnx_model_path();
+                let missing = CasOnnxBackend::missing_model_files(&model_path);
+                if !missing.is_empty() {
+                    let missing_str = missing.join(", ");
+                    tracing::error!("[Captcha] do_test_captcha: ONNX模型文件不完整，缺少: {}", missing_str);
+                    return Err(format!("ONNX模型文件不完整，缺少: {}", missing_str));
+                }
+                tracing::info!("[Captcha] do_test_captcha: loading ONNX models from {:?}", model_path);
+                let backend = CasOnnxBackend::load(&model_path)
+                    .map_err(|e| {
+                        tracing::error!("[Captcha] do_test_captcha: 加载ONNX模型失败: {}", e);
+                        format!("加载ONNX模型失败: {}", e)
+                    })?;
+                let mut guard = local_ocr.lock().map_err(|e| format!("获取ONNX锁失败: {}", e))?;
+                *guard = Some(backend);
+                tracing::info!("[Captcha] do_test_captcha: ONNX models loaded successfully");
+            }
+
+            // 使用 ONNX 推理（CPU 密集操作，spawn_blocking）
+            let image_data = challenge.captcha_image.clone();
+            let result = tokio::task::spawn_blocking(move || -> Result<String, String> {
+                let mut guard = local_ocr.lock().map_err(|e| format!("获取ONNX锁失败: {}", e))?;
+                let backend = guard
+                    .as_mut()
+                    .ok_or_else(|| "ONNX后端未初始化".to_string())?;
+                backend
+                    .predict_bytes(&image_data)
+                    .map(|r| r.expr)
+                    .map_err(|e| format!("ONNX推理失败: {}", e))
+            })
+            .await
+            .map_err(|e| format!("ONNX任务执行失败: {}", e))?;
+
+            match result {
+                Ok(expr) => {
+                    let ans = shmtu_cas::captcha::get_expr_result(&expr);
+                    tracing::info!("[Captcha] do_test_captcha: Local ONNX success, expr={}, answer={}", expr, ans);
+                    (expr, ans, true, None)
+                }
+                Err(e) => {
+                    tracing::error!("[Captcha] do_test_captcha: Local ONNX failed: {}", e);
+                    (
+                        String::new(),
+                        String::new(),
+                        false,
+                        Some(format!("本地ONNX识别失败: {}", e)),
+                    )
+                }
+            }
         }
     };
 
@@ -306,4 +401,58 @@ pub async fn batch_test_captcha(
         results.len()
     );
     Ok(results)
+}
+
+/// 初始化本地 ONNX 推理后端，加载模型到内存。
+///
+/// 若已初始化则跳过，若模型文件缺失则返回错误。
+#[tauri::command]
+pub async fn init_local_ocr(state: State<'_, AppState>) -> Result<(), String> {
+    tracing::info!("[Captcha] init_local_ocr called");
+
+    let local_ocr = state.local_ocr.clone();
+    {
+        let guard = local_ocr.lock().map_err(|e| format!("获取ONNX锁失败: {}", e))?;
+        if guard.is_some() {
+            tracing::info!("[Captcha] init_local_ocr: already initialized, skipping");
+            return Ok(());
+        }
+    }
+
+    let config = state.config.read().await;
+    let model_path = config.onnx_model_path();
+    let missing = CasOnnxBackend::missing_model_files(&model_path);
+    if !missing.is_empty() {
+        let missing_str = missing.join(", ");
+        tracing::error!("[Captcha] init_local_ocr: 模型文件不完整，缺少: {}", missing_str);
+        return Err(format!("模型文件不完整，缺少: {}", missing_str));
+    }
+
+    tracing::info!("[Captcha] init_local_ocr: loading models from {:?}", model_path);
+    let backend = tokio::task::spawn_blocking(move || {
+        CasOnnxBackend::load(&model_path).map_err(|e| format!("加载ONNX模型失败: {}", e))
+    })
+    .await
+    .map_err(|e| format!("ONNX加载任务执行失败: {}", e))??;
+
+    let mut guard = local_ocr.lock().map_err(|e| format!("获取ONNX锁失败: {}", e))?;
+    *guard = Some(backend);
+    tracing::info!("[Captcha] init_local_ocr: ONNX models loaded successfully");
+    Ok(())
+}
+
+/// 卸载本地 ONNX 推理后端，释放模型占用的内存。
+#[tauri::command]
+pub async fn unload_local_ocr(state: State<'_, AppState>) -> Result<(), String> {
+    tracing::info!("[Captcha] unload_local_ocr called");
+
+    let local_ocr = state.local_ocr.clone();
+    let mut guard = local_ocr.lock().map_err(|e| format!("获取ONNX锁失败: {}", e))?;
+    if guard.is_some() {
+        *guard = None;
+        tracing::info!("[Captcha] unload_local_ocr: ONNX models unloaded");
+    } else {
+        tracing::info!("[Captcha] unload_local_ocr: ONNX not loaded, nothing to unload");
+    }
+    Ok(())
 }

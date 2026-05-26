@@ -63,7 +63,7 @@ export const ExpenseTrendChart: React.FC<Props> = ({ data, onDateClick }) => {
       >
         <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
         <XAxis dataKey="date" tick={{ fontSize: 11, fill: textColor }} />
-        <YAxis tick={{ fontSize: 11, fill: textColor }} />
+        <YAxis tick={{ fontSize: 11, fill: textColor }} tickFormatter={(v: number) => v.toFixed(2)} />
         <Tooltip
           contentStyle={{
             backgroundColor: theme === 'dark' ? '#333' : '#fff',

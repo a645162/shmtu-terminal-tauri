@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use shmtu_ocr::backend::CasOnnxBackend;
 use tokio::sync::RwLock;
 
 use crate::classification::BillClassifier;
@@ -24,6 +25,8 @@ pub struct AppState {
     pub db_file_manager: Arc<DatabaseFileManager>,
     /// Session 过期检查服务
     pub session_expiration_service: Arc<SessionExpirationService>,
+    /// 本地 ONNX 推理后端（CPU 密集同步操作，使用 std::sync::Mutex）
+    pub local_ocr: Arc<std::sync::Mutex<Option<CasOnnxBackend>>>,
 }
 
 impl AppState {
@@ -98,6 +101,7 @@ impl AppState {
             classifier: Arc::new(RwLock::new(classifier)),
             db_file_manager: Arc::new(db_file_manager),
             session_expiration_service,
+            local_ocr: Arc::new(std::sync::Mutex::new(None)),
         })
     }
 

@@ -35,7 +35,7 @@ export const MerchantRankingChart: React.FC<Props> = ({ data }) => {
     <ResponsiveContainer width="100%" height={200}>
       <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 20, left: 60, bottom: 5 }}>
         <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-        <XAxis type="number" tick={{ fontSize: 12, fill: textColor }} />
+        <XAxis type="number" tick={{ fontSize: 12, fill: textColor }} tickFormatter={(v: number) => v.toFixed(2)} />
         <YAxis type="category" dataKey="merchant" tick={{ fontSize: 11, fill: textColor }} width={70} />
         <Tooltip
           contentStyle={{

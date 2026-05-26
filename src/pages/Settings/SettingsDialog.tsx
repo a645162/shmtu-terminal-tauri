@@ -22,7 +22,7 @@ import {
 } from '@fluentui/react-components';
 import { useAppStore } from '../../stores/appStore';
 import { ErrorCircle24Regular } from '@fluentui/react-icons';
-import type { CaptchaMode, AppTheme } from '../../types';
+import type { CaptchaMode, OcrServerType, AppTheme } from '../../types';
 import * as tauri from '../../services/tauri';
 import {
   PageEnterMotion,
@@ -67,6 +67,10 @@ export const SettingsDialog: React.FC = () => {
   );
   const [ocrHost, setOcrHost] = useState(config?.captcha.remote_ocr_host ?? '');
   const [ocrPort, setOcrPort] = useState(config?.captcha.remote_ocr_port?.toString() ?? '');
+  const [ocrServerType, setOcrServerType] = useState<OcrServerType>(
+    config?.captcha.ocr_server_type ?? 'tcp'
+  );
+  const [ocrHttpUrl, setOcrHttpUrl] = useState(config?.captcha.remote_ocr_http_url ?? 'http://127.0.0.1:5000');
   const [ocrRetry, setOcrRetry] = useState(config?.captcha.ocr_retry_count ?? 3);
 
   // Sync settings
@@ -88,6 +92,9 @@ export const SettingsDialog: React.FC = () => {
   const [repairingIdentity, setRepairingIdentity] = useState(false);
   const [repairingAccount, setRepairingAccount] = useState(false);
   const showError = useAppStore((s) => s.showError);
+
+  // UI settings
+  const [decimalPlaces, setDecimalPlaces] = useState(config?.ui.decimal_places ?? 2);
 
   const currentDefaultIdentity =
     identities.find((identity) => identity.id === config?.identity.default_identity_id) ?? null;
@@ -112,6 +119,8 @@ export const SettingsDialog: React.FC = () => {
           mode: captchaMode,
           remote_ocr_host: ocrHost,
           remote_ocr_port: parseInt(ocrPort) || 0,
+          ocr_server_type: ocrServerType,
+          remote_ocr_http_url: ocrHttpUrl,
           onnx_model_path: config.captcha.onnx_model_path,
           ocr_retry_count: ocrRetry,
         },
@@ -134,6 +143,7 @@ export const SettingsDialog: React.FC = () => {
         ui: {
           theme,
           language: config.ui.language,
+          decimal_places: decimalPlaces,
         },
       };
 
@@ -245,23 +255,50 @@ export const SettingsDialog: React.FC = () => {
             {captchaMode === 'remote_ocr' && (
               <>
                 <div>
-                  <Label>OCR服务器地址</Label>
-                  <Input
-                    value={ocrHost}
-                    onChange={(e) => setOcrHost(e.currentTarget.value)}
-                    placeholder="如: 192.168.1.100"
+                  <Label>OCR服务器类型</Label>
+                  <Dropdown
+                    value={ocrServerType === 'tcp' ? 'TCP' : 'RESTful HTTP'}
+                    selectedOptions={[ocrServerType]}
+                    onOptionSelect={(_, data) => setOcrServerType(data.optionValue as OcrServerType)}
                     style={{ width: '100%' }}
-                  />
+                  >
+                    <Option value="tcp">TCP</Option>
+                    <Option value="restful">RESTful HTTP</Option>
+                  </Dropdown>
                 </div>
-                <div>
-                  <Label>OCR服务器端口</Label>
-                  <Input
-                    value={ocrPort}
-                    onChange={(e) => setOcrPort(e.currentTarget.value)}
-                    placeholder="如: 8888"
-                    style={{ width: '100%' }}
-                  />
-                </div>
+                {ocrServerType === 'tcp' && (
+                  <>
+                    <div>
+                      <Label>OCR服务器地址</Label>
+                      <Input
+                        value={ocrHost}
+                        onChange={(e) => setOcrHost(e.currentTarget.value)}
+                        placeholder="如: 192.168.1.100"
+                        style={{ width: '100%' }}
+                      />
+                    </div>
+                    <div>
+                      <Label>OCR服务器端口</Label>
+                      <Input
+                        value={ocrPort}
+                        onChange={(e) => setOcrPort(e.currentTarget.value)}
+                        placeholder="如: 8888"
+                        style={{ width: '100%' }}
+                      />
+                    </div>
+                  </>
+                )}
+                {ocrServerType === 'restful' && (
+                  <div>
+                    <Label>RESTful OCR 服务地址</Label>
+                    <Input
+                      value={ocrHttpUrl}
+                      onChange={(e) => setOcrHttpUrl(e.currentTarget.value)}
+                      placeholder="如: http://127.0.0.1:5000"
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+                )}
               </>
             )}
             {captchaMode !== 'manual' && (
@@ -427,6 +464,19 @@ export const SettingsDialog: React.FC = () => {
                 <Option value="dark">暗色</Option>
                 <Option value="system">跟随系统</Option>
               </Dropdown>
+            </div>
+            <div>
+              <Label>统计小数位数: {decimalPlaces}</Label>
+              <Slider
+                min={0}
+                max={6}
+                step={1}
+                value={decimalPlaces}
+                onChange={(_, data) => setDecimalPlaces(data.value)}
+              />
+              <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                控制统计页面中金额数值的保留小数位数
+              </Text>
             </div>
           </div>
         );

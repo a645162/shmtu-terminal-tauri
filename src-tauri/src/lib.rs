@@ -96,6 +96,8 @@ pub fn run() {
             captcha::get_captcha_with_execution,
             captcha::test_captcha,
             captcha::batch_test_captcha,
+            captcha::init_local_ocr,
+            captcha::unload_local_ocr,
             data::export_data,
             data::import_data,
             data::list_snapshots,

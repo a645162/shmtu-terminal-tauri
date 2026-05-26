@@ -36,7 +36,7 @@ export const ConsumptionDistributionChart: React.FC<Props> = ({ data }) => {
       <BarChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
         <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
         <XAxis dataKey="range" tick={{ fontSize: 11, fill: textColor }} interval={0} />
-        <YAxis tick={{ fontSize: 12, fill: textColor }} />
+        <YAxis tick={{ fontSize: 12, fill: textColor }} tickFormatter={(v: number) => v.toFixed(2)} />
         <Tooltip
           contentStyle={{
             backgroundColor: theme === 'dark' ? '#333' : '#fff',

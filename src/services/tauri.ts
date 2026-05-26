@@ -5,6 +5,7 @@ import type {
   BillItem,
   BillType,
   CaptchaMode,
+  OcrServerType,
   AppTheme,
   SyncProgress,
   SnapshotInfo,
@@ -32,6 +33,8 @@ export interface AppConfig {
     mode: CaptchaMode;
     remote_ocr_host: string;
     remote_ocr_port: number;
+    ocr_server_type: OcrServerType;
+    remote_ocr_http_url: string;
     onnx_model_path: string;
     ocr_retry_count: number;
   };
@@ -56,6 +59,7 @@ export interface AppConfig {
   ui: {
     theme: AppTheme;
     language: string;
+    decimal_places: number;
   };
 }
 
@@ -194,6 +198,14 @@ export async function test_captcha(mode: CaptchaMode, manualInput?: string): Pro
 
 export async function batch_test_captcha(mode: CaptchaMode, count: number): Promise<CaptchaTestResult[]> {
   return invoke<CaptchaTestResult[]>('batch_test_captcha', { mode, count });
+}
+
+export async function init_local_ocr(): Promise<void> {
+  return invoke('init_local_ocr');
+}
+
+export async function unload_local_ocr(): Promise<void> {
+  return invoke('unload_local_ocr');
 }
 
 // ========== Data Transfer ==========

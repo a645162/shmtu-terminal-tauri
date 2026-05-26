@@ -62,6 +62,21 @@ impl Default for CaptchaMode {
     }
 }
 
+/// OCR 服务器类型（TCP 或 RESTful HTTP）
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum OcrServerType {
+    Tcp,
+    Restful,
+}
+
+#[allow(clippy::derivable_impls)]
+impl Default for OcrServerType {
+    fn default() -> Self {
+        OcrServerType::Tcp
+    }
+}
+
 /// 验证码配置（识别模式、远程 OCR 地址、ONNX 模型路径）
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CaptchaConfig {
@@ -72,9 +87,17 @@ pub struct CaptchaConfig {
     #[serde(default)]
     pub remote_ocr_port: u16,
     #[serde(default)]
+    pub ocr_server_type: OcrServerType,
+    #[serde(default = "default_remote_ocr_http_url")]
+    pub remote_ocr_http_url: String,
+    #[serde(default)]
     pub onnx_model_path: String,
     #[serde(default = "default_ocr_retry_count")]
     pub ocr_retry_count: usize,
+}
+
+fn default_remote_ocr_http_url() -> String {
+    "http://127.0.0.1:5000".to_string()
 }
 
 fn default_ocr_retry_count() -> usize {
@@ -142,13 +165,16 @@ fn default_check_interval() -> u64 {
     24
 }
 
-/// UI 配置（主题、语言）
+/// UI 配置（主题、语言、小数位数）
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UiConfig {
     #[serde(default = "default_theme")]
     pub theme: String,
     #[serde(default = "default_language")]
     pub language: String,
+    /// 统计数值保留小数位数，默认 2
+    #[serde(default = "default_decimal_places")]
+    pub decimal_places: u32,
 }
 
 fn default_theme() -> String {
@@ -156,6 +182,9 @@ fn default_theme() -> String {
 }
 fn default_language() -> String {
     "zh-CN".to_string()
+}
+fn default_decimal_places() -> u32 {
+    2
 }
 
 /// 会话续期配置
@@ -312,6 +341,11 @@ impl TomlConfig {
         } else {
             PathBuf::from(&self.config.data.data_directory)
         }
+    }
+
+    /// 获取统计数值保留小数位数。
+    pub fn decimal_places(&self) -> u32 {
+        self.config.ui.decimal_places
     }
 
     /// 获取 ONNX 模型路径。

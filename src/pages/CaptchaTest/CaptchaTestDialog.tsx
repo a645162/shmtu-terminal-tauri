@@ -25,12 +25,13 @@ import {
 } from '@fluentui/react-components';
 import { ShieldTask24Regular, ArrowCounterclockwise24Regular } from '@fluentui/react-icons';
 import { useAppStore } from '../../stores/appStore';
-import type { CaptchaMode, CaptchaTestResult } from '../../types';
+import type { CaptchaMode, CaptchaTestResult, OcrServerType } from '../../types';
 import * as tauri from '../../services/tauri';
 
 export const CaptchaTestDialog: React.FC = () => {
   const showCaptchaTestDialog = useAppStore((s) => s.showCaptchaTestDialog);
   const setShowCaptchaTestDialog = useAppStore((s) => s.setShowCaptchaTestDialog);
+  const config = useAppStore((s) => s.config);
 
   const [mode, setMode] = useState<CaptchaMode>('manual');
   const [captchaImage, setCaptchaImage] = useState<string>('');
@@ -113,6 +114,26 @@ export const CaptchaTestDialog: React.FC = () => {
                   <Option value="local_onnx">本地ONNX</Option>
                 </Dropdown>
               </div>
+
+              {/* OCR 配置信息 */}
+              {mode === 'remote_ocr' && config?.captcha && (
+                <div
+                  style={{
+                    padding: 10,
+                    borderRadius: 6,
+                    border: '1px solid var(--colorNeutralStroke2)',
+                    background: 'var(--colorNeutralBackground2)',
+                  }}
+                >
+                  <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                    当前 OCR 服务器类型：{(config.captcha.ocr_server_type ?? 'tcp') === 'tcp' ? 'TCP' : 'RESTful HTTP'}
+                    {(config.captcha.ocr_server_type ?? 'tcp') === 'tcp'
+                      ? ` (${config.captcha.remote_ocr_host}:${config.captcha.remote_ocr_port})`
+                      : ` (${config.captcha.remote_ocr_http_url})`}
+                    {' — 可在"设置 → 验证码"中修改'}
+                  </Text>
+                </div>
+              )}
 
               {/* Captcha Image Display */}
               <div
