@@ -70,7 +70,7 @@ export const SettingsDialog: React.FC = () => {
   const [ocrServerType, setOcrServerType] = useState<OcrServerType>(
     config?.captcha.ocr_server_type ?? 'tcp'
   );
-  const [ocrHttpUrl, setOcrHttpUrl] = useState(config?.captcha.remote_ocr_http_url ?? 'http://127.0.0.1:5000');
+  const [ocrHttpUrl, setOcrHttpUrl] = useState(config?.captcha.remote_ocr_http_url ?? 'http://127.0.0.1:21600');
   const [ocrRetry, setOcrRetry] = useState(config?.captcha.ocr_retry_count ?? 3);
 
   // Sync settings
@@ -294,7 +294,7 @@ export const SettingsDialog: React.FC = () => {
                     <Input
                       value={ocrHttpUrl}
                       onChange={(e) => setOcrHttpUrl(e.currentTarget.value)}
-                      placeholder="如: http://127.0.0.1:5000"
+                      placeholder="如: http://127.0.0.1:21600"
                       style={{ width: '100%' }}
                     />
                   </div>
