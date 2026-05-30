@@ -16,6 +16,8 @@ interface Props {
   data?: ConsumptionBucketItem[];
 }
 
+const BUCKET_COLORS = ['#5AD8A6', '#5B8FF9', '#F6BD16', '#E86452', '#945FB9'];
+
 export const ConsumptionDistributionChart: React.FC<Props> = ({ data }) => {
   const theme = useAppStore((s) => s.theme);
 
@@ -49,9 +51,9 @@ export const ConsumptionDistributionChart: React.FC<Props> = ({ data }) => {
             return [`¥${Number(value).toFixed(2)}`, '消费金额'];
           }}
         />
-        <Bar dataKey="amount" name="amount" fill="#0078D4" radius={[4, 4, 0, 0]}>
+        <Bar dataKey="amount" name="amount" fill="#5B8FF9" radius={[4, 4, 0, 0]}>
           {chartData.map((_, index) => (
-            <Cell key={`cell-${index}`} fill={`hsl(210, 80%, ${60 - index * 8}%)`} />
+            <Cell key={`cell-${index}`} fill={BUCKET_COLORS[index % BUCKET_COLORS.length]} />
           ))}
         </Bar>
       </BarChart>
