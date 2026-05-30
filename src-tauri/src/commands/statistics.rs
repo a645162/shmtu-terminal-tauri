@@ -301,6 +301,10 @@ pub async fn get_category_distribution(
         std::collections::HashMap::new();
 
     for m in &models {
+        if is_income(m) {
+            continue;
+        }
+
         let category = if let Some(ref classifier) = *classifier {
             classifier
                 .classify(
@@ -335,16 +339,19 @@ pub async fn get_category_distribution(
 
     let mut items: Vec<CategoryItem> = category_map
         .into_iter()
-        .enumerate()
-        .map(|(i, (name, (value, count)))| CategoryItem {
+        .map(|(name, (value, count))| CategoryItem {
             name,
             value,
             count,
-            color: CATEGORY_COLORS[i % CATEGORY_COLORS.len()].to_string(),
+            color: String::new(),
         })
         .collect();
 
     items.sort_by(|a, b| b.value.partial_cmp(&a.value).unwrap_or(std::cmp::Ordering::Equal));
+
+    for (i, item) in items.iter_mut().enumerate() {
+        item.color = CATEGORY_COLORS[i % CATEGORY_COLORS.len()].to_string();
+    }
 
     let config = state.config.read().await;
     let dp = config.decimal_places();
@@ -385,6 +392,10 @@ pub async fn get_meal_distribution(
         std::collections::HashMap::new();
 
     for m in &models {
+        if is_income(m) {
+            continue;
+        }
+
         let meal = if let Some(ref classifier) = *classifier {
             classifier
                 .classify(
@@ -464,6 +475,10 @@ pub async fn get_consumption_distribution(
     ];
 
     for m in &models {
+        if is_income(m) {
+            continue;
+        }
+
         let money = m.money.unwrap_or(0.0).abs();
         let idx = match money {
             m if m < 10.0 => 0,
@@ -521,6 +536,10 @@ pub async fn get_merchant_ranking(
         std::collections::HashMap::new();
 
     for m in &models {
+        if is_income(m) {
+            continue;
+        }
+
         let target = match m.target_user.as_ref() {
             Some(t) if !t.is_empty() => t,
             _ => continue,
@@ -585,6 +604,10 @@ pub async fn get_category_summary(
     let mut count = 0u32;
 
     for m in &models {
+        if is_income(m) {
+            continue;
+        }
+
         let cat = if let Some(ref classifier) = *classifier {
             classifier
                 .classify(

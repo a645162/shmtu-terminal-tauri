@@ -16,6 +16,11 @@ interface Props {
   data?: MerchantRankingItem[];
 }
 
+const MERCHANT_COLORS = [
+  '#5B8FF9', '#5AD8A6', '#F6BD16', '#E86452', '#6DC8EC',
+  '#945FB9', '#FF9845', '#1E9493', '#FF99C3', '#269A99',
+];
+
 export const MerchantRankingChart: React.FC<Props> = ({ data }) => {
   const theme = useAppStore((s) => s.theme);
 
@@ -49,9 +54,9 @@ export const MerchantRankingChart: React.FC<Props> = ({ data }) => {
             return [`¥${Number(value).toFixed(2)}`, '消费金额'];
           }}
         />
-        <Bar dataKey="amount" name="amount" fill="#107C10" radius={[0, 4, 4, 0]}>
+        <Bar dataKey="amount" name="amount" fill="#5B8FF9" radius={[0, 4, 4, 0]}>
           {chartData.map((_, index) => (
-            <Cell key={`cell-${index}`} fill={`hsl(120, 60%, ${50 - index * 4}%)`} />
+            <Cell key={`cell-${index}`} fill={MERCHANT_COLORS[index % MERCHANT_COLORS.length]} />
           ))}
         </Bar>
       </BarChart>

@@ -16,6 +16,7 @@ import {
   SubtractCircle24Regular,
   AddCircle24Regular,
   ArrowSync24Regular,
+  ArrowExpand24Regular,
 } from '@fluentui/react-icons';
 import { useAppStore } from '../../stores/appStore';
 import { ExpenseTrendChart } from '../../components/Charts/ExpenseTrendChart';
@@ -74,6 +75,7 @@ export const HomePage: React.FC = () => {
   const loadDailyTrend = useAppStore((s) => s.loadDailyTrend);
   const loadCategoryDistribution = useAppStore((s) => s.loadCategoryDistribution);
   const refreshStatistics = useAppStore((s) => s.refreshStatistics);
+  const setShowStatisticsDialog = useAppStore((s) => s.setShowStatisticsDialog);
 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [homeTab, setHomeTab] = useState<string>('overview');
@@ -141,19 +143,30 @@ export const HomePage: React.FC = () => {
       <SectionEnterMotion>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
           <Title3>首页统计</Title3>
-          <Button
-            icon={
-              <span className={isRefreshing ? 'motion-spin-indefinite' : undefined}>
-                <ArrowSync24Regular />
-              </span>
-            }
-            appearance="secondary"
-            size="small"
-            onClick={handleRefresh}
-            disabled={isRefreshing || !currentIdentity}
-          >
-            {isRefreshing ? '刷新中...' : '刷新统计'}
-          </Button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Button
+              icon={<ArrowExpand24Regular />}
+              appearance="secondary"
+              size="small"
+              onClick={() => setShowStatisticsDialog(true)}
+              disabled={!currentIdentity}
+            >
+              查看更多
+            </Button>
+            <Button
+              icon={
+                <span className={isRefreshing ? 'motion-spin-indefinite' : undefined}>
+                  <ArrowSync24Regular />
+                </span>
+              }
+              appearance="secondary"
+              size="small"
+              onClick={handleRefresh}
+              disabled={isRefreshing || !currentIdentity}
+            >
+              {isRefreshing ? '刷新中...' : '刷新统计'}
+            </Button>
+          </div>
         </div>
       </SectionEnterMotion>
 

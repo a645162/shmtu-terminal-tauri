@@ -69,10 +69,10 @@ export const CategoryPieChart: React.FC<Props> = ({ data, onCategoryClick }) => 
     [onCategoryClick]
   );
 
-  const chartData = (data ?? []).map((item) => ({
+  const chartData = (data ?? []).map((item, index) => ({
     ...item,
     displayName: getCategoryDisplayName(item.name),
-    color: getCategoryColor(item.name),
+    color: item.color || getCategoryColor(item.name) || FALLBACK_COLORS[index % FALLBACK_COLORS.length],
   }));
 
   const textColor = theme === 'dark' ? '#e0e0e0' : '#333';

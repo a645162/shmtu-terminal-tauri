@@ -21,12 +21,14 @@ interface Props {
 export const CategoryBarChart: React.FC<Props> = ({ data }) => {
   const theme = useAppStore((s) => s.theme);
 
+  const FALLBACK_COLORS = ['#0078D4', '#FF8C00', '#107C10', '#D13438', '#8764B8', '#00B7C3', '#FFB900'];
+
   const chartData = (data ?? [])
     .filter((item) => item.value > 0)
-    .map((item) => ({
+    .map((item, index) => ({
       ...item,
       displayName: getCategoryDisplayName(item.name),
-      color: getCategoryColor(item.name),
+      color: item.color || getCategoryColor(item.name) || FALLBACK_COLORS[index % FALLBACK_COLORS.length],
     }))
     .sort((a, b) => b.value - a.value);
 
