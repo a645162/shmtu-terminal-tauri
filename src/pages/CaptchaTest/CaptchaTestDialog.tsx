@@ -25,7 +25,7 @@ import {
 } from '@fluentui/react-components';
 import { ShieldTask24Regular, ArrowCounterclockwise24Regular } from '@fluentui/react-icons';
 import { useAppStore } from '../../stores/appStore';
-import type { CaptchaMode, CaptchaTestResult, OcrServerType } from '../../types';
+import type { CaptchaMode, CaptchaTestResult } from '../../types';
 import * as tauri from '../../services/tauri';
 
 export const CaptchaTestDialog: React.FC = () => {
@@ -86,7 +86,7 @@ export const CaptchaTestDialog: React.FC = () => {
     }
   };
 
-  const modeLabel = mode === 'manual' ? '手动输入' : mode === 'remote_ocr' ? '远程OCR' : '本地ONNX';
+  const modeLabel = mode === 'manual' ? '手动输入' : mode === 'remote_ocr' ? '远程OCR(旧)' : mode === 'remote_ocr_http' ? '远程OCR(RESTful)' : '本地ONNX';
 
   // Normalize captcha image src
   const imgSrc = captchaImage.startsWith('data:') ? captchaImage : `data:image/png;base64,${captchaImage}`;
@@ -110,13 +110,14 @@ export const CaptchaTestDialog: React.FC = () => {
                   style={{ width: '100%' }}
                 >
                   <Option value="manual">手动输入</Option>
-                  <Option value="remote_ocr">远程OCR</Option>
+                  <Option value="remote_ocr">远程OCR(旧)</Option>
+                  <Option value="remote_ocr_http">远程OCR(RESTful)</Option>
                   <Option value="local_onnx">本地ONNX</Option>
                 </Dropdown>
               </div>
 
               {/* OCR 配置信息 */}
-              {mode === 'remote_ocr' && config?.captcha && (
+              {(mode === 'remote_ocr' || mode === 'remote_ocr_http') && config?.captcha && (
                 <div
                   style={{
                     padding: 10,
@@ -126,10 +127,9 @@ export const CaptchaTestDialog: React.FC = () => {
                   }}
                 >
                   <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
-                    当前 OCR 服务器类型：{(config.captcha.ocr_server_type ?? 'tcp') === 'tcp' ? 'TCP' : 'RESTful HTTP'}
-                    {(config.captcha.ocr_server_type ?? 'tcp') === 'tcp'
-                      ? ` (${config.captcha.remote_ocr_host}:${config.captcha.remote_ocr_port})`
-                      : ` (${config.captcha.remote_ocr_http_url})`}
+                    当前 OCR 服务器：{mode === 'remote_ocr'
+                      ? `TCP (${config.captcha.remote_ocr_host}:${config.captcha.remote_ocr_port})`
+                      : `RESTful (${config.captcha.remote_ocr_http_url})`}
                     {' — 可在"设置 → 验证码"中修改'}
                   </Text>
                 </div>
@@ -224,8 +224,10 @@ export const CaptchaTestDialog: React.FC = () => {
                             {result.mode === 'manual'
                               ? '手动'
                               : result.mode === 'remote_ocr'
-                                ? '远程OCR'
-                                : '本地ONNX'}
+                                ? '远程OCR(旧)'
+                                : result.mode === 'remote_ocr_http'
+                                  ? '远程OCR(RESTful)'
+                                  : '本地ONNX'}
                           </TableCell>
                         </TableRow>
                       ))}

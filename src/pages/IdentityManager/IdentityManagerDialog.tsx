@@ -36,6 +36,8 @@ export const IdentityManagerDialog: React.FC = () => {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [newIdentityName, setNewIdentityName] = useState('');
   const [isAddingIdentity, setIsAddingIdentity] = useState(false);
+  const [editingIdentityId, setEditingIdentityId] = useState<number | null>(null);
+  const [editingIdentityName, setEditingIdentityName] = useState('');
 
   // Account form state
   const [accountForm, setAccountForm] = useState({
@@ -81,6 +83,35 @@ export const IdentityManagerDialog: React.FC = () => {
     } catch (e) {
       console.error('Failed to delete identity:', e);
     }
+  };
+
+  const handleStartEditIdentity = (identity: Identity) => {
+    setEditingIdentityId(identity.id);
+    setEditingIdentityName(identity.name);
+  };
+
+  const handleSaveEditIdentity = async () => {
+    if (!editingIdentityId || !editingIdentityName.trim()) return;
+    try {
+      const identity = identities.find((i) => i.id === editingIdentityId);
+      if (identity) {
+        await tauri.update_identity({ ...identity, name: editingIdentityName.trim() });
+        loadIdentities();
+        if (selectedIdentity?.id === editingIdentityId) {
+          setSelectedIdentity({ ...identity, name: editingIdentityName.trim() });
+        }
+      }
+    } catch (e) {
+      console.error('Failed to update identity:', e);
+    } finally {
+      setEditingIdentityId(null);
+      setEditingIdentityName('');
+    }
+  };
+
+  const handleCancelEditIdentity = () => {
+    setEditingIdentityId(null);
+    setEditingIdentityName('');
   };
 
   const handleSelectAccount = (account: Account) => {
@@ -176,21 +207,52 @@ export const IdentityManagerDialog: React.FC = () => {
                       alignItems: 'center',
                     }}
                   >
-                    <Text
-                      size={200}
-                      weight={selectedIdentity?.id === identity.id ? 'semibold' : 'regular'}
-                    >
-                      {identity.name}
-                    </Text>
-                    <Button
-                      appearance="subtle"
-                      icon={<Delete24Regular />}
-                      size="small"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteIdentity(identity.id);
-                      }}
-                    />
+                    {editingIdentityId === identity.id ? (
+                      <div style={{ display: 'flex', gap: 4, flex: 1 }} onClick={(e) => e.stopPropagation()}>
+                        <Input
+                          size="small"
+                          value={editingIdentityName}
+                          onChange={(e) => setEditingIdentityName(e.currentTarget.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveEditIdentity();
+                            if (e.key === 'Escape') handleCancelEditIdentity();
+                          }}
+                          style={{ flex: 1 }}
+                        />
+                        <Button size="small" appearance="primary" onClick={handleSaveEditIdentity}>
+                          确定
+                        </Button>
+                      </div>
+                    ) : (
+                      <Text
+                        size={200}
+                        weight={selectedIdentity?.id === identity.id ? 'semibold' : 'regular'}
+                      >
+                        {identity.name}
+                      </Text>
+                    )}
+                    <div style={{ display: 'flex', gap: 2 }}>
+                      {editingIdentityId !== identity.id && (
+                        <Button
+                          appearance="subtle"
+                          icon={<Edit24Regular />}
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleStartEditIdentity(identity);
+                          }}
+                        />
+                      )}
+                      <Button
+                        appearance="subtle"
+                        icon={<Delete24Regular />}
+                        size="small"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteIdentity(identity.id);
+                        }}
+                      />
+                    </div>
                   </div>
                 ))}
                 {isAddingIdentity ? (

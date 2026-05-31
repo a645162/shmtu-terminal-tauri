@@ -5,7 +5,6 @@ import type {
   BillItem,
   BillType,
   CaptchaMode,
-  OcrServerType,
   AppTheme,
   SyncProgress,
   SnapshotInfo,
@@ -33,7 +32,6 @@ export interface AppConfig {
     mode: CaptchaMode;
     remote_ocr_host: string;
     remote_ocr_port: number;
-    ocr_server_type: OcrServerType;
     remote_ocr_http_url: string;
     onnx_model_path: string;
     ocr_retry_count: number;

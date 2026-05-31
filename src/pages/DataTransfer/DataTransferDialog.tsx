@@ -34,6 +34,7 @@ import {
   PageEnterMotion,
   SectionEnterMotion,
 } from '../../components/Common/motion';
+import { open, save } from '@tauri-apps/plugin-dialog';
 
 type DataTab = 'export' | 'import' | 'snapshot';
 
@@ -83,7 +84,23 @@ export const DataTransferDialog: React.FC = () => {
     }
   }, [selectedTab, showDataTransferDialog, loadSnapshots]);
 
+  const handleBrowseExport = async () => {
+    const extMap: Record<ExportFormat, string> = { csv: 'csv', json: 'json', qianji: 'json' };
+    const defaultPath = `bills_${Date.now()}.${extMap[exportFormat]}`;
+    const selected = await save({
+      defaultPath,
+      filters: [{
+        name: exportFormat === 'csv' ? 'CSV 文件' : exportFormat === 'qianji' ? '钱迹 JSON' : 'JSON 文件',
+        extensions: [extMap[exportFormat]],
+      }],
+    });
+    if (selected) {
+      setExportPath(selected);
+    }
+  };
+
   const handleExport = async () => {
+    if (!exportPath) return;
     setExporting(true);
     setExportResult('');
     try {
@@ -91,7 +108,7 @@ export const DataTransferDialog: React.FC = () => {
         identityId: parseInt(exportIdentityId),
         format: exportFormat,
         sourceType: exportSource,
-        filePath: exportPath || `./Data/export/bills_${Date.now()}.${exportFormat}`,
+        filePath: exportPath,
       });
       setExportResult(`导出成功: ${result}`);
     } catch (e) {
@@ -101,7 +118,18 @@ export const DataTransferDialog: React.FC = () => {
     }
   };
 
+  const handleBrowseImport = async () => {
+    const selected = await open({
+      filters: [{ name: 'JSON 文件', extensions: ['json'] }],
+      multiple: false,
+    });
+    if (selected) {
+      setImportPath(typeof selected === 'string' ? selected : selected);
+    }
+  };
+
   const handleImport = async () => {
+    if (!importPath) return;
     setImporting(true);
     setImportResult('');
     try {
@@ -183,21 +211,24 @@ export const DataTransferDialog: React.FC = () => {
             </div>
             <div>
               <Label>保存路径</Label>
-              <Input
-                value={exportPath}
-                onChange={(e) => setExportPath(e.currentTarget.value)}
-                placeholder="留空则使用默认路径"
-                style={{ width: '100%' }}
-              />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Input
+                  value={exportPath}
+                  onChange={(e) => setExportPath(e.currentTarget.value)}
+                  placeholder="点击浏览选择保存路径"
+                  style={{ flex: 1 }}
+                />
+                <Button appearance="subtle" onClick={handleBrowseExport}>浏览</Button>
+              </div>
             </div>
+            <Button appearance="primary" onClick={handleExport} disabled={exporting || !exportPath}>
+              {exporting ? <Spinner size="tiny" /> : '开始导出'}
+            </Button>
             {exportResult && (
               <MessageBar intent={exportResult.includes('成功') ? 'success' : 'error'}>
                 <MessageBarBody>{exportResult}</MessageBarBody>
               </MessageBar>
             )}
-            <Button appearance="primary" onClick={handleExport} disabled={exporting}>
-              {exporting ? <Spinner size="tiny" /> : '开始导出'}
-            </Button>
           </div>
         );
 
@@ -205,15 +236,6 @@ export const DataTransferDialog: React.FC = () => {
         return (
           <div style={{ display: 'grid', gap: 12 }}>
             <Text weight="semibold">数据导入</Text>
-            <div>
-              <Label>导入文件路径 (JSON)</Label>
-              <Input
-                value={importPath}
-                onChange={(e) => setImportPath(e.currentTarget.value)}
-                placeholder="选择JSON文件"
-                style={{ width: '100%' }}
-              />
-            </div>
             <div>
               <Label>目标身份</Label>
               <Dropdown
@@ -229,14 +251,26 @@ export const DataTransferDialog: React.FC = () => {
                 ))}
               </Dropdown>
             </div>
+            <div>
+              <Label>导入文件路径 (JSON)</Label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Input
+                  value={importPath}
+                  onChange={(e) => setImportPath(e.currentTarget.value)}
+                  placeholder="点击浏览选择JSON文件"
+                  style={{ flex: 1 }}
+                />
+                <Button appearance="subtle" onClick={handleBrowseImport}>浏览</Button>
+              </div>
+            </div>
+            <Button appearance="primary" onClick={handleImport} disabled={importing || !importPath}>
+              {importing ? <Spinner size="tiny" /> : '开始导入'}
+            </Button>
             {importResult && (
               <MessageBar intent={importResult.includes('成功') ? 'success' : 'error'}>
                 <MessageBarBody>{importResult}</MessageBarBody>
               </MessageBar>
             )}
-            <Button appearance="primary" onClick={handleImport} disabled={importing}>
-              {importing ? <Spinner size="tiny" /> : '开始导入'}
-            </Button>
           </div>
         );
 

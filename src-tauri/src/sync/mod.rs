@@ -146,15 +146,6 @@ impl ConfigAccess {
         config.map(|c| c.captcha.remote_ocr_port).unwrap_or(0)
     }
 
-    fn ocr_server_type(&self) -> crate::config::OcrServerType {
-        let config_path = self.data_dir.join("app_config.toml");
-        let content = std::fs::read_to_string(&config_path).ok();
-        let config = content.and_then(|c| toml::from_str::<crate::config::AppConfig>(&c).ok());
-        config
-            .map(|c| c.captcha.ocr_server_type.clone())
-            .unwrap_or(crate::config::OcrServerType::Tcp)
-    }
-
     fn remote_ocr_http_url(&self) -> String {
         let config_path = self.data_dir.join("app_config.toml");
         let content = std::fs::read_to_string(&config_path).ok();
@@ -524,8 +515,8 @@ impl BillSyncService {
             epay.probe_login().await?;
             let challenge = epay.prepare_challenge().await?;
 
-            let captcha_code = match cfg.ocr_server_type() {
-                crate::config::OcrServerType::Tcp => {
+            let captcha_code = match cfg.captcha_mode() {
+                crate::config::CaptchaMode::RemoteOcr => {
                     let host = cfg.remote_ocr_host();
                     let port = cfg.remote_ocr_port();
                     if host.is_empty() || port == 0 {
@@ -538,7 +529,7 @@ impl BillSyncService {
                         .await?
                         .into_final_answer()
                 }
-                crate::config::OcrServerType::Restful => {
+                crate::config::CaptchaMode::RemoteOcrHttp => {
                     let http_url = cfg.remote_ocr_http_url();
                     if http_url.is_empty() {
                         return Err(AppError::Sync("未配置RESTful OCR服务器地址".to_string()));
@@ -549,6 +540,11 @@ impl BillSyncService {
                         .resolve(&challenge.captcha_image)
                         .await?
                         .into_final_answer()
+                }
+                _ => {
+                    return Err(AppError::Sync(
+                        "当前验证码模式不支持自动登录".to_string(),
+                    ));
                 }
             };
 

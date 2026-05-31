@@ -22,8 +22,9 @@ import {
 } from '@fluentui/react-components';
 import { useAppStore } from '../../stores/appStore';
 import { ErrorCircle24Regular } from '@fluentui/react-icons';
-import type { CaptchaMode, OcrServerType, AppTheme } from '../../types';
+import type { CaptchaMode, AppTheme } from '../../types';
 import * as tauri from '../../services/tauri';
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import {
   PageEnterMotion,
   SectionEnterMotion,
@@ -67,10 +68,7 @@ export const SettingsDialog: React.FC = () => {
   );
   const [ocrHost, setOcrHost] = useState(config?.captcha.remote_ocr_host ?? '');
   const [ocrPort, setOcrPort] = useState(config?.captcha.remote_ocr_port?.toString() ?? '');
-  const [ocrServerType, setOcrServerType] = useState<OcrServerType>(
-    config?.captcha.ocr_server_type ?? 'tcp'
-  );
-  const [ocrHttpUrl, setOcrHttpUrl] = useState(config?.captcha.remote_ocr_http_url ?? 'http://127.0.0.1:21600');
+  const [ocrHttpUrl, setOcrHttpUrl] = useState(config?.captcha.remote_ocr_http_url ?? 'http://127.0.0.1:5000');
   const [ocrRetry, setOcrRetry] = useState(config?.captcha.ocr_retry_count ?? 3);
 
   // Sync settings
@@ -119,7 +117,6 @@ export const SettingsDialog: React.FC = () => {
           mode: captchaMode,
           remote_ocr_host: ocrHost,
           remote_ocr_port: parseInt(ocrPort) || 0,
-          ocr_server_type: ocrServerType,
           remote_ocr_http_url: ocrHttpUrl,
           onnx_model_path: config.captcha.onnx_model_path,
           ocr_retry_count: ocrRetry,
@@ -242,64 +239,54 @@ export const SettingsDialog: React.FC = () => {
             <div>
               <Label>识别模式</Label>
               <Dropdown
-                value={captchaMode === 'manual' ? '手动输入' : captchaMode === 'remote_ocr' ? '远程OCR' : '本地ONNX'}
+                value={
+                  captchaMode === 'manual' ? '手动输入'
+                    : captchaMode === 'remote_ocr' ? '远程OCR(旧)'
+                    : captchaMode === 'remote_ocr_http' ? '远程OCR(RESTful)'
+                    : '本地ONNX'
+                }
                 selectedOptions={[captchaMode]}
                 onOptionSelect={(_, data) => setCaptchaMode(data.optionValue as CaptchaMode)}
                 style={{ width: '100%' }}
               >
                 <Option value="manual">手动输入</Option>
-                <Option value="remote_ocr">远程OCR</Option>
+                <Option value="remote_ocr">远程OCR(旧)</Option>
+                <Option value="remote_ocr_http">远程OCR(RESTful)</Option>
                 <Option value="local_onnx">本地ONNX</Option>
               </Dropdown>
             </div>
             {captchaMode === 'remote_ocr' && (
               <>
                 <div>
-                  <Label>OCR服务器类型</Label>
-                  <Dropdown
-                    value={ocrServerType === 'tcp' ? 'TCP' : 'RESTful HTTP'}
-                    selectedOptions={[ocrServerType]}
-                    onOptionSelect={(_, data) => setOcrServerType(data.optionValue as OcrServerType)}
+                  <Label>OCR服务器地址</Label>
+                  <Input
+                    value={ocrHost}
+                    onChange={(e) => setOcrHost(e.currentTarget.value)}
+                    placeholder="如: 192.168.1.100"
                     style={{ width: '100%' }}
-                  >
-                    <Option value="tcp">TCP</Option>
-                    <Option value="restful">RESTful HTTP</Option>
-                  </Dropdown>
+                  />
                 </div>
-                {ocrServerType === 'tcp' && (
-                  <>
-                    <div>
-                      <Label>OCR服务器地址</Label>
-                      <Input
-                        value={ocrHost}
-                        onChange={(e) => setOcrHost(e.currentTarget.value)}
-                        placeholder="如: 192.168.1.100"
-                        style={{ width: '100%' }}
-                      />
-                    </div>
-                    <div>
-                      <Label>OCR服务器端口</Label>
-                      <Input
-                        value={ocrPort}
-                        onChange={(e) => setOcrPort(e.currentTarget.value)}
-                        placeholder="如: 8888"
-                        style={{ width: '100%' }}
-                      />
-                    </div>
-                  </>
-                )}
-                {ocrServerType === 'restful' && (
-                  <div>
-                    <Label>RESTful OCR 服务地址</Label>
-                    <Input
-                      value={ocrHttpUrl}
-                      onChange={(e) => setOcrHttpUrl(e.currentTarget.value)}
-                      placeholder="如: http://127.0.0.1:21600"
-                      style={{ width: '100%' }}
-                    />
-                  </div>
-                )}
+                <div>
+                  <Label>OCR服务器端口</Label>
+                  <Input
+                    value={ocrPort}
+                    onChange={(e) => setOcrPort(e.currentTarget.value)}
+                    placeholder="如: 8888"
+                    style={{ width: '100%' }}
+                  />
+                </div>
               </>
+            )}
+            {captchaMode === 'remote_ocr_http' && (
+              <div>
+                <Label>RESTful OCR 服务地址</Label>
+                <Input
+                  value={ocrHttpUrl}
+                  onChange={(e) => setOcrHttpUrl(e.currentTarget.value)}
+                  placeholder="如: http://127.0.0.1:5000"
+                  style={{ width: '100%' }}
+                />
+              </div>
             )}
             {captchaMode !== 'manual' && (
               <div>
@@ -356,11 +343,22 @@ export const SettingsDialog: React.FC = () => {
             <Text weight="semibold" size={400}>数据设置</Text>
             <div>
               <Label>数据目录</Label>
-              <Input
-                value={dataDir}
-                onChange={(e) => setDataDir(e.currentTarget.value)}
-                style={{ width: '100%' }}
-              />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Input
+                  value={dataDir}
+                  onChange={(e) => setDataDir(e.currentTarget.value)}
+                  style={{ flex: 1 }}
+                />
+                <Button
+                  appearance="subtle"
+                  onClick={async () => {
+                    const selected = await openDialog({ directory: true, multiple: false });
+                    if (selected) setDataDir(typeof selected === 'string' ? selected : selected);
+                  }}
+                >
+                  浏览
+                </Button>
+              </div>
             </div>
             <div>
               <Label>快照自动保留数: {snapshotKeep}</Label>
@@ -487,12 +485,26 @@ export const SettingsDialog: React.FC = () => {
             <Text weight="semibold" size={400}>分类规则设置</Text>
             <div>
               <Label>分类规则文件路径</Label>
-              <Input
-                value={rulesPath}
-                onChange={(e) => setRulesPath(e.currentTarget.value)}
-                placeholder="Data/classification_rules.toml"
-                style={{ width: '100%' }}
-              />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Input
+                  value={rulesPath}
+                  onChange={(e) => setRulesPath(e.currentTarget.value)}
+                  placeholder="Data/classification_rules.toml"
+                  style={{ flex: 1 }}
+                />
+                <Button
+                  appearance="subtle"
+                  onClick={async () => {
+                    const selected = await openDialog({
+                      filters: [{ name: 'TOML 文件', extensions: ['toml'] }],
+                      multiple: false,
+                    });
+                    if (selected) setRulesPath(typeof selected === 'string' ? selected : selected);
+                  }}
+                >
+                  浏览
+                </Button>
+              </div>
             </div>
             <div>
               <Label>规则更新源(GitHub)</Label>

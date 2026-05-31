@@ -81,10 +81,7 @@ export type BillType = 'all' | 'success' | 'not_paid' | 'failure';
 export type BillItemStatus = 'all' | 'wait_for' | 'success' | 'failure';
 
 // Captcha mode
-export type CaptchaMode = 'manual' | 'remote_ocr' | 'local_onnx';
-
-// OCR server type
-export type OcrServerType = 'tcp' | 'restful';
+export type CaptchaMode = 'manual' | 'remote_ocr' | 'remote_ocr_http' | 'local_onnx';
 
 // Captcha answer kind
 export type CaptchaAnswerKind = 'answer' | 'expression';

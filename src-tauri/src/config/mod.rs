@@ -52,6 +52,7 @@ pub struct IdentityConfig {
 pub enum CaptchaMode {
     Manual,
     RemoteOcr,
+    RemoteOcrHttp,
     LocalOnnx,
 }
 
@@ -59,21 +60,6 @@ pub enum CaptchaMode {
 impl Default for CaptchaMode {
     fn default() -> Self {
         CaptchaMode::Manual
-    }
-}
-
-/// OCR 服务器类型（TCP 或 RESTful HTTP）
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum OcrServerType {
-    Tcp,
-    Restful,
-}
-
-#[allow(clippy::derivable_impls)]
-impl Default for OcrServerType {
-    fn default() -> Self {
-        OcrServerType::Tcp
     }
 }
 
@@ -86,8 +72,6 @@ pub struct CaptchaConfig {
     pub remote_ocr_host: String,
     #[serde(default)]
     pub remote_ocr_port: u16,
-    #[serde(default)]
-    pub ocr_server_type: OcrServerType,
     #[serde(default = "default_remote_ocr_http_url")]
     pub remote_ocr_http_url: String,
     #[serde(default)]

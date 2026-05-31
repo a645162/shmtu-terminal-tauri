@@ -4,7 +4,7 @@ use shmtu_cas::captcha::CaptchaResolver;
 use shmtu_ocr::backend::CasOnnxBackend;
 use tauri::State;
 
-use crate::config::{CaptchaMode, OcrServerType};
+use crate::config::CaptchaMode;
 use crate::state::AppState;
 
 /// 验证码测试结果（前端展示用）
@@ -141,6 +141,7 @@ async fn do_test_captcha(
     let captcha_mode = match mode {
         "manual" => CaptchaMode::Manual,
         "remote_ocr" => CaptchaMode::RemoteOcr,
+        "remote_ocr_http" => CaptchaMode::RemoteOcrHttp,
         "local_onnx" => CaptchaMode::LocalOnnx,
         _ => {
             tracing::error!("[Captcha] do_test_captcha: unknown mode: {}", mode);
@@ -179,90 +180,95 @@ async fn do_test_captcha(
             )
         }
         CaptchaMode::RemoteOcr => {
-            let (host, port, retry_count, ocr_server_type, http_url) = if let Some(state) = state {
+            let (host, port, retry_count) = if let Some(state) = state {
                 let config = state.config.read().await;
                 let captcha_config = &config.get().captcha;
                 (
                     captcha_config.remote_ocr_host.clone(),
                     captcha_config.remote_ocr_port,
                     captcha_config.ocr_retry_count,
-                    captcha_config.ocr_server_type.clone(),
-                    captcha_config.remote_ocr_http_url.clone(),
                 )
             } else {
-                (String::new(), 0, 3, OcrServerType::Tcp, String::new())
+                (String::new(), 0, 3)
             };
 
-            match ocr_server_type {
-                OcrServerType::Tcp => {
-                    if host.is_empty() || port == 0 {
-                        tracing::error!("[Captcha] do_test_captcha: remote OCR not configured");
+            if host.is_empty() || port == 0 {
+                tracing::error!("[Captcha] do_test_captcha: remote OCR (TCP) not configured");
+                (
+                    String::new(),
+                    String::new(),
+                    false,
+                    Some("未配置远程OCR服务器地址".to_string()),
+                )
+            } else {
+                tracing::info!(
+                    "[Captcha] do_test_captcha: using remote OCR (TCP) {}:{}",
+                    host,
+                    port
+                );
+                let resolver = shmtu_cas::captcha::OcrCaptchaResolver::new(&host, port)
+                    .with_retries(retry_count);
+                match resolver.resolve(&challenge.captcha_image).await {
+                    Ok(result) => {
+                        let expr = result.value.clone();
+                        let ans = result.into_final_answer();
+                        tracing::info!("[Captcha] do_test_captcha: OCR (TCP) success, answer={}", ans);
+                        (expr, ans, true, None)
+                    }
+                    Err(e) => {
+                        tracing::error!("[Captcha] do_test_captcha: OCR (TCP) failed: {}", e);
                         (
                             String::new(),
                             String::new(),
                             false,
-                            Some("未配置远程OCR服务器地址".to_string()),
+                            Some(format!("远程OCR识别失败: {}", e)),
                         )
-                    } else {
-                        tracing::info!(
-                            "[Captcha] do_test_captcha: using remote OCR (TCP) {}:{}",
-                            host,
-                            port
-                        );
-                        let resolver = shmtu_cas::captcha::OcrCaptchaResolver::new(&host, port)
-                            .with_retries(retry_count);
-                        match resolver.resolve(&challenge.captcha_image).await {
-                            Ok(result) => {
-                                let expr = result.value.clone();
-                                let ans = result.into_final_answer();
-                                tracing::info!("[Captcha] do_test_captcha: OCR (TCP) success, answer={}", ans);
-                                (expr, ans, true, None)
-                            }
-                            Err(e) => {
-                                tracing::error!("[Captcha] do_test_captcha: OCR (TCP) failed: {}", e);
-                                (
-                                    String::new(),
-                                    String::new(),
-                                    false,
-                                    Some(format!("远程OCR识别失败: {}", e)),
-                                )
-                            }
-                        }
                     }
                 }
-                OcrServerType::Restful => {
-                    if http_url.is_empty() {
-                        tracing::error!("[Captcha] do_test_captcha: RESTful OCR URL not configured");
+            }
+        }
+        CaptchaMode::RemoteOcrHttp => {
+            let (http_url, retry_count) = if let Some(state) = state {
+                let config = state.config.read().await;
+                let captcha_config = &config.get().captcha;
+                (
+                    captcha_config.remote_ocr_http_url.clone(),
+                    captcha_config.ocr_retry_count,
+                )
+            } else {
+                (String::new(), 3)
+            };
+
+            if http_url.is_empty() {
+                tracing::error!("[Captcha] do_test_captcha: RESTful OCR URL not configured");
+                (
+                    String::new(),
+                    String::new(),
+                    false,
+                    Some("未配置RESTful OCR服务器地址".to_string()),
+                )
+            } else {
+                tracing::info!(
+                    "[Captcha] do_test_captcha: using remote OCR (RESTful) {}",
+                    http_url
+                );
+                let resolver = shmtu_cas::captcha::OcrHttpCaptchaResolver::new(&http_url)
+                    .with_retries(retry_count);
+                match resolver.resolve(&challenge.captcha_image).await {
+                    Ok(result) => {
+                        let expr = result.value.clone();
+                        let ans = result.into_final_answer();
+                        tracing::info!("[Captcha] do_test_captcha: OCR (RESTful) success, answer={}", ans);
+                        (expr, ans, true, None)
+                    }
+                    Err(e) => {
+                        tracing::error!("[Captcha] do_test_captcha: OCR (RESTful) failed: {}", e);
                         (
                             String::new(),
                             String::new(),
                             false,
-                            Some("未配置RESTful OCR服务器地址".to_string()),
+                            Some(format!("RESTful OCR识别失败: {}", e)),
                         )
-                    } else {
-                        tracing::info!(
-                            "[Captcha] do_test_captcha: using remote OCR (RESTful) {}",
-                            http_url
-                        );
-                        let resolver = shmtu_cas::captcha::OcrHttpCaptchaResolver::new(&http_url)
-                            .with_retries(retry_count);
-                        match resolver.resolve(&challenge.captcha_image).await {
-                            Ok(result) => {
-                                let expr = result.value.clone();
-                                let ans = result.into_final_answer();
-                                tracing::info!("[Captcha] do_test_captcha: OCR (RESTful) success, answer={}", ans);
-                                (expr, ans, true, None)
-                            }
-                            Err(e) => {
-                                tracing::error!("[Captcha] do_test_captcha: OCR (RESTful) failed: {}", e);
-                                (
-                                    String::new(),
-                                    String::new(),
-                                    false,
-                                    Some(format!("RESTful OCR识别失败: {}", e)),
-                                )
-                            }
-                        }
                     }
                 }
             }
