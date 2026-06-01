@@ -195,19 +195,7 @@ export const HomePage: React.FC = () => {
         </div>
       </SectionEnterMotion>
 
-      {/* Home Tab Navigation */}
-      <SlideInFromRightMotion delay={50}>
-        <div>
-          <TabList selectedValue={homeTab} onTabSelect={(_, data) => setHomeTab(data.value as string)} style={{ marginBottom: 16 }}>
-            <Tab value="overview">总览</Tab>
-            <Tab value="compare">月度对比</Tab>
-          </TabList>
-        </div>
-      </SlideInFromRightMotion>
-
-      {homeTab === 'overview' && (
-        <>
-          {/* Summary Cards */}
+      {/* Summary Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 20 }}>
             {summaryCards.map((card, index) => (
               <CardEnterMotion key={card.title} delay={getStaggerDelay(index, 70, 90)}>
@@ -294,21 +282,6 @@ export const HomePage: React.FC = () => {
               )}
             </Card>
           </CardEnterMotion>
-        </>
-      )}
-
-      {homeTab === 'compare' && (
-        <CardEnterMotion delay={120}>
-          <Card className="motion-hover-lift motion-sheen" style={{ padding: 16 }}>
-            <CardHeader>
-              <InfoLabel info="对比本月与上月的消费变化情况。">
-                月度消费对比
-              </InfoLabel>
-            </CardHeader>
-            <MonthComparisonCard />
-          </Card>
-        </CardEnterMotion>
-      )}
     </div>
   );
 };

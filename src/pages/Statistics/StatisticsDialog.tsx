@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Dialog,
   DialogSurface,
@@ -18,8 +18,25 @@ import {
   TabList,
   Tab,
   InfoLabel,
+  Table,
+  TableHeader,
+  TableHeaderCell,
+  TableRow,
+  TableCell,
+  TableBody,
+  Badge,
+  Menu,
+  MenuTrigger,
+  MenuPopover,
+  MenuList,
+  MenuItem,
 } from '@fluentui/react-components';
-import { ChartMultiple24Regular } from '@fluentui/react-icons';
+import {
+  ChartMultiple24Regular,
+  MoreVertical24Regular,
+  Info24Regular,
+  Copy24Regular,
+} from '@fluentui/react-icons';
 import { useAppStore } from '../../stores/appStore';
 import { ExpenseTrendChart } from '../../components/Charts/ExpenseTrendChart';
 import { CategoryPieChart } from '../../components/Charts/CategoryPieChart';
@@ -30,8 +47,11 @@ import { ConsumptionDistributionChart } from '../../components/Charts/Consumptio
 import { MerchantRankingChart } from '../../components/Charts/MerchantRankingChart';
 import { MonthComparisonCard } from '../../components/Charts/MonthComparisonCard';
 import * as tauri from '../../services/tauri';
+import { formatBillMoney } from '../../hooks';
+import type { BillItem } from '../../types';
 import { formatLocalDate } from '../../utils/date';
-import { getCategoryDisplayName, getAllCategories, getCategoryColor } from '../../utils/translation';
+import { getCategoryDisplayName, getCategoryColor } from '../../utils/translation';
+import { BillDetailDialog } from '../../components/Common/BillDetailDialog';
 import {
   CardEnterMotion,
   PageEnterMotion,
@@ -156,7 +176,15 @@ export const StatisticsDialog: React.FC = () => {
   const [chartTab, setChartTab] = useState<string>('overview');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [categorySummaries, setCategorySummaries] = useState<Record<string, tauri.CategorySummary>>({});
+  const [categoryBills, setCategoryBills] = useState<tauri.CategoryBillItem[]>([]);
+  const [detailBill, setDetailBill] = useState<BillItem | null>(null);
+  const [isLoadingDetailBill, setIsLoadingDetailBill] = useState(false);
+  const [isLoadingCategoryBills, setIsLoadingCategoryBills] = useState(false);
   const [loadingCategories, setLoadingCategories] = useState(false);
+  const availableCategories = useMemo(
+    () => categoryDistribution.map((item) => item.name),
+    [categoryDistribution]
+  );
 
   const loadAll = useCallback(
     (id: string, range: string) => {
@@ -169,9 +197,17 @@ export const StatisticsDialog: React.FC = () => {
       loadMealDistribution(params);
       loadConsumptionDistribution(params);
       loadMerchantRanking(params);
-    loadForgotCardStats(params);
+      loadForgotCardStats(params);
     },
-    [loadStatisticsSummary, loadDailyTrend, loadCategoryDistribution, loadMealDistribution, loadConsumptionDistribution, loadMerchantRanking]
+    [
+      loadStatisticsSummary,
+      loadDailyTrend,
+      loadCategoryDistribution,
+      loadMealDistribution,
+      loadConsumptionDistribution,
+      loadMerchantRanking,
+      loadForgotCardStats,
+    ]
   );
 
   // Sync default identity
@@ -186,18 +222,29 @@ export const StatisticsDialog: React.FC = () => {
     loadAll(selectedIdentityId, dateRange);
   }, [selectedIdentityId, dateRange, loadAll]);
 
+  useEffect(() => {
+    if (selectedCategory !== 'all' && !availableCategories.includes(selectedCategory)) {
+      setSelectedCategory('all');
+    }
+  }, [availableCategories, selectedCategory]);
+
   // Load category summaries for quick overview
   useEffect(() => {
     const id = parseInt(selectedIdentityId);
     if (!selectedIdentityId || isNaN(id)) return;
+    if (availableCategories.length === 0) {
+      setCategorySummaries({});
+      setLoadingCategories(false);
+      return;
+    }
     const params = buildParams(id, dateRange);
     setLoadingCategories(true);
-    const categories = getAllCategories();
+    const categories = availableCategories;
     Promise.all(
       categories.map((cat) =>
         tauri.get_category_summary({
           identityId: id,
-          category: getCategoryDisplayName(cat),
+          category: cat,
           dateStart: params.dateStart,
           dateEnd: params.dateEnd,
         }).catch(() => null)
@@ -210,13 +257,49 @@ export const StatisticsDialog: React.FC = () => {
       setCategorySummaries(map);
       setLoadingCategories(false);
     });
-  }, [selectedIdentityId, dateRange]);
+  }, [selectedIdentityId, dateRange, availableCategories]);
 
   // Handle category click from pie chart
   const handleCategoryClick = useCallback((categoryName: string) => {
     setSelectedCategory(categoryName);
     setChartTab('category');
   }, []);
+
+  const handleOpenBillDetail = useCallback(async (bill: tauri.CategoryBillItem) => {
+    const identityId = parseInt(selectedIdentityId);
+    if (!selectedIdentityId || isNaN(identityId)) return;
+    setIsLoadingDetailBill(true);
+    try {
+      const fullBill = await tauri.get_bill_detail(identityId, bill.id);
+      setDetailBill(fullBill);
+    } catch (e) {
+      console.error('Failed to load bill detail:', e);
+    } finally {
+      setIsLoadingDetailBill(false);
+    }
+  }, [selectedIdentityId]);
+
+  // Load category bills when a specific category is selected
+  useEffect(() => {
+    if (selectedCategory === 'all' || !selectedIdentityId) {
+      setCategoryBills([]);
+      return;
+    }
+    setIsLoadingCategoryBills(true);
+    tauri.get_category_bills({
+      identityId: parseInt(selectedIdentityId),
+      category: selectedCategory,
+      dateStart: buildParams(parseInt(selectedIdentityId), dateRange).dateStart,
+      dateEnd: buildParams(parseInt(selectedIdentityId), dateRange).dateEnd,
+    }).then((bills) => {
+      setCategoryBills(bills);
+    }).catch((e) => {
+      console.error('Failed to load category bills:', e);
+      setCategoryBills([]);
+    }).finally(() => {
+      setIsLoadingCategoryBills(false);
+    });
+  }, [selectedCategory, selectedIdentityId, dateRange]);
 
   const summary = statisticsSummary;
 
@@ -237,14 +320,15 @@ export const StatisticsDialog: React.FC = () => {
   );
 
   return (
-    <Dialog open={showStatisticsDialog} onOpenChange={handleOpenChange}>
-      <DialogSurface style={{ maxWidth: 800, width: '90vw' }}>
-        <DialogBody>
-          <DialogTitle>
-            <ChartMultiple24Regular style={{ marginRight: 8 }} />
-            统计分析
-          </DialogTitle>
-          <DialogContent>
+    <>
+      <Dialog open={showStatisticsDialog} onOpenChange={handleOpenChange}>
+        <DialogSurface style={{ maxWidth: 800, width: '90vw' }}>
+          <DialogBody>
+            <DialogTitle>
+              <ChartMultiple24Regular style={{ marginRight: 8 }} />
+              统计分析
+            </DialogTitle>
+            <DialogContent>
             {/* Filters */}
             <SectionEnterMotion>
               <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
@@ -295,7 +379,7 @@ export const StatisticsDialog: React.FC = () => {
                   style={{ minWidth: 130 }}
                 >
                   <Option value="all">全部分类</Option>
-                  {getAllCategories().map((cat) => (
+                  {availableCategories.map((cat) => (
                     <Option key={cat} value={cat}>
                       {getCategoryDisplayName(cat)}
                     </Option>
@@ -359,7 +443,7 @@ export const StatisticsDialog: React.FC = () => {
                     </div>
                   ) : (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 8, marginTop: 8 }}>
-                      {getAllCategories().map((cat) => {
+                      {availableCategories.map((cat) => {
                         const summary = categorySummaries[cat];
                         return (
                           <div
@@ -498,7 +582,7 @@ export const StatisticsDialog: React.FC = () => {
                     <Subtitle2>分类图例</Subtitle2>
                   </CardHeader>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    {getAllCategories().map((cat) => (
+                    {availableCategories.map((cat) => (
                       <div
                         key={cat}
                         onClick={() => setSelectedCategory(selectedCategory === cat ? 'all' : cat)}
@@ -528,6 +612,98 @@ export const StatisticsDialog: React.FC = () => {
                     ))}
                   </div>
                 </Card>
+
+                {/* Category bill details */}
+                {selectedCategory !== 'all' && (
+                  <Card className="motion-hover-lift" style={{ padding: 16 }}>
+                    <CardHeader>
+                      <Subtitle2>{getCategoryDisplayName(selectedCategory)} — 消费明细</Subtitle2>
+                    </CardHeader>
+                    {isLoadingCategoryBills ? (
+                      <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}>
+                        <Spinner label="加载中..." />
+                      </div>
+                    ) : categoryBills.length > 0 ? (
+                      <div style={{ overflowX: 'auto' }}>
+                        <Table style={{ minWidth: 700 }}>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHeaderCell style={{ minWidth: 160 }}>日期时间</TableHeaderCell>
+                              <TableHeaderCell style={{ minWidth: 120 }}>交易名称</TableHeaderCell>
+                              <TableHeaderCell style={{ minWidth: 160 }}>对方账户</TableHeaderCell>
+                              <TableHeaderCell style={{ minWidth: 100 }}>金额</TableHeaderCell>
+                              <TableHeaderCell style={{ minWidth: 100 }}>支付方式</TableHeaderCell>
+                              <TableHeaderCell style={{ minWidth: 80 }}>状态</TableHeaderCell>
+                              <TableHeaderCell style={{ width: 40 }}></TableHeaderCell>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {categoryBills.map((bill) => (
+                              <TableRow key={bill.id} className="motion-table-row">
+                                <TableCell>
+                                  <Text size={200}>{bill.date} {bill.time}</Text>
+                                </TableCell>
+                                <TableCell>
+                                  <Text size={200}>{bill.itemType || getCategoryDisplayName(selectedCategory)}</Text>
+                                </TableCell>
+                                <TableCell>
+                                  <Text size={200}>{bill.targetUser || '—'}</Text>
+                                </TableCell>
+                                <TableCell>
+                                  <Text
+                                    size={200}
+                                    weight="semibold"
+                                    style={{ color: 'var(--colorPaletteRedForeground3)' }}
+                                  >
+                                    {formatBillMoney(bill.amount, bill.itemType || '')}
+                                  </Text>
+                                </TableCell>
+                                <TableCell>
+                                  <Text size={200}>{bill.method || '—'}</Text>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge appearance="filled" color="success">
+                                    交易成功
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  <Menu>
+                                    <MenuTrigger>
+                                      <Button appearance="subtle" icon={<MoreVertical24Regular />} size="small" />
+                                    </MenuTrigger>
+                                    <MenuPopover>
+                                      <MenuList>
+                                        <MenuItem
+                                          icon={<Copy24Regular />}
+                                          onClick={() => navigator.clipboard.writeText(bill.targetUser || '')}
+                                        >
+                                          复制对方账户
+                                        </MenuItem>
+                                        <MenuItem
+                                          icon={<Copy24Regular />}
+                                          onClick={() => navigator.clipboard.writeText(formatBillMoney(bill.amount, bill.itemType || ''))}
+                                        >
+                                          复制金额
+                                        </MenuItem>
+                                        <MenuItem icon={<Info24Regular />} onClick={() => { void handleOpenBillDetail(bill); }}>
+                                          查看详情
+                                        </MenuItem>
+                                      </MenuList>
+                                    </MenuPopover>
+                                  </Menu>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    ) : (
+                      <Text size={200} style={{ color: 'var(--colorNeutralForeground3)', padding: 16, display: 'block', textAlign: 'center' }}>
+                        暂无该分类的消费记录
+                      </Text>
+                    )}
+                  </Card>
+                )}
                   </>
                 )}
 
@@ -619,15 +795,33 @@ export const StatisticsDialog: React.FC = () => {
                 )}
               </div>
             </PageEnterMotion>
-          </DialogContent>
-          <DialogActions>
-            <Button appearance="secondary" onClick={() => setShowStatisticsDialog(false)}>
-              关闭
-            </Button>
-          </DialogActions>
-        </DialogBody>
-      </DialogSurface>
-    </Dialog>
+            </DialogContent>
+            <DialogActions>
+              <Button appearance="secondary" onClick={() => setShowStatisticsDialog(false)}>
+                关闭
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+      {isLoadingDetailBill && (
+        <Dialog open>
+          <DialogSurface>
+            <DialogBody>
+              <DialogTitle>交易详情</DialogTitle>
+              <DialogContent>
+                <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}>
+                  <Spinner label="加载详情中..." />
+                </div>
+              </DialogContent>
+            </DialogBody>
+          </DialogSurface>
+        </Dialog>
+      )}
+      {detailBill && (
+        <BillDetailDialog bill={detailBill} onClose={() => setDetailBill(null)} />
+      )}
+    </>
   );
 };
 

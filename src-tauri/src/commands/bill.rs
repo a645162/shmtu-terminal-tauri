@@ -224,6 +224,31 @@ pub async fn query_bills(
     })
 }
 
+/// 根据账单 ID 获取完整账单详情。
+#[tauri::command]
+pub async fn get_bill_detail(
+    state: State<'_, AppState>,
+    identity_id: i64,
+    bill_id: i64,
+) -> Result<BillItemFrontend, String> {
+    tracing::debug!(
+        "[Bill] get_bill_detail: identity_id={}, bill_id={}",
+        identity_id,
+        bill_id
+    );
+
+    let db = state.db_manager.read().await;
+
+    let model = bill_merged::Entity::find_by_id(bill_id)
+        .filter(bill_merged::Column::IdentityId.eq(identity_id))
+        .one(db.db())
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Bill not found: {}", bill_id))?;
+
+    Ok(BillItemFrontend::from(bill_merged_model_to_app(model)))
+}
+
 /// 删除指定的合并账单。
 #[tauri::command]
 pub async fn delete_merged_bill(

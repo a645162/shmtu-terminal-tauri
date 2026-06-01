@@ -138,6 +138,10 @@ export async function query_bills(params: BillQueryParams): Promise<BillQueryRes
   return invoke<BillQueryResult>('query_bills', { params });
 }
 
+export async function get_bill_detail(identityId: number, billId: number): Promise<BillItem> {
+  return invoke<BillItem>('get_bill_detail', { identityId, billId });
+}
+
 export async function delete_merged_bill(identityId: number, billId: number): Promise<void> {
   return invoke('delete_merged_bill', { identityId, billId });
 }
@@ -314,6 +318,20 @@ export interface ForgotCardStats {
 
 export async function get_forgot_card_stats(params: StatisticsParams): Promise<ForgotCardStats> {
   return invoke<ForgotCardStats>('get_forgot_card_stats', { params });
+}
+
+export interface CategoryBillItem {
+  id: number;
+  date: string;
+  time: string;
+  itemType: string;
+  targetUser: string;
+  amount: number;
+  method: string;
+}
+
+export async function get_category_bills(params: CategorySummaryParams): Promise<CategoryBillItem[]> {
+  return invoke<CategoryBillItem[]>('get_category_bills', { params });
 }
 
 // ========== Classification Rules (Dynamic Loading) ==========

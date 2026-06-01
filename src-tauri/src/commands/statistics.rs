@@ -764,3 +764,83 @@ pub async fn get_category_summary(
         avg_per_transaction: round_to_n(avg_per_transaction, dp),
     })
 }
+
+/// 分类账单条目
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CategoryBillItem {
+    pub id: i64,
+    pub date: String,
+    pub time: String,
+    pub item_type: String,
+    pub target_user: String,
+    pub amount: f64,
+    pub method: String,
+}
+
+/// 获取指定分类下的账单明细列表。
+#[tauri::command]
+pub async fn get_category_bills(
+    state: State<'_, AppState>,
+    params: CategorySummaryParams,
+) -> Result<Vec<CategoryBillItem>, String> {
+    tracing::info!(
+        "[Statistics] get_category_bills: identity_id={}, category={}, date_start={:?}, date_end={:?}",
+        params.identity_id, params.category, params.date_start, params.date_end
+    );
+
+    let db = state.db_manager.read().await;
+    let classifier = state.classifier.read().await;
+    let db_conn = db.db();
+
+    let models = success_query(params.identity_id)
+        .all(db_conn)
+        .await
+        .map_err(|e| e.to_string())?;
+    let models = filter_models_by_date(models, &params.date_start, &params.date_end);
+
+    let category_name = params.category.clone();
+    let mut items: Vec<CategoryBillItem> = Vec::new();
+
+    for m in &models {
+        if is_income(m) {
+            continue;
+        }
+
+        let cat = if let Some(ref classifier) = *classifier {
+            classifier
+                .classify(
+                    m.item_type.as_deref().unwrap_or(""),
+                    m.target_user.as_deref().unwrap_or(""),
+                    0,
+                )
+                .type_label
+                .clone()
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
+
+        if cat != category_name {
+            continue;
+        }
+
+        items.push(CategoryBillItem {
+            id: m.id,
+            date: m.date_str.clone(),
+            time: m.time_str_formatted.clone().unwrap_or_default(),
+            item_type: m.item_type.clone().unwrap_or_default(),
+            target_user: m.target_user.clone().unwrap_or_default(),
+            amount: m.money.unwrap_or(0.0).abs(),
+            method: m.method.clone().unwrap_or_default(),
+        });
+    }
+
+    tracing::info!(
+        "[Statistics] get_category_bills: category={}, returned {} items",
+        category_name,
+        items.len()
+    );
+
+    Ok(items)
+}
