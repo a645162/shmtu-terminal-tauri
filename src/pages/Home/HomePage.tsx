@@ -84,10 +84,11 @@ export const HomePage: React.FC = () => {
     if (!currentIdentity) return;
     const todayParams = getDateRangeParams('today', currentIdentity.id);
     const monthParams = getDateRangeParams('month', currentIdentity.id);
+    const weekParams = getDateRangeParams('week', currentIdentity.id);
     loadTodaySummary(todayParams);
     loadMonthSummary(monthParams);
-    loadDailyTrend(todayParams);
-    loadCategoryDistribution(todayParams);
+    loadDailyTrend(weekParams);
+    loadCategoryDistribution(monthParams);
   }, [currentIdentity]);
 
   const handleRefresh = async () => {
@@ -204,7 +205,7 @@ export const HomePage: React.FC = () => {
               <Card className="motion-hover-lift motion-sheen" style={{ padding: 16 }}>
                 <CardHeader>
                   <InfoLabel info="点击图例可切换显示/隐藏线条。">
-                    近7日消费趋势
+                    近一周消费趋势
                   </InfoLabel>
                 </CardHeader>
                 {isLoadingStatistics ? (
@@ -220,7 +221,7 @@ export const HomePage: React.FC = () => {
               <Card className="motion-hover-lift motion-sheen" style={{ padding: 16 }}>
                 <CardHeader>
                   <InfoLabel info="点击扇区查看该分类详情。">
-                    消费分类占比
+                    本月消费分类占比
                   </InfoLabel>
                 </CardHeader>
                 <CategoryPieChart data={categoryDistribution} />
