@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogSurface,
@@ -21,7 +21,18 @@ import {
   Textarea,
 } from '@fluentui/react-components';
 import { useAppStore } from '../../stores/appStore';
-import { ErrorCircle24Regular } from '@fluentui/react-icons';
+import {
+  Shield24Regular,
+  Person24Regular,
+  PuzzlePiece24Regular,
+  ArrowSync24Regular,
+  Database24Regular,
+  PaintBrush24Regular,
+  Home24Regular,
+  Tag24Regular,
+  ArrowDownload24Regular,
+  Bug24Regular,
+} from '@fluentui/react-icons';
 import type { CaptchaMode, AppTheme } from '../../types';
 import * as tauri from '../../services/tauri';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
@@ -30,7 +41,7 @@ import {
   SectionEnterMotion,
 } from '../../components/Common/motion';
 
-type SettingsTab = 'security' | 'identity' | 'captcha' | 'sync' | 'data' | 'ui' | 'classification' | 'update' | 'debug';
+type SettingsTab = 'security' | 'identity' | 'captcha' | 'sync' | 'data' | 'ui' | 'home' | 'classification' | 'update' | 'debug';
 type IdentityStartupMode = 'last_used' | 'configured_default';
 
 export const SettingsDialog: React.FC = () => {
@@ -46,7 +57,7 @@ export const SettingsDialog: React.FC = () => {
   const loadBills = useAppStore((s) => s.loadBills);
   const loadAccounts = useAppStore((s) => s.loadAccounts);
 
-  const [selectedTab, setSelectedTab] = useState<SettingsTab>('security');
+  const [selectedTab, setSelectedTab] = useState<SettingsTab>('ui');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
 
@@ -67,8 +78,10 @@ export const SettingsDialog: React.FC = () => {
     config?.captcha.mode ?? 'manual'
   );
   const [ocrHost, setOcrHost] = useState(config?.captcha.remote_ocr_host ?? '');
-  const [ocrPort, setOcrPort] = useState(config?.captcha.remote_ocr_port?.toString() ?? '');
-  const [ocrHttpUrl, setOcrHttpUrl] = useState(config?.captcha.remote_ocr_http_url ?? 'http://127.0.0.1:5000');
+  const [ocrPort, setOcrPort] = useState(
+    config?.captcha.remote_ocr_port ? String(config.captcha.remote_ocr_port) : ''
+  );
+  const [ocrHttpUrl, setOcrHttpUrl] = useState(config?.captcha.remote_ocr_http_url || 'http://127.0.0.1:5000');
   const [ocrRetry, setOcrRetry] = useState(config?.captcha.ocr_retry_count ?? 3);
 
   // Sync settings
@@ -77,7 +90,7 @@ export const SettingsDialog: React.FC = () => {
   const [autoMerge, setAutoMerge] = useState(config?.sync.auto_merge_after_sync ?? true);
 
   // Data settings
-  const [dataDir, setDataDir] = useState(config?.data.data_directory ?? 'Data');
+  const [dataDir, setDataDir] = useState(config?.data.data_directory || 'Data');
   const [snapshotKeep, setSnapshotKeep] = useState(config?.data.snapshot_keep_count ?? 10);
   const [rulesUpdateUrl, setRulesUpdateUrl] = useState(config?.classification.rules_update_url ?? '');
   const [rulesPath, setRulesPath] = useState(config?.classification.rules_path ?? '');
@@ -95,6 +108,27 @@ export const SettingsDialog: React.FC = () => {
   const [decimalPlaces, setDecimalPlaces] = useState(config?.ui.decimal_places ?? 2);
   const [homeTrendRange, setHomeTrendRange] = useState(config?.ui.home_trend_range ?? 'week');
   const [homeCategoryRange, setHomeCategoryRange] = useState(config?.ui.home_category_range ?? 'month');
+
+  useEffect(() => {
+    if (!config) return;
+    setStartupProtection(config.security.enable_startup_protection);
+    setIdentityStartupMode(config.identity.remember_default ? 'configured_default' : 'last_used');
+    setCaptchaMode(config.captcha.mode ?? 'manual');
+    setOcrHost(config.captcha.remote_ocr_host ?? '');
+    setOcrPort(config.captcha.remote_ocr_port ? String(config.captcha.remote_ocr_port) : '');
+    setOcrHttpUrl(config.captcha.remote_ocr_http_url || 'http://127.0.0.1:5000');
+    setOcrRetry(config.captcha.ocr_retry_count ?? 3);
+    setMaxPages(config.sync.max_pages ?? 100);
+    setEarlyStop(config.sync.early_stop_threshold ?? 5);
+    setAutoMerge(config.sync.auto_merge_after_sync ?? true);
+    setDataDir(config.data.data_directory || 'Data');
+    setSnapshotKeep(config.data.snapshot_keep_count ?? 10);
+    setRulesUpdateUrl(config.classification.rules_update_url ?? '');
+    setRulesPath(config.classification.rules_path ?? '');
+    setDecimalPlaces(config.ui.decimal_places ?? 2);
+    setHomeTrendRange(config.ui.home_trend_range ?? 'week');
+    setHomeCategoryRange(config.ui.home_category_range ?? 'month');
+  }, [config]);
 
   const currentDefaultIdentity =
     identities.find((identity) => identity.id === config?.identity.default_identity_id) ?? null;
@@ -480,8 +514,15 @@ export const SettingsDialog: React.FC = () => {
                 控制统计页面中金额数值的保留小数位数
               </Text>
             </div>
+          </div>
+        );
+
+      case 'home':
+        return (
+          <div style={{ display: 'grid', gap: 16 }}>
+            <Text weight="semibold" size={400}>首页图表设置</Text>
             <div>
-              <Label>首页趋势图表范围</Label>
+              <Label>趋势图表范围</Label>
               <Dropdown
                 value={
                   homeTrendRange === 'today' ? '今天' :
@@ -503,7 +544,7 @@ export const SettingsDialog: React.FC = () => {
               </Text>
             </div>
             <div>
-              <Label>首页分类图表范围</Label>
+              <Label>分类图表范围</Label>
               <Dropdown
                 value={
                   homeCategoryRange === 'today' ? '今天' :
@@ -657,15 +698,16 @@ export const SettingsDialog: React.FC = () => {
                     selectedValue={selectedTab}
                     onTabSelect={(_, data) => setSelectedTab(data.value as SettingsTab)}
                   >
-                    <Tab value="security">安全</Tab>
-                    <Tab value="identity">身份</Tab>
-                    <Tab value="captcha">验证码</Tab>
-                    <Tab value="sync">同步</Tab>
-                    <Tab value="data">数据</Tab>
-                    <Tab value="ui">界面</Tab>
-                    <Tab value="classification">分类规则</Tab>
-                    <Tab value="update">更新</Tab>
-                    <Tab value="debug"><ErrorCircle24Regular style={{ marginRight: 4 }} />调试</Tab>
+                    <Tab icon={<PaintBrush24Regular />} value="ui">界面</Tab>
+                    <Tab icon={<Home24Regular />} value="home">首页图表</Tab>
+                    <Tab icon={<Person24Regular />} value="identity">身份</Tab>
+                    <Tab icon={<Shield24Regular />} value="security">安全</Tab>
+                    <Tab icon={<ArrowSync24Regular />} value="sync">同步</Tab>
+                    <Tab icon={<PuzzlePiece24Regular />} value="captcha">验证码</Tab>
+                    <Tab icon={<Database24Regular />} value="data">数据</Tab>
+                    <Tab icon={<Tag24Regular />} value="classification">分类规则</Tab>
+                    <Tab icon={<ArrowDownload24Regular />} value="update">更新</Tab>
+                    <Tab icon={<Bug24Regular />} value="debug">调试</Tab>
                   </TabList>
                 </div>
               </SectionEnterMotion>
