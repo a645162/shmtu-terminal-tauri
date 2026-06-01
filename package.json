@@ -10,25 +10,25 @@
     "tauri": "tauri"
   },
   "dependencies": {
-    "@fluentui/react-components": "^9.73.8",
+    "@fluentui/react-components": "^9.74.1",
     "@fluentui/react-icons": "^2.0.328",
-    "@fluentui/react-motion": "^9.15.0",
+    "@fluentui/react-motion": "^9.16.0",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-opener": "^2",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6",
-    "react-router-dom": "^7.15.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-router-dom": "^7.16.0",
     "recharts": "^3.8.1",
-    "zustand": "^5.0.13"
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
-    "@types/react": "^19.2.15",
+    "@types/react": "^19.2.16",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.2",
-    "npm-check-updates": "^22.2.0",
+    "npm-check-updates": "^22.2.1",
     "typescript": "~6.0.3",
-    "vite": "^8.0.14"
+    "vite": "^8.0.16"
   }
 }
