@@ -93,6 +93,8 @@ export const SettingsDialog: React.FC = () => {
 
   // UI settings
   const [decimalPlaces, setDecimalPlaces] = useState(config?.ui.decimal_places ?? 2);
+  const [homeTrendRange, setHomeTrendRange] = useState(config?.ui.home_trend_range ?? 'week');
+  const [homeCategoryRange, setHomeCategoryRange] = useState(config?.ui.home_category_range ?? 'month');
 
   const currentDefaultIdentity =
     identities.find((identity) => identity.id === config?.identity.default_identity_id) ?? null;
@@ -141,6 +143,8 @@ export const SettingsDialog: React.FC = () => {
           theme,
           language: config.ui.language,
           decimal_places: decimalPlaces,
+          home_trend_range: homeTrendRange,
+          home_category_range: homeCategoryRange,
         },
       };
 
@@ -474,6 +478,50 @@ export const SettingsDialog: React.FC = () => {
               />
               <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
                 控制统计页面中金额数值的保留小数位数
+              </Text>
+            </div>
+            <div>
+              <Label>首页趋势图表范围</Label>
+              <Dropdown
+                value={
+                  homeTrendRange === 'today' ? '今天' :
+                  homeTrendRange === 'week' ? '本周' :
+                  homeTrendRange === 'recent7days' ? '最近7天' :
+                  homeTrendRange === 'month' ? '本月' : '本周'
+                }
+                selectedOptions={[homeTrendRange]}
+                onOptionSelect={(_, data) => setHomeTrendRange(data.optionValue ?? 'week')}
+                style={{ width: '100%' }}
+              >
+                <Option value="today">今天</Option>
+                <Option value="week">本周</Option>
+                <Option value="recent7days">最近7天</Option>
+                <Option value="month">本月</Option>
+              </Dropdown>
+              <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                首页消费趋势图的时间范围
+              </Text>
+            </div>
+            <div>
+              <Label>首页分类图表范围</Label>
+              <Dropdown
+                value={
+                  homeCategoryRange === 'today' ? '今天' :
+                  homeCategoryRange === 'week' ? '本周' :
+                  homeCategoryRange === 'recent7days' ? '最近7天' :
+                  homeCategoryRange === 'month' ? '本月' : '本月'
+                }
+                selectedOptions={[homeCategoryRange]}
+                onOptionSelect={(_, data) => setHomeCategoryRange(data.optionValue ?? 'month')}
+                style={{ width: '100%' }}
+              >
+                <Option value="today">今天</Option>
+                <Option value="week">本周</Option>
+                <Option value="recent7days">最近7天</Option>
+                <Option value="month">本月</Option>
+              </Dropdown>
+              <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                首页消费分类占比图的时间范围
               </Text>
             </div>
           </div>

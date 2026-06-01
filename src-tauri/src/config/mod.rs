@@ -149,7 +149,7 @@ fn default_check_interval() -> u64 {
     24
 }
 
-/// UI 配置（主题、语言、小数位数）
+/// UI 配置（主题、语言、小数位数、首页图表范围）
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UiConfig {
     #[serde(default = "default_theme")]
@@ -159,6 +159,12 @@ pub struct UiConfig {
     /// 统计数值保留小数位数，默认 2
     #[serde(default = "default_decimal_places")]
     pub decimal_places: u32,
+    /// 首页趋势图表时间范围，默认 "week"
+    #[serde(default = "default_home_trend_range")]
+    pub home_trend_range: String,
+    /// 首页分类图表时间范围，默认 "month"
+    #[serde(default = "default_home_category_range")]
+    pub home_category_range: String,
 }
 
 fn default_theme() -> String {
@@ -169,6 +175,12 @@ fn default_language() -> String {
 }
 fn default_decimal_places() -> u32 {
     2
+}
+fn default_home_trend_range() -> String {
+    "week".to_string()
+}
+fn default_home_category_range() -> String {
+    "month".to_string()
 }
 
 /// 会话续期配置

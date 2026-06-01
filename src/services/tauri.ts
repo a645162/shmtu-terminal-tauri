@@ -58,6 +58,8 @@ export interface AppConfig {
     theme: AppTheme;
     language: string;
     decimal_places: number;
+    home_trend_range: string;
+    home_category_range: string;
   };
 }
 

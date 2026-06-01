@@ -41,6 +41,12 @@ function getDateRangeParams(rangeKey: string, identityId: number): tauri.Statist
   dateEnd = today;
 
   switch (rangeKey) {
+    case 'recent7days': {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 6);
+      dateStart = formatLocalDate(d);
+      break;
+    }
     case 'week': {
       const d = new Date(now);
       d.setDate(d.getDate() - 6);
@@ -62,8 +68,19 @@ function getDateRangeParams(rangeKey: string, identityId: number): tauri.Statist
   return { identityId, dateStart, dateEnd };
 }
 
+function rangeLabel(key: string): string {
+  switch (key) {
+    case 'today': return '今日';
+    case 'week': return '本周';
+    case 'recent7days': return '近7天';
+    case 'month': return '本月';
+    default: return '本周';
+  }
+}
+
 export const HomePage: React.FC = () => {
   const currentIdentity = useAppStore((s) => s.currentIdentity);
+  const config = useAppStore((s) => s.config);
   const bills = useAppStore((s) => s.bills);
   const dailyTrend = useAppStore((s) => s.dailyTrend);
   const categoryDistribution = useAppStore((s) => s.categoryDistribution);
@@ -77,6 +94,9 @@ export const HomePage: React.FC = () => {
   const refreshStatistics = useAppStore((s) => s.refreshStatistics);
   const setShowStatisticsDialog = useAppStore((s) => s.setShowStatisticsDialog);
 
+  const trendRange = config?.ui.home_trend_range ?? 'week';
+  const categoryRange = config?.ui.home_category_range ?? 'month';
+
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [homeTab, setHomeTab] = useState<string>('overview');
 
@@ -84,12 +104,13 @@ export const HomePage: React.FC = () => {
     if (!currentIdentity) return;
     const todayParams = getDateRangeParams('today', currentIdentity.id);
     const monthParams = getDateRangeParams('month', currentIdentity.id);
-    const weekParams = getDateRangeParams('week', currentIdentity.id);
+    const trendParams = getDateRangeParams(trendRange, currentIdentity.id);
+    const categoryParams = getDateRangeParams(categoryRange, currentIdentity.id);
     loadTodaySummary(todayParams);
     loadMonthSummary(monthParams);
-    loadDailyTrend(weekParams);
-    loadCategoryDistribution(monthParams);
-  }, [currentIdentity]);
+    loadDailyTrend(trendParams);
+    loadCategoryDistribution(categoryParams);
+  }, [currentIdentity, trendRange, categoryRange]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -205,7 +226,7 @@ export const HomePage: React.FC = () => {
               <Card className="motion-hover-lift motion-sheen" style={{ padding: 16 }}>
                 <CardHeader>
                   <InfoLabel info="点击图例可切换显示/隐藏线条。">
-                    近一周消费趋势
+                    {rangeLabel(trendRange)}消费趋势
                   </InfoLabel>
                 </CardHeader>
                 {isLoadingStatistics ? (
@@ -221,7 +242,7 @@ export const HomePage: React.FC = () => {
               <Card className="motion-hover-lift motion-sheen" style={{ padding: 16 }}>
                 <CardHeader>
                   <InfoLabel info="点击扇区查看该分类详情。">
-                    本月消费分类占比
+                    {rangeLabel(categoryRange)}消费分类占比
                   </InfoLabel>
                 </CardHeader>
                 <CategoryPieChart data={categoryDistribution} />
