@@ -42,6 +42,7 @@ import {
   ChevronRight24Regular,
   Edit24Regular,
   People24Regular,
+  Merge24Regular,
 } from '@fluentui/react-icons';
 import { useAppStore } from '../../stores/appStore';
 import type { BillItem, BillType } from '../../types';
@@ -154,6 +155,7 @@ export const BillPage: React.FC = () => {
   const [dateRange, setDateRange] = useState('all');
   const [detailBill, setDetailBill] = useState<BillItem | null>(null);
   const [showAccountPanel, setShowAccountPanel] = useState(false);
+  const [isRebuilding, setIsRebuilding] = useState(false);
 
   const totalPages = Math.max(1, Math.ceil(billTotal / billPageSize));
 
@@ -222,6 +224,22 @@ export const BillPage: React.FC = () => {
     },
     [currentIdentity, loadBills]
   );
+
+  const handleRebuildMerged = useCallback(async () => {
+    if (!currentIdentity) return;
+    if (!confirm('重新合并将清空当前合并表并从原始数据重建，确定继续吗？')) return;
+    setIsRebuilding(true);
+    try {
+      const count = await tauri.rebuild_merged_bills(currentIdentity.id);
+      alert(`重新合并完成，共重建 ${count} 条记录`);
+      loadBills();
+    } catch (e) {
+      console.error('Failed to rebuild merged bills:', e);
+      alert(`重新合并失败: ${e}`);
+    } finally {
+      setIsRebuilding(false);
+    }
+  }, [currentIdentity, loadBills]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -312,6 +330,9 @@ export const BillPage: React.FC = () => {
                   </MenuItem>
                   <MenuItem icon={<ArrowClockwise24Regular />} onClick={handleRefresh}>
                     刷新数据
+                  </MenuItem>
+                  <MenuItem icon={<Merge24Regular />} onClick={handleRebuildMerged} disabled={isRebuilding}>
+                    {isRebuilding ? '重新合并中...' : '重新合并'}
                   </MenuItem>
                 </MenuList>
               </MenuPopover>

@@ -82,7 +82,7 @@ export const SettingsDialog: React.FC = () => {
     config?.captcha.remote_ocr_port ? String(config.captcha.remote_ocr_port) : ''
   );
   const [ocrHttpUrl, setOcrHttpUrl] = useState(config?.captcha.remote_ocr_http_url || 'http://127.0.0.1:5000');
-  const [ocrRetry, setOcrRetry] = useState(config?.captcha.ocr_retry_count ?? 3);
+  const [ocrRetry, setOcrRetry] = useState(config?.captcha.ocr_retry_count ?? 5);
 
   // Sync settings
   const [maxPages, setMaxPages] = useState(config?.sync.max_pages ?? 100);
@@ -117,7 +117,7 @@ export const SettingsDialog: React.FC = () => {
     setOcrHost(config.captcha.remote_ocr_host ?? '');
     setOcrPort(config.captcha.remote_ocr_port ? String(config.captcha.remote_ocr_port) : '');
     setOcrHttpUrl(config.captcha.remote_ocr_http_url || 'http://127.0.0.1:5000');
-    setOcrRetry(config.captcha.ocr_retry_count ?? 3);
+    setOcrRetry(config.captcha.ocr_retry_count || (config.captcha.mode !== 'manual' ? 5 : 0));
     setMaxPages(config.sync.max_pages ?? 100);
     setEarlyStop(config.sync.early_stop_threshold ?? 5);
     setAutoMerge(config.sync.auto_merge_after_sync ?? true);
@@ -284,7 +284,11 @@ export const SettingsDialog: React.FC = () => {
                     : '本地ONNX'
                 }
                 selectedOptions={[captchaMode]}
-                onOptionSelect={(_, data) => setCaptchaMode(data.optionValue as CaptchaMode)}
+                onOptionSelect={(_, data) => {
+                    const mode = data.optionValue as CaptchaMode;
+                    setCaptchaMode(mode);
+                    if (mode !== 'manual' && ocrRetry === 0) setOcrRetry(5);
+                  }}
                 style={{ width: '100%' }}
               >
                 <Option value="manual">手动输入</Option>
@@ -328,13 +332,19 @@ export const SettingsDialog: React.FC = () => {
             )}
             {captchaMode !== 'manual' && (
               <div>
-                <Label>OCR重试次数: {ocrRetry}</Label>
+                <Label>验证码错误重试次数: {ocrRetry}</Label>
                 <Slider
                   min={1}
-                  max={10}
+                  max={20}
                   value={ocrRetry}
                   onChange={(_, data) => setOcrRetry(data.value)}
                 />
+                <Text block size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                  登录时验证码识别错误后
+                </Text>
+                <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                  自动重试的最大次数
+                </Text>
               </div>
             )}
           </div>

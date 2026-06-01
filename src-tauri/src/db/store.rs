@@ -156,6 +156,83 @@ impl BillStoreImpl {
         Ok(())
     }
 
+    /// 重建指定身份的合并账单表。
+    ///
+    /// 清空该身份下所有合并账单，再从原始账单表逐条重新写入合并表。
+    /// 返回重建的记录数。
+    pub async fn rebuild_merged_from_original(&self, identity_id: i64) -> AppResult<usize> {
+        tracing::info!(
+            "[Store] rebuild_merged_from_original: identity_id={}",
+            identity_id
+        );
+
+        // 清空该身份的合并表
+        bill_merged::Entity::delete_many()
+            .filter(bill_merged::Column::IdentityId.eq(identity_id))
+            .exec(&self.db)
+            .await?;
+
+        // 从原始表读取所有属于该身份的账号的账单
+        let accounts = accounts::Entity::find()
+            .filter(accounts::Column::IdentityId.eq(identity_id))
+            .all(&self.db)
+            .await?;
+
+        let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let mut count = 0usize;
+
+        for acct in &accounts {
+            let originals = bill_original::Entity::find()
+                .filter(bill_original::Column::AccountId.eq(&acct.account_id))
+                .order_by_asc(bill_original::Column::Timestamp)
+                .all(&self.db)
+                .await?;
+
+            for orig in originals {
+                let (position, room) = self.resolve_position_and_room(
+                    &orig.target_user.clone().unwrap_or_default(),
+                );
+
+                let model = bill_merged::ActiveModel {
+                    identity_id: Set(identity_id),
+                    date_str: Set(orig.date_str.clone()),
+                    time_str: Set(orig.time_str.clone()),
+                    time_str_formatted: Set(orig.time_str_formatted.clone()),
+                    date_time_formatted: Set(orig.date_time_formatted.clone()),
+                    end_date_time_formatted: Set(orig.end_date_time_formatted.clone()),
+                    timestamp: Set(orig.timestamp),
+                    end_timestamp: Set(orig.end_timestamp),
+                    item_type: Set(orig.item_type.clone()),
+                    number: Set(orig.number.clone()),
+                    number_list: Set(orig.number_list.clone()),
+                    target_user: Set(orig.target_user.clone()),
+                    money_str: Set(orig.money_str.clone()),
+                    money: Set(orig.money),
+                    method: Set(orig.method.clone()),
+                    status_str: Set(orig.status_str.clone()),
+                    is_combined: Set(true),
+                    source_account_id: Set(Some(acct.account_id.clone())),
+                    is_manual: Set(false),
+                    position: Set(Some(position)),
+                    room: Set(Some(room)),
+                    notes: Set(None),
+                    synced_at: Set(Some(now.clone())),
+                    ..Default::default()
+                };
+                bill_merged::Entity::insert(model).exec(&self.db).await?;
+                count += 1;
+            }
+        }
+
+        tracing::info!(
+            "[Store] rebuild_merged_from_original: identity_id={}, rebuilt {} records",
+            identity_id,
+            count
+        );
+
+        Ok(count)
+    }
+
     /// 将一条账单追加到 bill_merged 合并表。
     ///
     /// 同时通过 `PositionTranslator` 解析对方账户对应的校区和房间号，

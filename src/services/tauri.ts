@@ -154,6 +154,10 @@ export async function dedupe_account_bills(identityId: number, accountId: string
   return invoke<DedupeResult>('dedupe_account_bills', { identityId, accountId });
 }
 
+export async function rebuild_merged_bills(identityId: number): Promise<number> {
+  return invoke<number>('rebuild_merged_bills', { identityId });
+}
+
 // ========== Sync ==========
 
 export async function incremental_sync(identityId: number, syncRange: SyncRangePreset): Promise<SyncProgress> {

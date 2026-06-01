@@ -85,7 +85,7 @@ fn default_remote_ocr_http_url() -> String {
 }
 
 fn default_ocr_retry_count() -> usize {
-    3
+    5
 }
 
 /// 同步配置（最大页数、提前停止阈值、同步后自动合并）

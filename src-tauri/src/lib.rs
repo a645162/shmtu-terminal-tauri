@@ -84,6 +84,7 @@ pub fn run() {
             bill::update_bill_notes,
             bill::dedupe_identity_bills,
             bill::dedupe_account_bills,
+            bill::rebuild_merged_bills,
             cmd_sync::incremental_sync,
             cmd_sync::full_sync,
             cmd_sync::incremental_sync_account,

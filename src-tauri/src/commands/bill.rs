@@ -275,6 +275,37 @@ pub async fn update_bill_notes(
         .map_err(|e| e.to_string())
 }
 
+/// 重建指定身份的合并账单表。
+///
+/// 清空该身份下所有合并账单，再从原始账单表重新合并写入。
+#[tauri::command]
+pub async fn rebuild_merged_bills(
+    state: State<'_, AppState>,
+    identity_id: i64,
+) -> Result<usize, String> {
+    tracing::info!("[Bill] rebuild_merged_bills: identity_id={}", identity_id);
+
+    let db = state.db_manager.read().await;
+    let db_conn = db.db().clone();
+    let translator = state.db_file_manager.create_position_translator();
+    let store = BillStoreImpl::new(db_conn, "", identity_id, translator)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let count = store
+        .rebuild_merged_from_original(identity_id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    tracing::info!(
+        "[Bill] rebuild_merged_bills completed: identity_id={}, rebuilt {} records",
+        identity_id,
+        count
+    );
+
+    Ok(count)
+}
+
 /// 对指定身份的合并账单执行回填+去重。
 ///
 /// 先回填缺失的元数据（如规范化交易号、位置信息），
