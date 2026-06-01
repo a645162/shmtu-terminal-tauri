@@ -298,6 +298,24 @@ export async function get_category_summary(params: CategorySummaryParams): Promi
   return invoke<CategorySummary>('get_category_summary', { params });
 }
 
+export interface ForgotCardItem {
+  id: number;
+  date: string;
+  time: string;
+  amount: number;
+  targetUser: string;
+}
+
+export interface ForgotCardStats {
+  count: number;
+  totalAmount: number;
+  items: ForgotCardItem[];
+}
+
+export async function get_forgot_card_stats(params: StatisticsParams): Promise<ForgotCardStats> {
+  return invoke<ForgotCardStats>('get_forgot_card_stats', { params });
+}
+
 // ========== Classification Rules (Dynamic Loading) ==========
 
 export async function get_classification_rules(): Promise<import('../types').ClassificationRules> {

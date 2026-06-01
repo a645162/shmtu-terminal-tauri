@@ -575,6 +575,112 @@ pub async fn get_merchant_ranking(
         .collect())
 }
 
+/// 忘记拔卡统计条目
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForgotCardItem {
+    pub id: i64,
+    pub date: String,
+    pub time: String,
+    pub amount: f64,
+    pub target_user: String,
+}
+
+/// 忘记拔卡统计结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForgotCardStats {
+    pub count: u32,
+    pub total_amount: f64,
+    pub items: Vec<ForgotCardItem>,
+}
+
+/// 获取"忘记拔卡"统计：洗澡消费恰好为5元的记录。
+///
+/// 洗澡上限为5元，消费5元意味着水龙头一直开着（忘记拔卡）。
+#[tauri::command]
+pub async fn get_forgot_card_stats(
+    state: State<'_, AppState>,
+    params: StatisticsParams,
+) -> Result<ForgotCardStats, String> {
+    tracing::info!(
+        "[Statistics] get_forgot_card_stats: identity_id={}, date_start={:?}, date_end={:?}",
+        params.identity_id, params.date_start, params.date_end
+    );
+
+    let db = state.db_manager.read().await;
+    let classifier = state.classifier.read().await;
+    let db_conn = db.db();
+
+    let models = success_query(params.identity_id)
+        .all(db_conn)
+        .await
+        .map_err(|e| e.to_string())?;
+    let models = filter_models_by_date(models, &params.date_start, &params.date_end);
+
+    let mut items: Vec<ForgotCardItem> = Vec::new();
+
+    for m in &models {
+        if is_income(m) {
+            continue;
+        }
+
+        let money = m.money.unwrap_or(0.0).abs();
+
+        if (money - 5.0).abs() > 0.01 {
+            continue;
+        }
+
+        let category = if let Some(ref classifier) = *classifier {
+            classifier
+                .classify(
+                    m.item_type.as_deref().unwrap_or(""),
+                    m.target_user.as_deref().unwrap_or(""),
+                    0,
+                )
+                .type_label
+                .clone()
+                .unwrap_or_default()
+        } else {
+            let target = m.target_user.as_deref().unwrap_or("");
+            if target.contains("淋浴") || target.contains("热水") {
+                "洗澡".to_string()
+            } else {
+                String::new()
+            }
+        };
+
+        if category != "洗澡" {
+            continue;
+        }
+
+        items.push(ForgotCardItem {
+            id: m.id,
+            date: m.date_str.clone(),
+            time: m.time_str_formatted.clone().unwrap_or_default(),
+            amount: money,
+            target_user: m.target_user.clone().unwrap_or_default(),
+        });
+    }
+
+    let count = items.len() as u32;
+    let total_amount: f64 = items.iter().map(|i| i.amount).sum();
+
+    let config = state.config.read().await;
+    let dp = config.decimal_places();
+
+    tracing::info!(
+        "[Statistics] forgot_card_stats: count={}, total_amount={}",
+        count, total_amount
+    );
+
+    Ok(ForgotCardStats {
+        count,
+        total_amount: round_to_n(total_amount, dp),
+        items,
+    })
+}
+
 /// 获取指定分类的消费明细统计：总额、笔数、日均、笔均。
 #[tauri::command]
 pub async fn get_category_summary(

@@ -95,6 +95,24 @@ function buildParams(identityId: number, rangeKey: string): tauri.StatisticsPara
       dateStart = formatLocalDate(d);
       break;
     }
+    case '3years': {
+      const d = new Date(now);
+      d.setFullYear(d.getFullYear() - 3);
+      d.setDate(d.getDate() + 1);
+      dateStart = formatLocalDate(d);
+      break;
+    }
+    case '4years': {
+      const d = new Date(now);
+      d.setFullYear(d.getFullYear() - 4);
+      d.setDate(d.getDate() + 1);
+      dateStart = formatLocalDate(d);
+      break;
+    }
+    case 'all': {
+      dateStart = undefined;
+      break;
+    }
     case '30days': {
       const d = new Date(now);
       d.setDate(d.getDate() - 29);
@@ -121,6 +139,8 @@ export const StatisticsDialog: React.FC = () => {
   const mealDistribution = useAppStore((s) => s.mealDistribution);
   const consumptionDistribution = useAppStore((s) => s.consumptionDistribution);
   const merchantRanking = useAppStore((s) => s.merchantRanking);
+  const forgotCardStats = useAppStore((s) => s.forgotCardStats);
+  const loadForgotCardStats = useAppStore((s) => s.loadForgotCardStats);
   const isLoadingStatistics = useAppStore((s) => s.isLoadingStatistics);
   const loadStatisticsSummary = useAppStore((s) => s.loadStatisticsSummary);
   const loadDailyTrend = useAppStore((s) => s.loadDailyTrend);
@@ -149,6 +169,7 @@ export const StatisticsDialog: React.FC = () => {
       loadMealDistribution(params);
       loadConsumptionDistribution(params);
       loadMerchantRanking(params);
+    loadForgotCardStats(params);
     },
     [loadStatisticsSummary, loadDailyTrend, loadCategoryDistribution, loadMealDistribution, loadConsumptionDistribution, loadMerchantRanking]
   );
@@ -251,6 +272,9 @@ export const StatisticsDialog: React.FC = () => {
                   <Option value="quarter">最近3个月</Option>
                   <Option value="halfYear">最近半年</Option>
                   <Option value="year">最近一年</Option>
+                  <Option value="3years">最近3年</Option>
+                  <Option value="4years">最近4年</Option>
+                  <Option value="all">全部时间</Option>
                 </Dropdown>
                 <Dropdown
                   value={identities.find((i) => i.id.toString() === selectedIdentityId)?.name ?? ''}
@@ -288,6 +312,7 @@ export const StatisticsDialog: React.FC = () => {
                   <Tab value="category">分类分析</Tab>
                   <Tab value="position">位置分布</Tab>
                   <Tab value="compare">月度对比</Tab>
+                  <Tab value="forgot">忘记拔卡</Tab>
                 </TabList>
               </div>
             </SectionEnterMotion>
@@ -415,6 +440,31 @@ export const StatisticsDialog: React.FC = () => {
                     <MerchantRankingChart data={merchantRanking} />
                   </Card>
                 </div>
+
+                {/* Forgot Card Stats */}
+                {forgotCardStats && forgotCardStats.count > 0 && (
+                <Card className="motion-hover-lift" style={{ padding: 16, marginBottom: 12, borderLeft: '4px solid var(--colorPaletteRedForeground3)' }}>
+                  <CardHeader>
+                    <InfoLabel info={
+                      forgotCardStats.items.length > 0
+                        ? ['洗澡消费5元的记录（可能忘记拔卡）：', ...forgotCardStats.items.slice(0, 20).map((i) => `${i.date} ${i.time} ¥${i.amount} ${i.targetUser}`), forgotCardStats.items.length > 20 ? '...' : ''].join('\n')
+                        : '洗澡上限为5元，消费5元意味着可能忘记拔卡'
+                    }>
+                      <Subtitle2 style={{ color: 'var(--colorPaletteRedForeground3)' }}>忘记拔卡提醒</Subtitle2>
+                    </InfoLabel>
+                  </CardHeader>
+                  <div style={{ display: 'flex', gap: 24, alignItems: 'center' }}>
+                    <div>
+                      <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>洗澡消费达上限次数</Text>
+                      <Title3 block style={{ color: 'var(--colorPaletteRedForeground3)' }}>{forgotCardStats.count} 次</Title3>
+                    </div>
+                    <div>
+                      <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>累计金额</Text>
+                      <Title3 block style={{ color: 'var(--colorPaletteRedForeground3)' }}>¥ {forgotCardStats.totalAmount.toFixed(2)}</Title3>
+                    </div>
+                  </div>
+                </Card>
+                )}
                   </>
                 )}
 
@@ -511,6 +561,60 @@ export const StatisticsDialog: React.FC = () => {
                       </InfoLabel>
                     </CardHeader>
                     <MonthComparisonCard identityId={parseInt(selectedIdentityId)} />
+                  </Card>
+                )}
+
+                {chartTab === 'forgot' && (
+                  <Card className="motion-hover-lift" style={{ padding: 16 }}>
+                    <CardHeader>
+                      <InfoLabel info="洗澡上限为5元，消费恰好5元意味着水龙头一直开着，可能忘记拔卡。">
+                        忘记拔卡记录
+                      </InfoLabel>
+                    </CardHeader>
+                    {forgotCardStats ? (
+                      forgotCardStats.count > 0 ? (
+                        <div>
+                          <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
+                            <Text weight="semibold" style={{ color: 'var(--colorPaletteRedForeground3)' }}>
+                              共 {forgotCardStats.count} 次，累计 ¥{forgotCardStats.totalAmount.toFixed(2)}
+                            </Text>
+                          </div>
+                          <div style={{ display: 'grid', gap: 8 }}>
+                            {forgotCardStats.items.map((item) => (
+                              <div
+                                key={item.id}
+                                style={{
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center',
+                                  padding: '8px 12px',
+                                  borderRadius: 6,
+                                  border: '1px solid var(--colorNeutralStroke2)',
+                                  background: 'var(--colorNeutralBackground2)',
+                                }}
+                              >
+                                <div>
+                                  <Text size={200} weight="semibold">{item.date}</Text>
+                                  <Text size={200} style={{ color: 'var(--colorNeutralForeground3)', marginLeft: 8 }}>{item.time}</Text>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                  <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>{item.targetUser}</Text>
+                                  <Text size={200} weight="semibold" style={{ color: 'var(--colorPaletteRedForeground3)' }}>¥{item.amount.toFixed(2)}</Text>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <Text size={200} style={{ color: 'var(--colorNeutralForeground3)', padding: 24, display: 'block', textAlign: 'center' }}>
+                          当前时间范围内没有发现忘记拔卡的记录
+                        </Text>
+                      )
+                    ) : (
+                      <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}>
+                        <Spinner label="加载中..." />
+                      </div>
+                    )}
                   </Card>
                 )}
               </div>

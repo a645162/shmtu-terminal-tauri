@@ -76,6 +76,7 @@ interface AppState {
   mealDistribution: MealDistItem[];
   consumptionDistribution: ConsumptionBucketItem[];
   merchantRanking: MerchantRankingItem[];
+  forgotCardStats: tauri.ForgotCardStats | null;
   isLoadingStatistics: boolean;
 
   // UI state
@@ -140,6 +141,7 @@ interface AppState {
   loadMealDistribution: (params: tauri.StatisticsParams) => Promise<void>;
   loadConsumptionDistribution: (params: tauri.StatisticsParams) => Promise<void>;
   loadMerchantRanking: (params: tauri.StatisticsParams) => Promise<void>;
+  loadForgotCardStats: (params: tauri.StatisticsParams) => Promise<void>;
   refreshStatistics: () => Promise<void>;
 }
 
@@ -171,6 +173,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   mealDistribution: [],
   consumptionDistribution: [],
   merchantRanking: [],
+  forgotCardStats: null,
   isLoadingStatistics: false,
 
   isLoading: false,
@@ -673,6 +676,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (e) {
       console.error('Failed to load merchant ranking:', e);
       set({ merchantRanking: [] });
+    }
+  },
+
+  loadForgotCardStats: async (params) => {
+    try {
+      const stats = await tauri.get_forgot_card_stats(params);
+      set({ forgotCardStats: stats });
+    } catch (e) {
+      console.error('Failed to load forgot card stats:', e);
+      set({ forgotCardStats: null });
     }
   },
 

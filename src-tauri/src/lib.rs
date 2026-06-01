@@ -121,6 +121,7 @@ pub fn run() {
             statistics::get_consumption_distribution,
             statistics::get_merchant_ranking,
             statistics::get_category_summary,
+            statistics::get_forgot_card_stats,
             classify::translate_target,
             classify::classify_bill,
             classify::get_bill_statistics,

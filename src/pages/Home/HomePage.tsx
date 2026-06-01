@@ -91,6 +91,8 @@ export const HomePage: React.FC = () => {
   const loadMonthSummary = useAppStore((s) => s.loadMonthSummary);
   const loadDailyTrend = useAppStore((s) => s.loadDailyTrend);
   const loadCategoryDistribution = useAppStore((s) => s.loadCategoryDistribution);
+  const loadForgotCardStats = useAppStore((s) => s.loadForgotCardStats);
+  const forgotCardStats = useAppStore((s) => s.forgotCardStats);
   const refreshStatistics = useAppStore((s) => s.refreshStatistics);
   const setShowStatisticsDialog = useAppStore((s) => s.setShowStatisticsDialog);
 
@@ -110,6 +112,7 @@ export const HomePage: React.FC = () => {
     loadMonthSummary(monthParams);
     loadDailyTrend(trendParams);
     loadCategoryDistribution(categoryParams);
+    loadForgotCardStats(monthParams);
   }, [currentIdentity, trendRange, categoryRange]);
 
   const handleRefresh = async () => {
