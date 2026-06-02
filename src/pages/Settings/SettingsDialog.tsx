@@ -100,7 +100,10 @@ export const SettingsDialog: React.FC = () => {
   const [autoMerge, setAutoMerge] = useState(config?.sync.auto_merge_after_sync ?? true);
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(config?.sync.auto_sync_enabled ?? false);
   const [autoSyncIntervalMinutes, setAutoSyncIntervalMinutes] = useState(config?.sync.auto_sync_interval_minutes ?? 60);
+  const [autoSyncIntervalInput, setAutoSyncIntervalInput] = useState(String(config?.sync.auto_sync_interval_minutes ?? 60));
   const [autoSyncRange, setAutoSyncRange] = useState<tauri.SyncRangePreset>(config?.sync.auto_sync_range ?? 'month');
+  const [autoSyncStatus, setAutoSyncStatus] = useState<tauri.AutoSyncStatus | null>(null);
+  const [nextRunCountdown, setNextRunCountdown] = useState<number | null>(null);
 
   // Data settings
   const [dataDir, setDataDir] = useState(config?.data.data_directory || 'Data');
@@ -139,6 +142,7 @@ export const SettingsDialog: React.FC = () => {
     setAutoMerge(config.sync.auto_merge_after_sync ?? true);
     setAutoSyncEnabled(config.sync.auto_sync_enabled ?? false);
     setAutoSyncIntervalMinutes(config.sync.auto_sync_interval_minutes ?? 60);
+    setAutoSyncIntervalInput(String(config.sync.auto_sync_interval_minutes ?? 60));
     setAutoSyncRange(config.sync.auto_sync_range ?? 'month');
     setDataDir(config.data.data_directory || 'Data');
     setSnapshotKeep(config.data.snapshot_keep_count ?? 10);
@@ -157,6 +161,64 @@ export const SettingsDialog: React.FC = () => {
     }
     setSelectedTab(settingsDialogTab);
   }, [settingsDialogTab, showSettingsDialog]);
+
+  useEffect(() => {
+    if (!showSettingsDialog) {
+      return;
+    }
+
+    let disposed = false;
+    let timer: number | undefined;
+    let countdownTimer: number | undefined;
+
+    const loadAutoSyncStatus = async () => {
+      try {
+        const status = await tauri.get_auto_sync_status();
+        if (disposed) {
+          return;
+        }
+        setAutoSyncStatus(status);
+        setNextRunCountdown(status.next_run_in_seconds ?? null);
+      } catch (error) {
+        console.error('Failed to load auto sync status:', error);
+      }
+    };
+
+    void loadAutoSyncStatus();
+    timer = window.setInterval(() => {
+      void loadAutoSyncStatus();
+    }, 15000);
+    countdownTimer = window.setInterval(() => {
+      setNextRunCountdown((current) => {
+        if (current === null || current <= 0) {
+          return current;
+        }
+        return current - 1;
+      });
+    }, 1000);
+
+    return () => {
+      disposed = true;
+      if (timer) window.clearInterval(timer);
+      if (countdownTimer) window.clearInterval(countdownTimer);
+    };
+  }, [showSettingsDialog]);
+
+  const formatCountdown = (seconds?: number | null) => {
+    if (seconds === undefined || seconds === null) {
+      return '未计划';
+    }
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainSeconds = seconds % 60;
+    if (hours > 0) {
+      return `${hours}小时 ${minutes}分钟`;
+    }
+    if (minutes > 0) {
+      return `${minutes}分钟 ${remainSeconds}秒`;
+    }
+    return `${remainSeconds}秒`;
+  };
 
   const currentDefaultIdentity =
     identities.find((identity) => identity.id === config?.identity.default_identity_id) ?? null;
@@ -254,9 +316,6 @@ export const SettingsDialog: React.FC = () => {
                 <InfoLabel info="启用后，每次启动应用前都必须输入启动密码。适合共享电脑或希望保护本地账单数据的场景。">
                   启动保护
                 </InfoLabel>
-                <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
-                  开启后每次启动需要输入密码
-                </Text>
               </div>
               <Switch
                 checked={startupProtection}
@@ -315,9 +374,6 @@ export const SettingsDialog: React.FC = () => {
                   : '尚未设置。可在“切换身份”对话框中直接设为默认身份。'}
               </Text>
             </div>
-            <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
-              如果当前只有一个启用身份，应用会直接进入该身份，不受上述策略影响。
-            </Text>
           </div>
         );
 
@@ -400,12 +456,6 @@ export const SettingsDialog: React.FC = () => {
                   value={ocrRetry}
                   onChange={(_, data) => setOcrRetry(data.value)}
                 />
-                <Text block size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
-                  登录时验证码识别错误后
-                </Text>
-                <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
-                  自动重试的最大次数
-                </Text>
               </div>
             )}
           </div>
@@ -443,9 +493,6 @@ export const SettingsDialog: React.FC = () => {
                 <InfoLabel info="启用后，毕业日期早于今天的账号会在同步阶段被自动跳过。毕业日期为空（至今）或设置为未来时间的账号仍会正常同步。">
                   跳过已毕业账号同步
                 </InfoLabel>
-                <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
-                  适合不再使用校园卡的历史账号
-                </Text>
               </div>
               <Switch checked={skipGraduatedAccounts} onChange={(_, data) => setSkipGraduatedAccounts(data.checked)} />
             </div>
@@ -454,9 +501,6 @@ export const SettingsDialog: React.FC = () => {
                 <InfoLabel info="同步成功后，自动把新抓取的原始账单并入合并账单表。通常建议开启。">
                   同步后自动合并
                 </InfoLabel>
-                <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
-                  自动将新条目追加到合并数据表
-                </Text>
               </div>
               <Switch checked={autoMerge} onChange={(_, data) => setAutoMerge(data.checked)} />
             </div>
@@ -465,9 +509,6 @@ export const SettingsDialog: React.FC = () => {
                 <InfoLabel info="启用后，应用会在后台按设定周期对默认身份执行账单增量同步。手动验证码模式下会自动跳过。">
                   启用定时账单同步
                 </InfoLabel>
-                <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
-                  仅对默认身份生效，建议配合自动识别验证码模式使用
-                </Text>
               </div>
               <Switch checked={autoSyncEnabled} onChange={(_, data) => setAutoSyncEnabled(data.checked)} />
             </div>
@@ -475,13 +516,27 @@ export const SettingsDialog: React.FC = () => {
               <InfoLabel info="后台自动同步的时间间隔，单位分钟。">
                 定时同步间隔: {autoSyncIntervalMinutes} 分钟
               </InfoLabel>
-              <Slider
+              <Input
+                type="number"
                 min={5}
-                max={720}
-                step={5}
-                value={autoSyncIntervalMinutes}
-                onChange={(_, data) => setAutoSyncIntervalMinutes(data.value)}
+                step={1}
+                value={autoSyncIntervalInput}
+                onChange={(e) => {
+                  const raw = e.currentTarget.value;
+                  setAutoSyncIntervalInput(raw);
+                  const value = Number(raw);
+                  if (raw !== '' && Number.isFinite(value) && value >= 5) {
+                    setAutoSyncIntervalMinutes(Math.floor(value));
+                  }
+                }}
+                onBlur={() => {
+                  const value = Number(autoSyncIntervalInput);
+                  const normalized = Number.isFinite(value) && value >= 5 ? Math.floor(value) : 5;
+                  setAutoSyncIntervalMinutes(normalized);
+                  setAutoSyncIntervalInput(String(normalized));
+                }}
                 disabled={!autoSyncEnabled}
+                style={{ width: '100%' }}
               />
             </div>
             <div>
@@ -509,6 +564,27 @@ export const SettingsDialog: React.FC = () => {
                 <Option value="year">最近一年</Option>
                 <Option value="all">全部</Option>
               </Dropdown>
+            </div>
+            <div
+              style={{
+                padding: 14,
+                borderRadius: 10,
+                border: '1px solid var(--colorNeutralStroke2)',
+                background: 'var(--colorNeutralBackground2)',
+                display: 'grid',
+                gap: 6,
+              }}
+            >
+              <Text weight="semibold">自动同步状态</Text>
+              <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                当前状态：{autoSyncStatus?.is_running ? '运行中' : '未运行'}
+              </Text>
+              <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                距离下次同步：{formatCountdown(nextRunCountdown)}
+              </Text>
+              <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                累计成功/失败：{autoSyncStatus?.success_runs ?? 0} / {autoSyncStatus?.failed_runs ?? 0}
+              </Text>
             </div>
           </div>
         );
@@ -656,9 +732,6 @@ export const SettingsDialog: React.FC = () => {
                 value={decimalPlaces}
                 onChange={(_, data) => setDecimalPlaces(data.value)}
               />
-              <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
-                控制统计页面中金额数值的保留小数位数
-              </Text>
             </div>
           </div>
         );
@@ -687,9 +760,6 @@ export const SettingsDialog: React.FC = () => {
                 <Option value="recent7days">最近7天</Option>
                 <Option value="month">本月</Option>
               </Dropdown>
-              <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
-                首页消费趋势图的时间范围
-              </Text>
             </div>
             <div>
               <InfoLabel info="控制首页分类占比图默认统计的时间范围。">
@@ -711,9 +781,6 @@ export const SettingsDialog: React.FC = () => {
                 <Option value="recent7days">最近7天</Option>
                 <Option value="month">本月</Option>
               </Dropdown>
-              <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
-                首页消费分类占比图的时间范围
-              </Text>
             </div>
           </div>
         );

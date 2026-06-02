@@ -11,6 +11,17 @@ use crate::sync::{BillSyncService, SyncRangePreset};
 pub struct AutoSyncState {
     pub is_running: bool,
     pub last_run: Option<Instant>,
+    pub next_run: Option<Instant>,
+    pub total_runs: u64,
+    pub success_runs: u64,
+    pub failed_runs: u64,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct AutoSyncStatus {
+    pub is_running: bool,
+    pub last_run_seconds_ago: Option<u64>,
+    pub next_run_in_seconds: Option<u64>,
     pub total_runs: u64,
     pub success_runs: u64,
     pub failed_runs: u64,
@@ -33,6 +44,7 @@ impl AutoSyncService {
             state: Arc::new(RwLock::new(AutoSyncState {
                 is_running: false,
                 last_run: None,
+                next_run: None,
                 total_runs: 0,
                 success_runs: 0,
                 failed_runs: 0,
@@ -84,6 +96,10 @@ impl AutoSyncService {
                 let interval_seconds =
                     (base_interval as i64 + jitter_seconds as i64).max(300) as u64;
                 let sleep_duration = Duration::from_secs(interval_seconds);
+                {
+                    let mut status = state.write().await;
+                    status.next_run = Some(Instant::now() + sleep_duration);
+                }
                 let mut ticker = tokio::time::interval(sleep_duration);
                 ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
@@ -100,12 +116,14 @@ impl AutoSyncService {
 
             let mut state = state.write().await;
             state.is_running = false;
+            state.next_run = None;
         });
     }
 
     pub async fn stop(&self) {
         let mut state = self.state.write().await;
         state.is_running = false;
+        state.next_run = None;
         tracing::info!("[AutoSync] 已请求停止");
     }
 
@@ -113,6 +131,18 @@ impl AutoSyncService {
         self.stop().await;
         tokio::time::sleep(Duration::from_secs(1)).await;
         self.start().await;
+    }
+
+    pub async fn get_status(&self) -> AutoSyncStatus {
+        let state = self.state.read().await;
+        AutoSyncStatus {
+            is_running: state.is_running,
+            last_run_seconds_ago: state.last_run.map(|i| i.elapsed().as_secs()),
+            next_run_in_seconds: state.next_run.map(|i| i.saturating_duration_since(Instant::now()).as_secs()),
+            total_runs: state.total_runs,
+            success_runs: state.success_runs,
+            failed_runs: state.failed_runs,
+        }
     }
 
     async fn perform_sync(
@@ -160,6 +190,7 @@ impl AutoSyncService {
 
         let mut service_state = state.write().await;
         service_state.last_run = Some(Instant::now());
+        service_state.next_run = None;
         service_state.total_runs += 1;
 
         match result {

@@ -68,12 +68,25 @@ export interface AppConfig {
   };
 }
 
+export interface AutoSyncStatus {
+  is_running: boolean;
+  last_run_seconds_ago?: number;
+  next_run_in_seconds?: number;
+  total_runs: number;
+  success_runs: number;
+  failed_runs: number;
+}
+
 export async function load_config(): Promise<AppConfig> {
   return invoke<AppConfig>('load_config');
 }
 
 export async function save_config(config: AppConfig): Promise<void> {
   return invoke('save_config', { config });
+}
+
+export async function get_auto_sync_status(): Promise<AutoSyncStatus> {
+  return invoke<AutoSyncStatus>('get_auto_sync_status');
 }
 
 // ========== Identity ==========

@@ -1,8 +1,14 @@
 use tauri::State;
 
 use crate::config::AppConfig;
+use crate::auto_sync::AutoSyncStatus;
 use crate::session_refresh::{SessionExpirationResult, SessionExpirationStatus};
 use crate::state::AppState;
+
+#[tauri::command]
+pub async fn get_auto_sync_status(state: State<'_, AppState>) -> Result<AutoSyncStatus, String> {
+    Ok(state.auto_sync_service.get_status().await)
+}
 
 #[tauri::command]
 pub async fn get_session_expiration_status(
