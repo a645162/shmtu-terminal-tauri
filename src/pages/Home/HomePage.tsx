@@ -5,11 +5,8 @@ import {
   Text,
   Title3,
   Subtitle2,
-  Spinner,
   Button,
   InfoLabel,
-  TabList,
-  Tab,
   Badge,
 } from '@fluentui/react-components';
 import {
@@ -30,7 +27,6 @@ import { formatLocalDate } from '../../utils/date';
 import { BillDetailDialog } from '../../components/Common/BillDetailDialog';
 import { ContextMenu } from '../../components/Common/ContextMenu';
 import {
-  SkeletonCardGrid,
   SkeletonChartBlock,
   SkeletonLine,
 } from '../../components/Common/LoadingSkeleton';
@@ -90,6 +86,7 @@ export const HomePage: React.FC = () => {
   const currentIdentity = useAppStore((s) => s.currentIdentity);
   const config = useAppStore((s) => s.config);
   const bills = useAppStore((s) => s.bills);
+  const isLoadingBills = useAppStore((s) => s.isLoading);
   const dailyTrend = useAppStore((s) => s.dailyTrend);
   const categoryDistribution = useAppStore((s) => s.categoryDistribution);
   const isLoadingStatistics = useAppStore((s) => s.isLoadingStatistics);
@@ -143,30 +140,35 @@ export const HomePage: React.FC = () => {
   }, [currentIdentity]);
 
   const recentBills = bills.slice(0, 5);
+  const hasForgotCardRisk = (forgotCardStats?.count ?? 0) > 0;
   const summaryCards = [
     {
       title: '今日消费',
       value: todaySummary ? `¥ ${Math.abs(todaySummary.total_expense).toFixed(2)}` : '加载中...',
       icon: <SubtractCircle24Regular />,
       color: 'var(--colorPaletteRedForeground3)',
+      tone: 'expense' as const,
     },
     {
       title: '本月消费',
       value: monthSummary ? `¥ ${Math.abs(monthSummary.total_expense).toFixed(2)}` : '加载中...',
       icon: <SubtractCircle24Regular />,
       color: 'var(--colorPaletteRedForeground3)',
+      tone: 'expense' as const,
     },
     {
       title: '本月充值',
       value: monthSummary ? `¥ ${monthSummary.total_income.toFixed(2)}` : '加载中...',
       icon: <AddCircle24Regular />,
       color: 'var(--colorPaletteGreenForeground3)',
+      tone: 'income' as const,
     },
     {
       title: '卡片余额',
       value: '暂不可用',
       icon: <Money24Regular />,
       color: 'var(--colorBrandForeground1)',
+      tone: 'brand' as const,
     },
   ];
 
@@ -181,12 +183,16 @@ export const HomePage: React.FC = () => {
   }
 
   return (
-    <div style={{ padding: 20, maxWidth: 1200, margin: '0 auto' }}>
-      {/* Header with Refresh Button */}
+    <div className="home-page">
       <SectionEnterMotion>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-          <Title3>首页统计</Title3>
-          <div style={{ display: 'flex', gap: 8 }}>
+        <div className="home-page__header">
+          <div className="home-page__title-block">
+            <Title3>首页统计</Title3>
+            <Text size={200} className="home-page__subtitle">
+              快速查看近期消费、分类趋势和异常提醒
+            </Text>
+          </div>
+          <div className="home-page__actions">
             <Button
               icon={<ArrowExpand24Regular />}
               appearance="secondary"
@@ -213,26 +219,27 @@ export const HomePage: React.FC = () => {
         </div>
       </SectionEnterMotion>
 
-      {/* Summary Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 20 }}>
-            {summaryCards.map((card, index) => (
-              <CardEnterMotion key={card.title} delay={getStaggerDelay(index, 70, 90)}>
-                <div>
-                  <StatCard
-                    title={card.title}
-                    value={card.value}
-                    icon={card.icon}
-                    color={card.color}
-                  />
-                </div>
-              </CardEnterMotion>
-            ))}
-          </div>
+      <div className="home-page__summary-grid">
+        {summaryCards.map((card, index) => (
+          <CardEnterMotion key={card.title} delay={getStaggerDelay(index, 70, 90)}>
+            <div>
+              <StatCard
+                title={card.title}
+                value={card.value}
+                icon={card.icon}
+                color={card.color}
+                tone={card.tone}
+              />
+            </div>
+          </CardEnterMotion>
+        ))}
+      </div>
 
-          {/* Charts Row */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
+      <div className="home-page__content-grid">
+        <div className="home-page__main-column">
+          <div className="home-page__chart-grid">
             <CardEnterMotion delay={getStaggerDelay(0, 90, 220)}>
-              <Card style={{ padding: 16 }}>
+              <Card className="home-page__panel home-page__panel--trend" style={{ padding: 16 }}>
                 <CardHeader>
                   <InfoLabel info="点击图例可切换显示/隐藏线条。">
                     {rangeLabel(trendRange)}消费趋势
@@ -246,7 +253,7 @@ export const HomePage: React.FC = () => {
               </Card>
             </CardEnterMotion>
             <CardEnterMotion delay={getStaggerDelay(1, 90, 220)}>
-              <Card style={{ padding: 16 }}>
+              <Card className="home-page__panel home-page__panel--category" style={{ padding: 16 }}>
                 <CardHeader>
                   <InfoLabel info="点击扇区查看该分类详情。">
                     {rangeLabel(categoryRange)}消费分类占比
@@ -257,13 +264,12 @@ export const HomePage: React.FC = () => {
             </CardEnterMotion>
           </div>
 
-          {/* Recent Transactions */}
           <CardEnterMotion delay={320}>
-            <Card style={{ padding: 16 }}>
+            <Card className="home-page__panel home-page__panel--recent" style={{ padding: 16 }}>
               <CardHeader>
                 <Subtitle2>最近交易</Subtitle2>
               </CardHeader>
-              {useAppStore.getState().isLoading ? (
+              {isLoadingBills ? (
                 <div style={{ display: 'grid', gap: 10 }}>
                   {Array.from({ length: 5 }).map((_, index) => (
                     <div
@@ -289,7 +295,7 @@ export const HomePage: React.FC = () => {
                   暂无交易记录
                 </Text>
               ) : (
-                <div>
+                <div className="home-page__recent-list">
                   {recentBills.map((bill) => (
                     <ContextMenu
                       key={bill.id}
@@ -315,13 +321,7 @@ export const HomePage: React.FC = () => {
                         className="motion-list-row"
                         data-app-context-menu-root="true"
                         onClick={() => { void handleOpenBillDetail(bill.id); }}
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          borderBottom: '1px solid var(--colorNeutralStroke2)',
-                          cursor: 'pointer',
-                        }}
+                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
                       >
                         <div style={{ display: 'grid', gap: 4 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -348,6 +348,60 @@ export const HomePage: React.FC = () => {
               )}
             </Card>
           </CardEnterMotion>
+        </div>
+
+        <div className="home-page__side-column">
+          <CardEnterMotion delay={getStaggerDelay(2, 90, 220)}>
+            <Card className="home-page__panel home-page__panel--compare" style={{ padding: 16 }}>
+              <CardHeader>
+                <Subtitle2>月度对比</Subtitle2>
+              </CardHeader>
+              <MonthComparisonCard identityId={currentIdentity.id} />
+            </Card>
+          </CardEnterMotion>
+
+          <CardEnterMotion delay={getStaggerDelay(3, 90, 220)}>
+            <Card
+              className={hasForgotCardRisk ? 'home-page__panel home-page__panel--alert' : 'home-page__panel home-page__panel--safe'}
+              style={{ padding: 16 }}
+            >
+              <CardHeader
+                header={
+                  <div className="home-page__aside-header">
+                    <Subtitle2>异常提醒</Subtitle2>
+                    <Badge
+                      appearance="filled"
+                      color={hasForgotCardRisk ? 'danger' : 'success'}
+                      size="small"
+                    >
+                      {hasForgotCardRisk ? `${forgotCardStats?.count ?? 0} 条` : '正常'}
+                    </Badge>
+                  </div>
+                }
+              />
+              <div className="home-page__aside-body">
+                <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                  疑似忘拔卡统计
+                </Text>
+                <Title3 block>
+                  {forgotCardStats ? `${forgotCardStats.count} 次` : '加载中...'}
+                </Title3>
+                <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                  {forgotCardStats
+                    ? `累计金额 ¥${forgotCardStats.totalAmount.toFixed(2)}`
+                    : '正在检查高风险记录'}
+                </Text>
+                <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                  {hasForgotCardRisk
+                    ? '建议到统计详情里继续核对洗浴消费记录。'
+                    : '当前没有检测到明显的忘拔卡高风险记录。'}
+                </Text>
+              </div>
+            </Card>
+          </CardEnterMotion>
+        </div>
+      </div>
+
       {detailBill && (
         <BillDetailDialog bill={detailBill} onClose={() => setDetailBill(null)} />
       )}
@@ -360,10 +414,11 @@ interface StatCardProps {
   value: string;
   icon: React.ReactNode;
   color: string;
+  tone: 'expense' | 'income' | 'brand';
 }
 
-const StatCard: React.FC<StatCardProps> = ({ title, value, icon, color }) => (
-  <Card style={{ padding: 16 }}>
+const StatCard: React.FC<StatCardProps> = ({ title, value, icon, color, tone }) => (
+  <Card className={`home-page__stat-card home-page__stat-card--${tone}`} style={{ padding: 16 }}>
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
       <span className="motion-float" style={{ color }}>{icon}</span>
       <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>{title}</Text>

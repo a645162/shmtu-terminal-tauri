@@ -114,6 +114,28 @@ export interface CaptchaTestResult {
   execution?: string;
 }
 
+export interface LocalOcrModelStatus {
+  model_dir: string;
+  ready: boolean;
+  total_files: number;
+  existing_files: number;
+  missing_files: string[];
+}
+
+export interface LocalOcrModelDownloadProgress {
+  phase: 'checking' | 'downloading' | 'completed' | 'cancelled' | 'error';
+  model_dir: string;
+  total_files: number;
+  completed_files: number;
+  current_file_index?: number;
+  current_file_name?: string;
+  current_file_progress: number;
+  overall_progress: number;
+  downloaded_bytes?: number;
+  total_bytes?: number;
+  message: string;
+}
+
 // Sync progress
 export interface SyncProgress {
   account_id: string;

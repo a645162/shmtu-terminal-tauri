@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{atomic::AtomicBool, Arc};
 
 use shmtu_cas::cas::epay::EpayAuth;
 use shmtu_ocr::backend::CasOnnxBackend;
@@ -33,6 +33,12 @@ pub struct AppState {
     pub session_expiration_service: Arc<SessionExpirationService>,
     /// 本地 ONNX 推理后端（CPU 密集同步操作，使用 std::sync::Mutex）
     pub local_ocr: Arc<std::sync::Mutex<Option<CasOnnxBackend>>>,
+    /// 本地 ONNX 模型下载取消标记
+    pub local_ocr_download_cancel: Arc<AtomicBool>,
+    /// 本地 ONNX 模型下载运行标记
+    pub local_ocr_download_active: Arc<AtomicBool>,
+    /// 串行化本地 ONNX 模型下载任务
+    pub local_ocr_download_lock: Arc<Mutex<()>>,
     /// 验证码测试使用的待提交 challenge，会话需与展示的验证码保持一致。
     pub captcha_test_session: Arc<Mutex<Option<CaptchaTestSession>>>,
 }
@@ -110,6 +116,9 @@ impl AppState {
             db_file_manager: Arc::new(db_file_manager),
             session_expiration_service,
             local_ocr: Arc::new(std::sync::Mutex::new(None)),
+            local_ocr_download_cancel: Arc::new(AtomicBool::new(false)),
+            local_ocr_download_active: Arc::new(AtomicBool::new(false)),
+            local_ocr_download_lock: Arc::new(Mutex::new(())),
             captcha_test_session: Arc::new(Mutex::new(None)),
         })
     }

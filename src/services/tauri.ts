@@ -10,6 +10,7 @@ import type {
   SnapshotInfo,
   ExportFormat,
   CaptchaTestResult,
+  LocalOcrModelStatus,
   StatisticsSummary,
   DailyTrendItem,
   CategoryItem,
@@ -216,6 +217,18 @@ export async function test_captcha(mode: CaptchaMode, manualInput?: string): Pro
 
 export async function batch_test_captcha(mode: CaptchaMode, count: number): Promise<CaptchaTestResult[]> {
   return invoke<CaptchaTestResult[]>('batch_test_captcha', { mode, count });
+}
+
+export async function get_local_ocr_model_status(): Promise<LocalOcrModelStatus> {
+  return invoke<LocalOcrModelStatus>('get_local_ocr_model_status');
+}
+
+export async function ensure_local_ocr_models(): Promise<LocalOcrModelStatus> {
+  return invoke<LocalOcrModelStatus>('ensure_local_ocr_models');
+}
+
+export async function cancel_local_ocr_model_download(): Promise<void> {
+  return invoke('cancel_local_ocr_model_download');
 }
 
 export async function init_local_ocr(): Promise<void> {

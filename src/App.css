@@ -197,6 +197,167 @@ body,
   animation: appFadeIn 240ms ease both;
 }
 
+.home-page {
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.home-page__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.home-page__title-block {
+  min-width: 0;
+}
+
+.home-page__subtitle {
+  display: block;
+  margin-top: 4px;
+  color: var(--colorNeutralForeground3);
+}
+
+.home-page__title-block .fui-Title3 {
+  color: color-mix(in srgb, var(--colorBrandForeground1) 82%, var(--colorNeutralForeground1));
+}
+
+.home-page__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.home-page__summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.home-page__stat-card {
+  border: 1px solid color-mix(in srgb, var(--colorNeutralStroke2) 76%, transparent);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+}
+
+.home-page__stat-card--expense {
+  background: linear-gradient(180deg, color-mix(in srgb, #f59e0b 10%, var(--colorNeutralBackground1)) 0%, color-mix(in srgb, #ef4444 8%, var(--colorNeutralBackground1)) 100%);
+}
+
+.home-page__stat-card--income {
+  background: linear-gradient(180deg, color-mix(in srgb, #22c55e 11%, var(--colorNeutralBackground1)) 0%, color-mix(in srgb, #10b981 8%, var(--colorNeutralBackground1)) 100%);
+}
+
+.home-page__stat-card--brand {
+  background: linear-gradient(180deg, color-mix(in srgb, #0f6cbd 10%, var(--colorNeutralBackground1)) 0%, color-mix(in srgb, #38bdf8 8%, var(--colorNeutralBackground1)) 100%);
+}
+
+.home-page__content-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.home-page__main-column,
+.home-page__side-column {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.home-page__chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.home-page__panel {
+  border: 1px solid color-mix(in srgb, var(--colorNeutralStroke2) 76%, transparent);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05);
+}
+
+.home-page__panel--trend {
+  background: linear-gradient(180deg, color-mix(in srgb, #0f6cbd 6%, var(--colorNeutralBackground1)) 0%, var(--colorNeutralBackground1) 100%);
+}
+
+.home-page__panel--category {
+  background: linear-gradient(180deg, color-mix(in srgb, #8b5cf6 6%, var(--colorNeutralBackground1)) 0%, var(--colorNeutralBackground1) 100%);
+}
+
+.home-page__panel--recent {
+  background: linear-gradient(180deg, color-mix(in srgb, #64748b 4%, var(--colorNeutralBackground1)) 0%, var(--colorNeutralBackground1) 100%);
+}
+
+.home-page__panel--compare {
+  background: linear-gradient(180deg, color-mix(in srgb, #14b8a6 7%, var(--colorNeutralBackground1)) 0%, var(--colorNeutralBackground1) 100%);
+}
+
+.home-page__panel--alert {
+  background: linear-gradient(180deg, color-mix(in srgb, #ef4444 10%, var(--colorNeutralBackground1)) 0%, var(--colorNeutralBackground1) 100%);
+}
+
+.home-page__panel--safe {
+  background: linear-gradient(180deg, color-mix(in srgb, #22c55e 8%, var(--colorNeutralBackground1)) 0%, var(--colorNeutralBackground1) 100%);
+}
+
+.home-page__recent-list {
+  display: grid;
+  gap: 2px;
+}
+
+.home-page__recent-list .motion-list-row {
+  border-bottom: 1px solid var(--colorNeutralStroke2);
+}
+
+.home-page__recent-list .motion-list-row:last-child {
+  border-bottom: none;
+}
+
+.home-page__aside-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
+.home-page__aside-body {
+  display: grid;
+  gap: 8px;
+}
+
+[data-theme="dark"] .home-page__stat-card,
+[data-theme="dark"] .home-page__panel {
+  box-shadow: 0 10px 28px rgba(2, 6, 23, 0.22);
+}
+
+@media (max-width: 1024px) {
+  .home-page__content-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .home-page__header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .home-page__actions {
+    justify-content: flex-start;
+  }
+
+  .home-page__chart-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @keyframes appSpin {
   from {
     transform: rotate(0deg);

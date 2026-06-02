@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Dialog,
   DialogSurface,
@@ -23,10 +23,16 @@ import {
   MessageBar,
   MessageBarBody,
 } from '@fluentui/react-components';
+import { listen } from '@tauri-apps/api/event';
 import { ShieldTask24Regular, ArrowCounterclockwise24Regular } from '@fluentui/react-icons';
 import { useAppStore } from '../../stores/appStore';
-import type { CaptchaMode, CaptchaTestResult } from '../../types';
+import type {
+  CaptchaMode,
+  CaptchaTestResult,
+  LocalOcrModelDownloadProgress,
+} from '../../types';
 import * as tauri from '../../services/tauri';
+import { LocalOcrModelDownloadDialog } from './LocalOcrModelDownloadDialog';
 
 export const CaptchaTestDialog: React.FC = () => {
   const showCaptchaTestDialog = useAppStore((s) => s.showCaptchaTestDialog);
@@ -39,9 +45,91 @@ export const CaptchaTestDialog: React.FC = () => {
   const [batchTesting, setBatchTesting] = useState(false);
   const [testResults, setTestResults] = useState<CaptchaTestResult[]>([]);
   const [manualInput, setManualInput] = useState('');
+  const [localModelProgress, setLocalModelProgress] = useState<LocalOcrModelDownloadProgress | null>(null);
+  const [showLocalModelDownloadDialog, setShowLocalModelDownloadDialog] = useState(false);
+  const [localModelCancelling, setLocalModelCancelling] = useState(false);
+  const [localModelMessage, setLocalModelMessage] = useState('');
 
   const normalizeCaptchaSrc = (value: string) =>
     value.startsWith('data:') ? value : `data:image/png;base64,${value}`;
+
+  const localModelDownloadBusy =
+    showLocalModelDownloadDialog &&
+    (localModelProgress?.phase === 'checking' || localModelProgress?.phase === 'downloading');
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    listen<LocalOcrModelDownloadProgress>('local-ocr-model-download', (event) => {
+      if (disposed) {
+        return;
+      }
+
+      const progress = event.payload;
+      setLocalModelProgress(progress);
+
+      if (progress.phase === 'checking' || progress.phase === 'downloading') {
+        setShowLocalModelDownloadDialog(true);
+      }
+
+      if (progress.phase === 'completed') {
+        setLocalModelMessage(progress.message);
+        setLocalModelCancelling(false);
+      }
+
+      if (progress.phase === 'cancelled' || progress.phase === 'error') {
+        setLocalModelMessage(progress.message);
+        setLocalModelCancelling(false);
+      }
+    })
+      .then((fn) => {
+        unlisten = fn;
+      })
+      .catch(console.error);
+
+    return () => {
+      disposed = true;
+      if (unlisten) {
+        void unlisten();
+      }
+    };
+  }, []);
+
+  const ensureLocalModelsReady = async () => {
+    const status = await tauri.get_local_ocr_model_status();
+    if (status.ready) {
+      setLocalModelMessage('');
+      return true;
+    }
+
+    setLocalModelMessage('');
+    setLocalModelCancelling(false);
+    setShowLocalModelDownloadDialog(true);
+    setLocalModelProgress({
+      phase: 'checking',
+      model_dir: status.model_dir,
+      total_files: status.total_files,
+      completed_files: status.existing_files,
+      current_file_progress: 0,
+      overall_progress: status.existing_files / Math.max(status.total_files, 1),
+      message: `检测到缺少 ${status.missing_files.length} 个模型文件，准备下载...`,
+    });
+
+    try {
+      await tauri.ensure_local_ocr_models();
+      setShowLocalModelDownloadDialog(false);
+      return true;
+    } catch (error) {
+      const message = String(error);
+      setShowLocalModelDownloadDialog(false);
+      if (message.includes('已取消')) {
+        return false;
+      }
+      setLocalModelMessage(message);
+      return false;
+    }
+  };
 
   const handleRefreshCaptcha = async () => {
     try {
@@ -59,20 +147,30 @@ export const CaptchaTestDialog: React.FC = () => {
     }
   };
 
+  const runSingleTest = async () => {
+    const result = await tauri.test_captcha(mode, mode === 'manual' ? manualInput : undefined);
+    if (mode === 'manual') {
+      if (result.captcha_image) {
+        setCaptchaImage(normalizeCaptchaSrc(result.captcha_image));
+        setManualInput('');
+      } else if (result.success) {
+        setCaptchaImage('');
+        setManualInput('');
+      }
+    }
+    setTestResults((prev) => [result, ...prev]);
+  };
+
   const handleTest = async () => {
     setTesting(true);
     try {
-      const result = await tauri.test_captcha(mode, mode === 'manual' ? manualInput : undefined);
-      if (mode === 'manual') {
-        if (result.captcha_image) {
-          setCaptchaImage(normalizeCaptchaSrc(result.captcha_image));
-          setManualInput('');
-        } else if (result.success) {
-          setCaptchaImage('');
-          setManualInput('');
+      if (mode === 'local_onnx') {
+        const ready = await ensureLocalModelsReady();
+        if (!ready) {
+          return;
         }
       }
-      setTestResults((prev) => [result, ...prev]);
+      await runSingleTest();
     } catch (e) {
       setTestResults((prev) => [
         {
@@ -94,6 +192,12 @@ export const CaptchaTestDialog: React.FC = () => {
   const handleBatchTest = async () => {
     setBatchTesting(true);
     try {
+      if (mode === 'local_onnx') {
+        const ready = await ensureLocalModelsReady();
+        if (!ready) {
+          return;
+        }
+      }
       const results = await tauri.batch_test_captcha(mode, 10);
       setTestResults((prev) => [...results, ...prev]);
     } catch (e) {
@@ -103,11 +207,25 @@ export const CaptchaTestDialog: React.FC = () => {
     }
   };
 
-  const modeLabel = mode === 'manual' ? '手动输入' : mode === 'remote_ocr' ? '远程OCR(旧)' : mode === 'remote_ocr_http' ? '远程OCR(RESTful)' : '本地ONNX';
+  const modeLabel =
+    mode === 'manual'
+      ? '手动输入'
+      : mode === 'remote_ocr'
+        ? '远程OCR(旧)'
+        : mode === 'remote_ocr_http'
+          ? '远程OCR(RESTful)'
+          : '本地ONNX';
   const imgSrc = captchaImage ? normalizeCaptchaSrc(captchaImage) : '';
 
   return (
-    <Dialog open={showCaptchaTestDialog} onOpenChange={(_, data) => !data.open && setShowCaptchaTestDialog(false)}>
+    <Dialog
+      open={showCaptchaTestDialog}
+      onOpenChange={(_, data) => {
+        if (!data.open && !localModelDownloadBusy) {
+          setShowCaptchaTestDialog(false);
+        }
+      }}
+    >
       <DialogSurface style={{ width: 'min(92vw, 860px)', maxWidth: 860 }}>
         <DialogBody>
           <DialogTitle>
@@ -168,6 +286,12 @@ export const CaptchaTestDialog: React.FC = () => {
                     )
                   )}
 
+                  {mode === 'local_onnx' && localModelMessage && (
+                    <MessageBar>
+                      <MessageBarBody>{localModelMessage}</MessageBarBody>
+                    </MessageBar>
+                  )}
+
                   {mode === 'manual' && (
                     <div>
                       <Label>手动输入验证码</Label>
@@ -185,16 +309,17 @@ export const CaptchaTestDialog: React.FC = () => {
                       appearance="secondary"
                       icon={<ArrowCounterclockwise24Regular />}
                       onClick={handleRefreshCaptcha}
+                      disabled={localModelDownloadBusy}
                     >
                       {mode === 'manual' ? '刷新并锁定当前验证码' : '刷新验证码'}
                     </Button>
-                    <Button appearance="primary" onClick={handleTest} disabled={testing}>
+                    <Button appearance="primary" onClick={handleTest} disabled={testing || localModelDownloadBusy}>
                       {testing ? <Spinner size="tiny" /> : '开始测试'}
                     </Button>
                     <Button
                       appearance="secondary"
                       onClick={handleBatchTest}
-                      disabled={batchTesting || mode === 'manual'}
+                      disabled={batchTesting || mode === 'manual' || localModelDownloadBusy}
                     >
                       {batchTesting ? <Spinner size="tiny" /> : '批量测试(10次)'}
                     </Button>
@@ -208,7 +333,8 @@ export const CaptchaTestDialog: React.FC = () => {
                     padding: 16,
                     borderRadius: 10,
                     border: '1px solid var(--colorNeutralStroke2)',
-                    background: 'linear-gradient(180deg, var(--colorNeutralBackground2), var(--colorNeutralBackground1))',
+                    background:
+                      'linear-gradient(180deg, var(--colorNeutralBackground2), var(--colorNeutralBackground1))',
                   }}
                 >
                   <Text weight="semibold">当前验证码</Text>
@@ -232,9 +358,7 @@ export const CaptchaTestDialog: React.FC = () => {
                       />
                     ) : (
                       <Text size={300} style={{ color: 'var(--colorNeutralForeground3)', textAlign: 'center' }}>
-                        {mode === 'manual'
-                          ? '先点击“刷新并锁定当前验证码”'
-                          : '点击“刷新验证码”获取测试图片'}
+                        {mode === 'manual' ? '先点击“刷新并锁定当前验证码”' : '点击“刷新验证码”获取测试图片'}
                       </Text>
                     )}
                   </div>
@@ -273,11 +397,7 @@ export const CaptchaTestDialog: React.FC = () => {
                           <TableRow key={result.id}>
                             <TableCell>{idx + 1}</TableCell>
                             <TableCell>
-                              <Badge
-                                appearance="filled"
-                                color={result.success ? 'success' : 'danger'}
-                                size="small"
-                              >
+                              <Badge appearance="filled" color={result.success ? 'success' : 'danger'} size="small">
                                 {result.success ? '通过' : '失败'}
                               </Badge>
                             </TableCell>
@@ -303,12 +423,28 @@ export const CaptchaTestDialog: React.FC = () => {
             </div>
           </DialogContent>
           <DialogActions>
-            <Button appearance="secondary" onClick={() => setShowCaptchaTestDialog(false)}>
+            <Button
+              appearance="secondary"
+              onClick={() => setShowCaptchaTestDialog(false)}
+              disabled={localModelDownloadBusy}
+            >
               关闭
             </Button>
           </DialogActions>
         </DialogBody>
       </DialogSurface>
+      <LocalOcrModelDownloadDialog
+        open={showLocalModelDownloadDialog}
+        progress={localModelProgress}
+        cancelling={localModelCancelling}
+        onCancel={() => {
+          setLocalModelCancelling(true);
+          tauri.cancel_local_ocr_model_download().catch((error) => {
+            setLocalModelCancelling(false);
+            setLocalModelMessage(String(error));
+          });
+        }}
+      />
     </Dialog>
   );
 };

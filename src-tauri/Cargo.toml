@@ -50,7 +50,7 @@ thiserror = "1"
 anyhow = "1"
 
 # HTTP client (for remote rule updates)
-reqwest = { version = "0.12", features = ["cookies", "json"] }
+reqwest = { version = "0.12", features = ["cookies", "json", "stream"] }
 
 # ZIP (for snapshots)
 zip = "2"
