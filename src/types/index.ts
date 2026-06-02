@@ -19,6 +19,8 @@ export interface Account {
   password: string;   // encrypted
   enable: boolean;
   enable_update: boolean;
+  admission_date: string | null;
+  graduation_date: string | null;
   expire_date: string;
   last_update_time: string;
   created_at: string;

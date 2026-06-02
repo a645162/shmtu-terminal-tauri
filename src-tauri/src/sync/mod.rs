@@ -161,6 +161,15 @@ impl ConfigAccess {
         let config = content.and_then(|c| toml::from_str::<crate::config::AppConfig>(&c).ok());
         config.map(|c| c.captcha.ocr_retry_count).unwrap_or(3)
     }
+
+    fn skip_graduated_accounts(&self) -> bool {
+        let config_path = self.data_dir.join("app_config.toml");
+        let content = std::fs::read_to_string(&config_path).ok();
+        let config = content.and_then(|c| toml::from_str::<crate::config::AppConfig>(&c).ok());
+        config
+            .map(|c| c.sync.skip_graduated_accounts)
+            .unwrap_or(true)
+    }
 }
 
 impl BillSyncService {
@@ -175,9 +184,16 @@ impl BillSyncService {
 
     pub async fn get_enabled_accounts_for_identity(&self, identity_id: i64) -> AppResult<Vec<Account>> {
         let accounts = self.db_manager.list_accounts_by_identity(identity_id).await?;
+        let cfg = ConfigAccess::new(&self.db_manager);
+        let skip_graduated_accounts = cfg.skip_graduated_accounts();
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
         let enabled_accounts = accounts
             .into_iter()
-            .filter(|a| a.enable && a.enable_update)
+            .filter(|a| {
+                a.enable
+                    && a.enable_update
+                    && (!skip_graduated_accounts || !is_account_graduated(a, &today))
+            })
             .collect::<Vec<_>>();
         tracing::info!(
             "[Sync] get_enabled_accounts_for_identity identity_id={} => {} enabled accounts",
@@ -1395,5 +1411,12 @@ impl BillSyncService {
     fn encode_captcha_image(image: &[u8]) -> String {
         use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
         BASE64.encode(image)
+    }
+}
+
+fn is_account_graduated(account: &Account, today: &str) -> bool {
+    match account.graduation_date.as_deref().map(str::trim) {
+        Some("") | None => false,
+        Some(graduation_date) => graduation_date < today,
     }
 }

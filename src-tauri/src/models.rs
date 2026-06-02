@@ -33,6 +33,8 @@ pub struct Account {
     pub password: String,
     pub enable: bool,
     pub enable_update: bool,
+    pub admission_date: Option<String>,
+    pub graduation_date: Option<String>,
     pub expire_date: String,
     pub last_update_time: String,
     pub created_at: String,
@@ -48,6 +50,8 @@ pub struct CreateAccountParams {
     pub password: String,
     pub enable: Option<bool>,
     pub enable_update: Option<bool>,
+    pub admission_date: Option<String>,
+    pub graduation_date: Option<String>,
     pub expire_date: Option<String>,
 }
 

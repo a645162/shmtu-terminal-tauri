@@ -95,6 +95,7 @@ export const SettingsDialog: React.FC = () => {
   // Sync settings
   const [maxPages, setMaxPages] = useState(normalizeSyncMaxPages(config?.sync.max_pages));
   const [earlyStop, setEarlyStop] = useState(config?.sync.early_stop_threshold ?? 5);
+  const [skipGraduatedAccounts, setSkipGraduatedAccounts] = useState(config?.sync.skip_graduated_accounts ?? true);
   const [autoMerge, setAutoMerge] = useState(config?.sync.auto_merge_after_sync ?? true);
 
   // Data settings
@@ -130,6 +131,7 @@ export const SettingsDialog: React.FC = () => {
     setOcrRetry(config.captcha.ocr_retry_count || (config.captcha.mode !== 'manual' ? 5 : 0));
     setMaxPages(normalizeSyncMaxPages(config.sync.max_pages));
     setEarlyStop(config.sync.early_stop_threshold ?? 5);
+    setSkipGraduatedAccounts(config.sync.skip_graduated_accounts ?? true);
     setAutoMerge(config.sync.auto_merge_after_sync ?? true);
     setDataDir(config.data.data_directory || 'Data');
     setSnapshotKeep(config.data.snapshot_keep_count ?? 10);
@@ -172,6 +174,7 @@ export const SettingsDialog: React.FC = () => {
         sync: {
           max_pages: normalizeSyncMaxPages(maxPages),
           early_stop_threshold: earlyStop,
+          skip_graduated_accounts: skipGraduatedAccounts,
           auto_merge_after_sync: autoMerge,
         },
         data: {
@@ -406,6 +409,17 @@ export const SettingsDialog: React.FC = () => {
                 value={earlyStop}
                 onChange={(_, data) => setEarlyStop(data.value)}
               />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <InfoLabel info="启用后，毕业日期早于今天的账号会在同步阶段被自动跳过。毕业日期为空（至今）或设置为未来时间的账号仍会正常同步。">
+                  跳过已毕业账号同步
+                </InfoLabel>
+                <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                  适合不再使用校园卡的历史账号
+                </Text>
+              </div>
+              <Switch checked={skipGraduatedAccounts} onChange={(_, data) => setSkipGraduatedAccounts(data.checked)} />
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>

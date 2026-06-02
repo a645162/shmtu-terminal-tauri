@@ -117,6 +117,28 @@ impl DatabaseManager {
             ))
             .await;
 
+        let _ = self
+            .db
+            .execute(Statement::from_string(
+                sea_orm::DatabaseBackend::Sqlite,
+                "ALTER TABLE accounts ADD COLUMN admission_date TEXT DEFAULT NULL;".to_string(),
+            ))
+            .await;
+        let _ = self
+            .db
+            .execute(Statement::from_string(
+                sea_orm::DatabaseBackend::Sqlite,
+                "ALTER TABLE accounts ADD COLUMN graduation_date TEXT DEFAULT NULL;".to_string(),
+            ))
+            .await;
+        let _ = self
+            .db
+            .execute(Statement::from_string(
+                sea_orm::DatabaseBackend::Sqlite,
+                "UPDATE accounts SET graduation_date = expire_date WHERE graduation_date IS NULL AND expire_date IS NOT NULL AND expire_date != '' AND expire_date != '2099-12-31';".to_string(),
+            ))
+            .await;
+
         tracing::info!("[DB] Tables initialized, migrations applied");
         Ok(())
     }
@@ -318,6 +340,8 @@ impl DatabaseManager {
             password: Set(encrypted_password),
             enable: Set(params.enable.unwrap_or(true)),
             enable_update: Set(params.enable_update.unwrap_or(true)),
+            admission_date: Set(params.admission_date.clone()),
+            graduation_date: Set(params.graduation_date.clone()),
             expire_date: Set(params.expire_date.as_deref().unwrap_or("2099-12-31").to_string()),
             last_update_time: Set(String::new()),
             created_at: Set(now.clone()),
@@ -366,6 +390,8 @@ impl DatabaseManager {
                 account_name: Set(account.account_name.clone()),
                 enable: Set(account.enable),
                 enable_update: Set(account.enable_update),
+                admission_date: Set(account.admission_date.clone()),
+                graduation_date: Set(account.graduation_date.clone()),
                 expire_date: Set(account.expire_date.clone()),
                 last_update_time: Set(account.last_update_time.clone()),
                 updated_at: Set(now),
@@ -380,6 +406,8 @@ impl DatabaseManager {
                 password: Set(encrypted),
                 enable: Set(account.enable),
                 enable_update: Set(account.enable_update),
+                admission_date: Set(account.admission_date.clone()),
+                graduation_date: Set(account.graduation_date.clone()),
                 expire_date: Set(account.expire_date.clone()),
                 last_update_time: Set(account.last_update_time.clone()),
                 updated_at: Set(now),
@@ -645,6 +673,8 @@ fn account_model_to_app(m: accounts::Model) -> Account {
         password: m.password,
         enable: m.enable,
         enable_update: m.enable_update,
+        admission_date: m.admission_date,
+        graduation_date: m.graduation_date,
         expire_date: m.expire_date,
         last_update_time: m.last_update_time,
         created_at: m.created_at,

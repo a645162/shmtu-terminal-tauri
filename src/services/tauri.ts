@@ -39,6 +39,7 @@ export interface AppConfig {
   sync: {
     max_pages: number;
     early_stop_threshold: number;
+    skip_graduated_accounts: boolean;
     auto_merge_after_sync: boolean;
   };
   data: {

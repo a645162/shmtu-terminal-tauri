@@ -96,6 +96,8 @@ pub struct SyncConfig {
     #[serde(default = "default_early_stop_threshold")]
     pub early_stop_threshold: u32,
     #[serde(default = "default_true")]
+    pub skip_graduated_accounts: bool,
+    #[serde(default = "default_true")]
     pub auto_merge_after_sync: bool,
 }
 

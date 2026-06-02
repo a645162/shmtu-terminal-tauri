@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS accounts (
     password        TEXT NOT NULL,
     enable          INTEGER NOT NULL DEFAULT 1,
     enable_update   INTEGER NOT NULL DEFAULT 1,
+    admission_date  TEXT DEFAULT NULL,
+    graduation_date TEXT DEFAULT NULL,
     expire_date     TEXT NOT NULL DEFAULT '2099-12-31',
     last_update_time TEXT NOT NULL DEFAULT '',
     created_at      TEXT NOT NULL,

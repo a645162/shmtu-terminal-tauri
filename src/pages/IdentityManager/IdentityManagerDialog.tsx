@@ -46,6 +46,9 @@ export const IdentityManagerDialog: React.FC = () => {
     password: '',
     enable: true,
     enable_update: true,
+    admission_date: '',
+    graduation_date: '',
+    graduation_to_present: true,
   });
 
   const handleSelectIdentity = async (identity: Identity) => {
@@ -122,6 +125,9 @@ export const IdentityManagerDialog: React.FC = () => {
       password: '',
       enable: account.enable,
       enable_update: account.enable_update,
+      admission_date: account.admission_date ?? '',
+      graduation_date: account.graduation_date ?? '',
+      graduation_to_present: !account.graduation_date,
     });
   };
 
@@ -136,6 +142,9 @@ export const IdentityManagerDialog: React.FC = () => {
           ...(accountForm.password ? { password: accountForm.password } : {}),
           enable: accountForm.enable,
           enable_update: accountForm.enable_update,
+          admission_date: accountForm.admission_date || null,
+          graduation_date: accountForm.graduation_to_present ? null : (accountForm.graduation_date || null),
+          expire_date: accountForm.graduation_to_present ? '2099-12-31' : (accountForm.graduation_date || '2099-12-31'),
         });
       } else {
         await tauri.create_account({
@@ -145,7 +154,9 @@ export const IdentityManagerDialog: React.FC = () => {
           password: accountForm.password,
           enable: accountForm.enable,
           enable_update: accountForm.enable_update,
-          expire_date: '2099-12-31',
+          admission_date: accountForm.admission_date || null,
+          graduation_date: accountForm.graduation_to_present ? null : (accountForm.graduation_date || null),
+          expire_date: accountForm.graduation_to_present ? '2099-12-31' : (accountForm.graduation_date || '2099-12-31'),
           last_update_time: '',
         });
       }
@@ -317,6 +328,9 @@ export const IdentityManagerDialog: React.FC = () => {
                               <Text size={100} style={{ color: 'var(--colorNeutralForeground3)' }}>
                                 学号: {account.account_id} | {account.enable ? '已启用' : '已禁用'}
                               </Text>
+                              <Text size={100} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                                学籍: {account.admission_date || '未设置'} 至 {account.graduation_date || '至今'}
+                              </Text>
                             </div>
                           ))
                         )}
@@ -334,6 +348,9 @@ export const IdentityManagerDialog: React.FC = () => {
                           password: '',
                           enable: true,
                           enable_update: true,
+                          admission_date: '',
+                          graduation_date: '',
+                          graduation_to_present: true,
                         });
                       }}
                       style={{ marginTop: 4 }}
@@ -381,6 +398,46 @@ export const IdentityManagerDialog: React.FC = () => {
                               }
                               style={{ width: '100%' }}
                               placeholder={selectedAccount.id !== -1 ? '留空则不修改' : ''}
+                            />
+                          </div>
+                          <div>
+                            <Label>入学时间</Label>
+                            <Input
+                              type="date"
+                              value={accountForm.admission_date}
+                              onChange={(e) =>
+                                setAccountForm({ ...accountForm, admission_date: e.currentTarget.value })
+                              }
+                              style={{ width: '100%' }}
+                            />
+                          </div>
+                          <div style={{ display: 'grid', gap: 8 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <Label>毕业时间</Label>
+                              <Switch
+                                label="至今"
+                                checked={accountForm.graduation_to_present}
+                                onChange={(_, data) =>
+                                  setAccountForm({
+                                    ...accountForm,
+                                    graduation_to_present: data.checked,
+                                    graduation_date: data.checked ? '' : accountForm.graduation_date,
+                                  })
+                                }
+                              />
+                            </div>
+                            <Input
+                              type="date"
+                              value={accountForm.graduation_date}
+                              onChange={(e) =>
+                                setAccountForm({
+                                  ...accountForm,
+                                  graduation_date: e.currentTarget.value,
+                                  graduation_to_present: false,
+                                })
+                              }
+                              disabled={accountForm.graduation_to_present}
+                              style={{ width: '100%' }}
                             />
                           </div>
                           <div style={{ display: 'flex', gap: 16 }}>
