@@ -172,11 +172,12 @@ export const IdentityManagerDialog: React.FC = () => {
   };
 
   return (
-    <Dialog open={showIdentityManagerDialog} onOpenChange={(_, data) => !data.open && setShowIdentityManagerDialog(false)}>
-      <DialogSurface style={{ maxWidth: 800 }}>
-        <DialogBody>
-          <DialogTitle>身份与账号管理</DialogTitle>
-          <DialogContent>
+    <>
+      <Dialog open={showIdentityManagerDialog} onOpenChange={(_, data) => !data.open && setShowIdentityManagerDialog(false)}>
+        <DialogSurface style={{ maxWidth: 800 }}>
+          <DialogBody>
+            <DialogTitle>身份与账号管理</DialogTitle>
+            <DialogContent>
             <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: 16, minHeight: 400 }}>
               {/* Left: Identity List */}
               <div
@@ -207,42 +208,22 @@ export const IdentityManagerDialog: React.FC = () => {
                       alignItems: 'center',
                     }}
                   >
-                    {editingIdentityId === identity.id ? (
-                      <div style={{ display: 'flex', gap: 4, flex: 1 }} onClick={(e) => e.stopPropagation()}>
-                        <Input
-                          size="small"
-                          value={editingIdentityName}
-                          onChange={(e) => setEditingIdentityName(e.currentTarget.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleSaveEditIdentity();
-                            if (e.key === 'Escape') handleCancelEditIdentity();
-                          }}
-                          style={{ flex: 1 }}
-                        />
-                        <Button size="small" appearance="primary" onClick={handleSaveEditIdentity}>
-                          确定
-                        </Button>
-                      </div>
-                    ) : (
-                      <Text
-                        size={200}
-                        weight={selectedIdentity?.id === identity.id ? 'semibold' : 'regular'}
-                      >
-                        {identity.name}
-                      </Text>
-                    )}
+                    <Text
+                      size={200}
+                      weight={selectedIdentity?.id === identity.id ? 'semibold' : 'regular'}
+                    >
+                      {identity.name}
+                    </Text>
                     <div style={{ display: 'flex', gap: 2 }}>
-                      {editingIdentityId !== identity.id && (
-                        <Button
-                          appearance="subtle"
-                          icon={<Edit24Regular />}
-                          size="small"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleStartEditIdentity(identity);
-                          }}
-                        />
-                      )}
+                      <Button
+                        appearance="subtle"
+                        icon={<Edit24Regular />}
+                        size="small"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleStartEditIdentity(identity);
+                        }}
+                      />
                       <Button
                         appearance="subtle"
                         icon={<Delete24Regular />}
@@ -451,14 +432,54 @@ export const IdentityManagerDialog: React.FC = () => {
                 )}
               </div>
             </div>
-          </DialogContent>
-          <DialogActions>
-            <Button appearance="secondary" onClick={() => setShowIdentityManagerDialog(false)}>
-              关闭
-            </Button>
-          </DialogActions>
-        </DialogBody>
-      </DialogSurface>
-    </Dialog>
+            </DialogContent>
+            <DialogActions>
+              <Button appearance="secondary" onClick={() => setShowIdentityManagerDialog(false)}>
+                关闭
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+      <Dialog open={editingIdentityId !== null} onOpenChange={(_, data) => !data.open && handleCancelEditIdentity()}>
+        <DialogSurface style={{ maxWidth: 420 }}>
+          <DialogBody>
+            <DialogTitle>编辑身份信息</DialogTitle>
+            <DialogContent>
+              <div style={{ display: 'grid', gap: 12 }}>
+                <div>
+                  <Label>身份名称</Label>
+                  <Input
+                    value={editingIdentityName}
+                    onChange={(e) => setEditingIdentityName(e.currentTarget.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        void handleSaveEditIdentity();
+                      }
+                      if (e.key === 'Escape') {
+                        handleCancelEditIdentity();
+                      }
+                    }}
+                    placeholder="输入身份名称"
+                    style={{ width: '100%' }}
+                  />
+                </div>
+                <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                  修改后会同步更新该身份在界面中的显示名称，不影响其下已有账号和账单数据。
+                </Text>
+              </div>
+            </DialogContent>
+            <DialogActions>
+              <Button appearance="secondary" onClick={handleCancelEditIdentity}>
+                取消
+              </Button>
+              <Button appearance="primary" onClick={() => void handleSaveEditIdentity()}>
+                保存
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+    </>
   );
 };

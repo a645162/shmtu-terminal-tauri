@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   Table,
   TableHeader,
@@ -34,6 +34,8 @@ import {
   MoreHorizontal24Regular,
   ChevronLeft24Regular,
   ChevronRight24Regular,
+  ArrowPrevious24Regular,
+  ArrowNext24Regular,
   People24Regular,
   Merge24Regular,
 } from '@fluentui/react-icons';
@@ -151,8 +153,13 @@ export const BillPage: React.FC = () => {
   const [detailBill, setDetailBill] = useState<BillItem | null>(null);
   const [showAccountPanel, setShowAccountPanel] = useState(false);
   const [isRebuilding, setIsRebuilding] = useState(false);
+  const [pageInput, setPageInput] = useState(String(billPage));
 
   const totalPages = Math.max(1, Math.ceil(billTotal / billPageSize));
+
+  useEffect(() => {
+    setPageInput(String(billPage));
+  }, [billPage]);
 
   const handleSearch = useCallback(() => {
     setBillKeyword(searchInput);
@@ -236,8 +243,18 @@ export const BillPage: React.FC = () => {
     }
   }, [currentIdentity, loadBills]);
 
+  const handleJumpToPage = useCallback(() => {
+    const parsed = parseInt(pageInput, 10);
+    if (Number.isNaN(parsed)) {
+      setPageInput(String(billPage));
+      return;
+    }
+    const targetPage = Math.min(Math.max(parsed, 1), totalPages);
+    setBillPage(targetPage);
+  }, [billPage, pageInput, setBillPage, totalPages]);
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, overflow: 'hidden' }}>
       {/* Filter Bar */}
       <SectionEnterMotion>
         <div
@@ -411,9 +428,9 @@ export const BillPage: React.FC = () => {
       )}
 
       {/* Table */}
-      <div style={{ flex: 1, overflow: 'auto' }}>
+      <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
         <SlideInFromRightMotion delay={70}>
-          <div>
+          <div style={{ minHeight: '100%' }}>
             {isLoading ? (
               <div style={{ display: 'flex', justifyContent: 'center', padding: 48 }}>
                 <Spinner size="large" label="加载中..." />
@@ -552,7 +569,15 @@ export const BillPage: React.FC = () => {
           <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
             第 {billPage}/{totalPages} 页
           </Text>
-          <div style={{ display: 'flex', gap: 4 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <Button
+              appearance="subtle"
+              icon={<ArrowPrevious24Regular />}
+              disabled={billPage <= 1}
+              onClick={() => setBillPage(1)}
+            >
+              首页
+            </Button>
             <Button
               appearance="subtle"
               icon={<ChevronLeft24Regular />}
@@ -565,6 +590,32 @@ export const BillPage: React.FC = () => {
               disabled={billPage >= totalPages}
               onClick={() => setBillPage(billPage + 1)}
             />
+            <Button
+              appearance="subtle"
+              icon={<ArrowNext24Regular />}
+              disabled={billPage >= totalPages}
+              onClick={() => setBillPage(totalPages)}
+            >
+              尾页
+            </Button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                跳转到
+              </Text>
+              <Input
+                value={pageInput}
+                onChange={(e) => setPageInput(e.currentTarget.value.replace(/[^\d]/g, ''))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleJumpToPage();
+                  }
+                }}
+                style={{ width: 80 }}
+              />
+              <Button appearance="secondary" onClick={handleJumpToPage}>
+                跳转
+              </Button>
+            </div>
           </div>
         </div>
       )}

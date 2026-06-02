@@ -160,9 +160,21 @@ export const AppLayout: React.FC = () => {
       </SectionEnterMotion>
 
       {/* Content Area */}
-      <div style={{ flex: 1, overflow: 'auto', padding: '0' }}>
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflow: selectedTab === 'bill' ? 'hidden' : 'auto',
+          padding: '0',
+        }}
+      >
         <PageEnterMotion key={selectedTab}>
-          <div style={{ minHeight: '100%' }}>
+          <div
+            style={{
+              minHeight: '100%',
+              height: selectedTab === 'bill' ? '100%' : undefined,
+            }}
+          >
             {renderContent()}
           </div>
         </PageEnterMotion>
