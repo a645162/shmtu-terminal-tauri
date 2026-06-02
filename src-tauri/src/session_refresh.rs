@@ -71,7 +71,10 @@ impl SessionExpirationService {
             session_cfg.refresh_interval_minutes
         };
 
-        tracing::info!("[SessionExpiration] 启动成功 | Interval={}分钟", check_interval);
+        tracing::info!(
+            "[SessionExpiration] 启动成功 | Interval={}分钟",
+            check_interval
+        );
 
         let config = self.config.clone();
         let db_manager = self.db_manager.clone();
@@ -87,9 +90,13 @@ impl SessionExpirationService {
                 // 随机浮动 ±1 分钟
                 let jitter: i64 = ((rng % 3) as i64) - 1; // -1, 0, 或 1
                 let jitter_seconds = (jitter * 60).max(0) as u64;
-                let interval_seconds = (base_interval as i64 + jitter_seconds as i64).max(60) as u64;
+                let interval_seconds =
+                    (base_interval as i64 + jitter_seconds as i64).max(60) as u64;
 
-                tracing::debug!("[SessionExpiration] 下次检查 | Interval={}秒", interval_seconds);
+                tracing::debug!(
+                    "[SessionExpiration] 下次检查 | Interval={}秒",
+                    interval_seconds
+                );
 
                 let sleep_duration = Duration::from_secs(interval_seconds);
 
@@ -167,7 +174,10 @@ impl SessionExpirationService {
 
         // 获取启用的账号
         let accounts = match db_manager.list_accounts_by_identity(identity_id).await {
-            Ok(accounts) => accounts.into_iter().filter(|a| a.enable).collect::<Vec<_>>(),
+            Ok(accounts) => accounts
+                .into_iter()
+                .filter(|a| a.enable)
+                .collect::<Vec<_>>(),
             Err(e) => {
                 tracing::error!("[SessionExpiration] 获取账号失败: {}", e);
                 return SessionExpirationResult::default();
@@ -183,7 +193,8 @@ impl SessionExpirationService {
         result.total_accounts = accounts.len();
 
         for account in accounts {
-            let account_result = Self::check_and_invalidate_expired_session(&account, db_manager, crypto).await;
+            let account_result =
+                Self::check_and_invalidate_expired_session(&account, db_manager, crypto).await;
             let is_valid = account_result.is_valid;
             result.results.push(account_result);
             if is_valid {
@@ -229,7 +240,10 @@ impl SessionExpirationService {
             Ok(None) => {
                 result.is_valid = false;
                 result.status = "no_session".to_string();
-                tracing::debug!("[SessionExpiration] 无保存的 session | AccountId={}", account.account_id);
+                tracing::debug!(
+                    "[SessionExpiration] 无保存的 session | AccountId={}",
+                    account.account_id
+                );
                 return result;
             }
             Err(e) => {
@@ -265,11 +279,17 @@ impl SessionExpirationService {
             Ok(LoginProbe::AlreadyLoggedIn) => {
                 result.is_valid = true;
                 result.status = "valid".to_string();
-                tracing::debug!("[SessionExpiration] Session 有效 | AccountId={}", account.account_id);
+                tracing::debug!(
+                    "[SessionExpiration] Session 有效 | AccountId={}",
+                    account.account_id
+                );
             }
             Ok(LoginProbe::NeedLogin { .. }) => {
                 // Session 已过期，标记为无效并停止后续检查
-                tracing::info!("[SessionExpiration] 检测到过期 session，正在标记为无效 | AccountId={}", account.account_id);
+                tracing::info!(
+                    "[SessionExpiration] 检测到过期 session，正在标记为无效 | AccountId={}",
+                    account.account_id
+                );
                 if let Err(e) = db_manager.invalidate_session(&account.account_id).await {
                     tracing::warn!("[SessionExpiration] 标记 session 失效失败: {}", e);
                 }

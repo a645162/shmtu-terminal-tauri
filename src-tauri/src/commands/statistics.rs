@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
 use chrono::NaiveDate;
 use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
+use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::entity::bill_merged;
@@ -161,7 +161,9 @@ pub async fn get_statistics_summary(
 ) -> Result<StatisticsSummary, String> {
     tracing::info!(
         "[Statistics] get_statistics_summary: identity_id={}, date_start={:?}, date_end={:?}",
-        params.identity_id, params.date_start, params.date_end
+        params.identity_id,
+        params.date_start,
+        params.date_end
     );
 
     let db = state.db_manager.read().await;
@@ -172,7 +174,11 @@ pub async fn get_statistics_summary(
         .count(db_conn)
         .await
         .unwrap_or(0);
-    tracing::info!("[Statistics] bill_merged total records for identity {}: {}", params.identity_id, total_count);
+    tracing::info!(
+        "[Statistics] bill_merged total records for identity {}: {}",
+        params.identity_id,
+        total_count
+    );
 
     let models = success_query(params.identity_id)
         .all(db_conn)
@@ -200,14 +206,18 @@ pub async fn get_statistics_summary(
     }
 
     let days = {
-        let unique_dates: std::collections::HashSet<&str> = models.iter()
-            .map(|m| m.date_str.as_str())
-            .collect();
+        let unique_dates: std::collections::HashSet<&str> =
+            models.iter().map(|m| m.date_str.as_str()).collect();
         (unique_dates.len() as f64).max(1.0)
     };
 
-    tracing::info!("[Statistics] expense={}, expense_count={}, days={}, daily_average={}",
-        expense, expense_count, days, expense / days);
+    tracing::info!(
+        "[Statistics] expense={}, expense_count={}, days={}, daily_average={}",
+        expense,
+        expense_count,
+        days,
+        expense / days
+    );
 
     let config = state.config.read().await;
     let dp = config.decimal_places();
@@ -230,7 +240,9 @@ pub async fn get_daily_trend(
 ) -> Result<Vec<DailyTrendItem>, String> {
     tracing::info!(
         "[Statistics] get_daily_trend: identity_id={}, date_start={:?}, date_end={:?}",
-        params.identity_id, params.date_start, params.date_end
+        params.identity_id,
+        params.date_start,
+        params.date_end
     );
 
     let db = state.db_manager.read().await;
@@ -250,7 +262,10 @@ pub async fn get_daily_trend(
         *daily_map.entry(m.date_str.clone()).or_default() += m.money.unwrap_or(0.0).abs();
     }
 
-    tracing::info!("[Statistics] daily_trend: {} days computed", daily_map.len());
+    tracing::info!(
+        "[Statistics] daily_trend: {} days computed",
+        daily_map.len()
+    );
     for (date, expense) in &daily_map {
         tracing::debug!("[Statistics]   {} -> {}", date, expense);
     }
@@ -276,7 +291,9 @@ pub async fn get_category_distribution(
 ) -> Result<Vec<CategoryItem>, String> {
     tracing::info!(
         "[Statistics] get_category_distribution: identity_id={}, date_start={:?}, date_end={:?}",
-        params.identity_id, params.date_start, params.date_end
+        params.identity_id,
+        params.date_start,
+        params.date_end
     );
 
     let db = state.db_manager.read().await;
@@ -295,7 +312,10 @@ pub async fn get_category_distribution(
         })?;
     let models = filter_models_by_date(models, &params.date_start, &params.date_end);
 
-    tracing::info!("[Statistics] category: {} success records fetched", models.len());
+    tracing::info!(
+        "[Statistics] category: {} success records fetched",
+        models.len()
+    );
 
     let mut category_map: std::collections::HashMap<String, (f64, u32)> =
         std::collections::HashMap::new();
@@ -328,13 +348,25 @@ pub async fn get_category_distribution(
     for (i, m) in models.iter().take(5).enumerate() {
         tracing::debug!(
             "[Statistics] sample[{}]: item_type={:?}, target_user={:?}, money={:?}, status={:?}",
-            i, m.item_type, m.target_user, m.money, m.status_str
+            i,
+            m.item_type,
+            m.target_user,
+            m.money,
+            m.status_str
         );
     }
 
-    tracing::info!("[Statistics] category distribution: {} categories", category_map.len());
+    tracing::info!(
+        "[Statistics] category distribution: {} categories",
+        category_map.len()
+    );
     for (name, (value, count)) in &category_map {
-        tracing::debug!("[Statistics]   {} -> value={}, count={}", name, value, count);
+        tracing::debug!(
+            "[Statistics]   {} -> value={}, count={}",
+            name,
+            value,
+            count
+        );
     }
 
     let mut items: Vec<CategoryItem> = category_map
@@ -347,7 +379,11 @@ pub async fn get_category_distribution(
         })
         .collect();
 
-    items.sort_by(|a, b| b.value.partial_cmp(&a.value).unwrap_or(std::cmp::Ordering::Equal));
+    items.sort_by(|a, b| {
+        b.value
+            .partial_cmp(&a.value)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     for (i, item) in items.iter_mut().enumerate() {
         item.color = CATEGORY_COLORS[i % CATEGORY_COLORS.len()].to_string();
@@ -370,7 +406,9 @@ pub async fn get_meal_distribution(
 ) -> Result<Vec<MealDistItem>, String> {
     tracing::info!(
         "[Statistics] get_meal_distribution: identity_id={}, date_start={:?}, date_end={:?}",
-        params.identity_id, params.date_start, params.date_end
+        params.identity_id,
+        params.date_start,
+        params.date_end
     );
 
     let db = state.db_manager.read().await;
@@ -386,7 +424,10 @@ pub async fn get_meal_distribution(
         })?;
     let models = filter_models_by_date(models, &params.date_start, &params.date_end);
 
-    tracing::info!("[Statistics] meal: {} success records fetched", models.len());
+    tracing::info!(
+        "[Statistics] meal: {} success records fetched",
+        models.len()
+    );
 
     let mut meal_map: std::collections::HashMap<String, (u32, f64)> =
         std::collections::HashMap::new();
@@ -418,7 +459,12 @@ pub async fn get_meal_distribution(
 
     tracing::info!("[Statistics] meal distribution: {} periods", meal_map.len());
     for (name, (count, amount)) in &meal_map {
-        tracing::debug!("[Statistics]   {} -> count={}, amount={}", name, count, amount);
+        tracing::debug!(
+            "[Statistics]   {} -> count={}, amount={}",
+            name,
+            count,
+            amount
+        );
     }
 
     let mut items: Vec<MealDistItem> = meal_map
@@ -430,7 +476,11 @@ pub async fn get_meal_distribution(
         })
         .collect();
 
-    items.sort_by(|a, b| b.amount.partial_cmp(&a.amount).unwrap_or(std::cmp::Ordering::Equal));
+    items.sort_by(|a, b| {
+        b.amount
+            .partial_cmp(&a.amount)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let config = state.config.read().await;
     let dp = config.decimal_places();
@@ -449,7 +499,9 @@ pub async fn get_consumption_distribution(
 ) -> Result<Vec<ConsumptionBucketItem>, String> {
     tracing::info!(
         "[Statistics] get_consumption_distribution: identity_id={}, date_start={:?}, date_end={:?}",
-        params.identity_id, params.date_start, params.date_end
+        params.identity_id,
+        params.date_start,
+        params.date_end
     );
 
     let db = state.db_manager.read().await;
@@ -464,7 +516,10 @@ pub async fn get_consumption_distribution(
         })?;
     let models = filter_models_by_date(models, &params.date_start, &params.date_end);
 
-    tracing::info!("[Statistics] consumption: {} success records fetched", models.len());
+    tracing::info!(
+        "[Statistics] consumption: {} success records fetched",
+        models.len()
+    );
 
     let mut buckets = [
         ("<10元", 0u32, 0.0_f64),
@@ -493,7 +548,12 @@ pub async fn get_consumption_distribution(
 
     tracing::info!("[Statistics] consumption buckets:");
     for (range, count, amount) in &buckets {
-        tracing::info!("[Statistics]   {} -> count={}, amount={}", range, count, amount);
+        tracing::info!(
+            "[Statistics]   {} -> count={}, amount={}",
+            range,
+            count,
+            amount
+        );
     }
 
     let config = state.config.read().await;
@@ -517,7 +577,9 @@ pub async fn get_merchant_ranking(
 ) -> Result<Vec<MerchantRankingItem>, String> {
     tracing::info!(
         "[Statistics] get_merchant_ranking: identity_id={}, date_start={:?}, date_end={:?}",
-        params.identity_id, params.date_start, params.date_end
+        params.identity_id,
+        params.date_start,
+        params.date_end
     );
 
     let db = state.db_manager.read().await;
@@ -557,9 +619,17 @@ pub async fn get_merchant_ranking(
     items.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     items.truncate(10);
 
-    tracing::info!("[Statistics] merchant ranking: {} merchants returned", items.len());
+    tracing::info!(
+        "[Statistics] merchant ranking: {} merchants returned",
+        items.len()
+    );
     for (merchant, amount, count) in &items {
-        tracing::info!("[Statistics]   {} -> amount={}, count={}", merchant, amount, count);
+        tracing::info!(
+            "[Statistics]   {} -> amount={}, count={}",
+            merchant,
+            amount,
+            count
+        );
     }
 
     let config = state.config.read().await;
@@ -605,7 +675,9 @@ pub async fn get_forgot_card_stats(
 ) -> Result<ForgotCardStats, String> {
     tracing::info!(
         "[Statistics] get_forgot_card_stats: identity_id={}, date_start={:?}, date_end={:?}",
-        params.identity_id, params.date_start, params.date_end
+        params.identity_id,
+        params.date_start,
+        params.date_end
     );
 
     let db = state.db_manager.read().await;
@@ -671,7 +743,8 @@ pub async fn get_forgot_card_stats(
 
     tracing::info!(
         "[Statistics] forgot_card_stats: count={}, total_amount={}",
-        count, total_amount
+        count,
+        total_amount
     );
 
     Ok(ForgotCardStats {
@@ -735,10 +808,8 @@ pub async fn get_category_summary(
     }
 
     let days = {
-        let unique_dates: std::collections::HashSet<&str> = models
-            .iter()
-            .map(|m| m.date_str.as_str())
-            .collect();
+        let unique_dates: std::collections::HashSet<&str> =
+            models.iter().map(|m| m.date_str.as_str()).collect();
         (unique_dates.len() as f64).max(1.0)
     };
 
@@ -750,7 +821,11 @@ pub async fn get_category_summary(
 
     tracing::info!(
         "[Statistics] category_summary: category={}, total={}, count={}, daily_avg={}, per_txn={}",
-        category_name, total_amount, count, total_amount / days, avg_per_transaction
+        category_name,
+        total_amount,
+        count,
+        total_amount / days,
+        avg_per_transaction
     );
 
     let config = state.config.read().await;

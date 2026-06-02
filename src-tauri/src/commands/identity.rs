@@ -20,7 +20,10 @@ pub async fn create_identity(state: State<'_, AppState>, name: String) -> Result
         birthday: None,
         default_remember: Some(false),
     };
-    let id = db.create_identity(&params).await.map_err(|e| e.to_string())?;
+    let id = db
+        .create_identity(&params)
+        .await
+        .map_err(|e| e.to_string())?;
     let identity = db.get_identity(id).await.map_err(|e| e.to_string())?;
     identity.ok_or_else(|| "创建身份后未找到".to_string())
 }
@@ -28,7 +31,9 @@ pub async fn create_identity(state: State<'_, AppState>, name: String) -> Result
 #[tauri::command]
 pub async fn update_identity(state: State<'_, AppState>, identity: Identity) -> Result<(), String> {
     let db = state.db_manager.read().await;
-    db.update_identity(&identity).await.map_err(|e| e.to_string())
+    db.update_identity(&identity)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

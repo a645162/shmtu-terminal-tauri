@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use sea_orm::{ColumnTrait, Condition, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder};
+use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::db::{init::bill_merged_model_to_app, BillStoreImpl};
@@ -170,7 +170,12 @@ pub async fn query_bills(
         condition = condition.add(bill_merged::Column::DateStr.lte(date_end.replace('-', ".")));
     }
 
-    if let Some(keyword) = params.keyword.clone().map(|k| k.trim().to_string()).filter(|k| !k.is_empty()) {
+    if let Some(keyword) = params
+        .keyword
+        .clone()
+        .map(|k| k.trim().to_string())
+        .filter(|k| !k.is_empty())
+    {
         condition = condition.add(
             Condition::any()
                 .add(bill_merged::Column::ItemType.contains(&keyword))

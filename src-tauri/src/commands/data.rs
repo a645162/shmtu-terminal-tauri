@@ -89,11 +89,13 @@ pub async fn export_data(
         // 导出原始数据需要找到账号ID
         let db = state.db_manager.read().await;
         let accounts = db
-            .list_accounts_by_identity(params.identity_id).await
+            .list_accounts_by_identity(params.identity_id)
+            .await
             .map_err(|e| e.to_string())?;
         if let Some(account) = accounts.first() {
             export_service
-                .export_account_bills(&account.account_id, &options).await
+                .export_account_bills(&account.account_id, &options)
+                .await
                 .map_err(|e| e.to_string())?;
         } else {
             tracing::warn!(
@@ -105,7 +107,8 @@ pub async fn export_data(
         // 获取身份名称
         let db = state.db_manager.read().await;
         let identity = db
-            .get_identity(params.identity_id).await
+            .get_identity(params.identity_id)
+            .await
             .map_err(|e| e.to_string())?;
         let identity_name = identity
             .as_ref()
@@ -113,7 +116,8 @@ pub async fn export_data(
             .unwrap_or("unknown");
 
         export_service
-            .export_identity_bills(params.identity_id, identity_name, &options).await
+            .export_identity_bills(params.identity_id, identity_name, &options)
+            .await
             .map_err(|e| e.to_string())?;
     }
 
@@ -136,7 +140,8 @@ pub async fn import_data(
 
     let export_service = state.export_service.read().await;
     let count = export_service
-        .import_json(identity_id, &file_path).await
+        .import_json(identity_id, &file_path)
+        .await
         .map_err(|e| {
             tracing::error!("[Data] import_data failed: {}", e);
             e.to_string()
@@ -171,12 +176,10 @@ pub async fn create_snapshot(state: State<'_, AppState>) -> Result<SnapshotInfoF
     drop(config);
 
     let export_service = state.export_service.read().await;
-    let path = export_service
-        .create_snapshot(max_keep)
-        .map_err(|e| {
-            tracing::error!("[Data] create_snapshot failed: {}", e);
-            e.to_string()
-        })?;
+    let path = export_service.create_snapshot(max_keep).map_err(|e| {
+        tracing::error!("[Data] create_snapshot failed: {}", e);
+        e.to_string()
+    })?;
 
     // 获取创建的快照信息
     let snapshots = export_service.list_snapshots().map_err(|e| e.to_string())?;

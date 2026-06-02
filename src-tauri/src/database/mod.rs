@@ -18,12 +18,7 @@ const GITHUB_RAW_BASE: &str =
     "https://raw.githubusercontent.com/a645162/shmtu-terminal/main/database/bill";
 
 /// 数据库文件名列表
-const DB_FILES: &[&str] = &[
-    "rules.toml",
-    "position.toml",
-    "type.toml",
-    "schedule.toml",
-];
+const DB_FILES: &[&str] = &["rules.toml", "position.toml", "type.toml", "schedule.toml"];
 
 /// 数据库文件管理器
 pub struct DatabaseFileManager {
@@ -47,10 +42,7 @@ impl DatabaseFileManager {
         for filename in DB_FILES {
             let local_path = self.local_dir.join(filename);
             if !local_path.exists() {
-                tracing::info!(
-                    "[DB] 本地文件缺失: {:?}，从 GitHub 下载...",
-                    filename
-                );
+                tracing::info!("[DB] 本地文件缺失: {:?}，从 GitHub 下载...", filename);
                 if let Err(e) = self.download_file(filename).await {
                     tracing::warn!("[DB] 下载 {} 失败: {}，将跳过", filename, e);
                 }

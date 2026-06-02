@@ -48,10 +48,12 @@ pub async fn translate_target(
 pub async fn get_classification_rules(
     state: State<'_, AppState>,
 ) -> Result<ClassificationRules, String> {
-    let rules_toml = state.db_file_manager.read_file("rules.toml")
+    let rules_toml = state
+        .db_file_manager
+        .read_file("rules.toml")
         .map_err(|e| format!("加载 rules.toml 失败: {}", e))?;
-    let rules: ClassificationRules = toml::from_str(&rules_toml)
-        .map_err(|e| format!("解析 rules.toml 失败: {}", e))?;
+    let rules: ClassificationRules =
+        toml::from_str(&rules_toml).map_err(|e| format!("解析 rules.toml 失败: {}", e))?;
     Ok(rules)
 }
 
@@ -69,7 +71,9 @@ pub async fn classify_bill(
         target
     );
 
-    let type_toml = state.db_file_manager.load_type_toml()
+    let type_toml = state
+        .db_file_manager
+        .load_type_toml()
         .map_err(|e| format!("加载 type.toml 失败: {}", e))?;
     let classifier = shmtu_cas::classifier::BillClassifier::from_toml(&type_toml)
         .map_err(|e| format!("解析 type.toml 失败: {}", e))?;
@@ -95,13 +99,15 @@ pub async fn get_bill_statistics(
     let db = state.db_manager.read().await;
     let db_conn = db.db();
 
-    let type_toml = state.db_file_manager.load_type_toml()
+    let type_toml = state
+        .db_file_manager
+        .load_type_toml()
         .map_err(|e| format!("加载 type.toml 失败: {}", e))?;
     let classifier = shmtu_cas::classifier::BillClassifier::from_toml(&type_toml)
         .map_err(|e| format!("解析 type.toml 失败: {}", e))?;
 
-    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
     use crate::entity::bill_merged;
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
     let models = bill_merged::Entity::find()
         .filter(bill_merged::Column::IdentityId.eq(identity_id))
@@ -133,21 +139,27 @@ pub async fn get_bill_statistics(
         let display_name = category.display_name().to_string();
         let emoji = category.emoji().to_string();
 
-        let entry = stats.entry(category_name.clone()).or_insert(ClassifiedStatisticsItem {
-            category: category_name,
-            display_name,
-            emoji,
-            total_amount: 0.0,
-            count: 0,
-            position: pos.map(|s| s.to_string()),
-            room: rm.map(|s| s.to_string()),
-        });
+        let entry = stats
+            .entry(category_name.clone())
+            .or_insert(ClassifiedStatisticsItem {
+                category: category_name,
+                display_name,
+                emoji,
+                total_amount: 0.0,
+                count: 0,
+                position: pos.map(|s| s.to_string()),
+                room: rm.map(|s| s.to_string()),
+            });
         entry.total_amount += money;
         entry.count += 1;
     }
 
     let mut items: Vec<ClassifiedStatisticsItem> = stats.into_values().collect();
-    items.sort_by(|a, b| b.total_amount.partial_cmp(&a.total_amount).unwrap_or(std::cmp::Ordering::Equal));
+    items.sort_by(|a, b| {
+        b.total_amount
+            .partial_cmp(&a.total_amount)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     Ok(items)
 }

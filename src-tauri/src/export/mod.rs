@@ -89,7 +89,10 @@ pub struct ExportService {
 
 impl ExportService {
     pub fn new(db_manager: DatabaseManager, translator: PositionTranslator) -> Self {
-        Self { db_manager, translator }
+        Self {
+            db_manager,
+            translator,
+        }
     }
 
     /// 导出身份合并数据
@@ -106,7 +109,13 @@ impl ExportService {
             options.output_path
         );
 
-        let store = BillStoreImpl::new(self.db_manager.db().clone(), "", identity_id, self.translator.clone()).await?;
+        let store = BillStoreImpl::new(
+            self.db_manager.db().clone(),
+            "",
+            identity_id,
+            self.translator.clone(),
+        )
+        .await?;
         let bills = store.get_all_merged_bills(identity_id).await?;
 
         tracing::debug!("[Export] loaded {} merged bills for export", bills.len());
@@ -153,7 +162,11 @@ impl ExportService {
     }
 
     /// 导出账号原始数据
-    pub async fn export_account_bills(&self, account_id: &str, options: &ExportOptions) -> AppResult<()> {
+    pub async fn export_account_bills(
+        &self,
+        account_id: &str,
+        options: &ExportOptions,
+    ) -> AppResult<()> {
         tracing::info!(
             "[Export] export_account_bills: account_id={}, format={:?}, path={}",
             account_id,
@@ -161,7 +174,13 @@ impl ExportService {
             options.output_path
         );
 
-        let store = BillStoreImpl::new(self.db_manager.db().clone(), account_id, 0, self.translator.clone()).await?;
+        let store = BillStoreImpl::new(
+            self.db_manager.db().clone(),
+            account_id,
+            0,
+            self.translator.clone(),
+        )
+        .await?;
         let bills = store.get_all_original_bills(account_id).await?;
 
         tracing::debug!("[Export] loaded {} original bills for export", bills.len());
@@ -217,7 +236,11 @@ impl ExportService {
         use std::fs::File;
         use std::io::Write;
 
-        tracing::debug!("[Export] writing original CSV to {}, {} rows", path, bills.len());
+        tracing::debug!(
+            "[Export] writing original CSV to {}, {} rows",
+            path,
+            bills.len()
+        );
 
         let mut file = File::create(path)?;
         file.write_all(&[0xEF, 0xBB, 0xBF])?;
@@ -260,12 +283,17 @@ impl ExportService {
             // 尝试加载分类规则
             let rules_path = self.db_manager.data_dir().join("classification_rules.toml");
             if rules_path.exists() {
-                tracing::debug!("[Export] loading classification rules from {:?}", rules_path);
+                tracing::debug!(
+                    "[Export] loading classification rules from {:?}",
+                    rules_path
+                );
                 Some(BillClassifier::from_file(
                     rules_path.to_str().unwrap_or(""),
                 )?)
             } else {
-                tracing::warn!("[Export] classification_rules.toml not found, skipping classification");
+                tracing::warn!(
+                    "[Export] classification_rules.toml not found, skipping classification"
+                );
                 None
             }
         } else {
@@ -375,7 +403,11 @@ impl ExportService {
 
     /// 钱迹格式导出（合并数据）
     fn export_qianji(&self, bills: &[&BillMerged], path: &str) -> AppResult<()> {
-        tracing::debug!("[Export] writing Qianji format to {}, {} rows", path, bills.len());
+        tracing::debug!(
+            "[Export] writing Qianji format to {}, {} rows",
+            path,
+            bills.len()
+        );
 
         let items: Vec<QianjiItem> = bills
             .iter()
@@ -419,7 +451,10 @@ impl ExportService {
             })
             .collect();
 
-        tracing::debug!("[Export] Qianji format: {} items after filtering", items.len());
+        tracing::debug!(
+            "[Export] Qianji format: {} items after filtering",
+            items.len()
+        );
 
         let json_str = serde_json::to_string_pretty(&items)?;
         std::fs::write(path, json_str)?;
@@ -429,7 +464,11 @@ impl ExportService {
 
     /// 钱迹格式导出（原始数据）
     fn export_original_qianji(&self, bills: &[BillOriginal], path: &str) -> AppResult<()> {
-        tracing::debug!("[Export] writing original Qianji format to {}, {} rows", path, bills.len());
+        tracing::debug!(
+            "[Export] writing original Qianji format to {}, {} rows",
+            path,
+            bills.len()
+        );
 
         let items: Vec<QianjiItem> = bills
             .iter()
@@ -476,7 +515,11 @@ impl ExportService {
 
     /// 从 JSON 文件导入数据到身份合并数据库
     pub async fn import_json(&self, identity_id: i64, json_path: &str) -> AppResult<usize> {
-        tracing::info!("[Export] import_json: identity_id={}, path={}", identity_id, json_path);
+        tracing::info!(
+            "[Export] import_json: identity_id={}, path={}",
+            identity_id,
+            json_path
+        );
 
         use sea_orm::{EntityTrait, Set};
 
@@ -507,7 +550,11 @@ impl ExportService {
                 timestamp: Set(Some(0)),
                 item_type: Set(Some(bill.item_type.clone().unwrap_or_default())),
                 number: Set(bill.number.clone()),
-                number_list: Set(if number_list_json.is_empty() { None } else { Some(number_list_json) }),
+                number_list: Set(if number_list_json.is_empty() {
+                    None
+                } else {
+                    Some(number_list_json)
+                }),
                 target_user: Set(bill.target_user.clone()),
                 money_str: Set(bill.money_str.clone()),
                 money: Set(bill.money),
@@ -691,7 +738,10 @@ impl ExportService {
         // 按名称倒序（最新的在前）
         snapshots.sort_by(|a, b| b.name.cmp(&a.name));
 
-        tracing::debug!("[Export] list_snapshots: {} snapshots found", snapshots.len());
+        tracing::debug!(
+            "[Export] list_snapshots: {} snapshots found",
+            snapshots.len()
+        );
 
         Ok(snapshots)
     }
@@ -704,10 +754,16 @@ impl ExportService {
             let removed = snapshots.len() - max_keep;
             // 已按时间倒序排列，删除最旧的
             for snapshot in snapshots.drain(max_keep..) {
-                tracing::info!("[Export] cleanup_snapshots: removing old snapshot {}", snapshot.name);
+                tracing::info!(
+                    "[Export] cleanup_snapshots: removing old snapshot {}",
+                    snapshot.name
+                );
                 let _ = std::fs::remove_file(&snapshot.path);
             }
-            tracing::info!("[Export] cleanup_snapshots: removed {} old snapshots", removed);
+            tracing::info!(
+                "[Export] cleanup_snapshots: removed {} old snapshots",
+                removed
+            );
         }
 
         Ok(())

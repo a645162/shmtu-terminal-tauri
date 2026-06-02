@@ -107,6 +107,7 @@ export interface CaptchaTestResult {
   answer: string;
   duration_ms: number;
   mode: CaptchaMode;
+  verification?: string;
   error?: string;
   captcha_required?: boolean;
   captcha_image?: string;

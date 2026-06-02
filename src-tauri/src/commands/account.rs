@@ -14,7 +14,8 @@ pub async fn list_accounts(
         identity_id
     );
     let db = state.db_manager.read().await;
-    db.list_accounts_by_identity(identity_id).await
+    db.list_accounts_by_identity(identity_id)
+        .await
         .map_err(|e| {
             tracing::error!("[Account] list_accounts FAILED: {}", e);
             e.to_string()
@@ -42,7 +43,8 @@ pub async fn create_account(
         e.to_string()
     })?;
     drop(crypto);
-    db.get_account(id).await
+    db.get_account(id)
+        .await
         .map_err(|e| {
             tracing::error!("[Account] create_account: get_account FAILED: {}", e);
             e.to_string()
@@ -75,7 +77,8 @@ pub async fn update_account(
         })?;
     }
 
-    db.update_account(&account, &crypto).await
+    db.update_account(&account, &crypto)
+        .await
         .map_err(|e| {
             tracing::error!("[Account] update_account FAILED: {}", e);
             e.to_string()
@@ -98,7 +101,8 @@ fn is_encrypted_format(s: &str) -> bool {
 pub async fn delete_account(state: State<'_, AppState>, id: i64) -> Result<(), String> {
     tracing::warn!("[Account] delete_account called, id={}", id);
     let db = state.db_manager.read().await;
-    db.delete_account(id).await
+    db.delete_account(id)
+        .await
         .map_err(|e| {
             tracing::error!("[Account] delete_account FAILED: {}", e);
             e.to_string()

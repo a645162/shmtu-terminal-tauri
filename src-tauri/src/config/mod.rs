@@ -218,7 +218,10 @@ impl TomlConfig {
             let content = std::fs::read_to_string(&config_path)?;
             match toml::from_str(&content) {
                 Ok(c) => {
-                    tracing::info!("[Config] Config loaded successfully from {}", config_path.display());
+                    tracing::info!(
+                        "[Config] Config loaded successfully from {}",
+                        config_path.display()
+                    );
                     c
                 }
                 Err(e) => {

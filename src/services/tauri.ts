@@ -197,8 +197,17 @@ export async function check_login_status(accountId: string): Promise<boolean> {
 
 // ========== Captcha ==========
 
+export interface CaptchaChallengeResponse {
+  captcha_image: string;
+  execution: string;
+}
+
 export async function get_captcha_image(): Promise<string> {
   return invoke<string>('get_captcha_image');
+}
+
+export async function get_captcha_with_execution(): Promise<CaptchaChallengeResponse> {
+  return invoke<CaptchaChallengeResponse>('get_captcha_with_execution');
 }
 
 export async function test_captcha(mode: CaptchaMode, manualInput?: string): Promise<CaptchaTestResult> {

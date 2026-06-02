@@ -172,7 +172,8 @@ impl DatabaseManager {
     }
 
     pub fn session_db_path(&self, account_id: &str) -> PathBuf {
-        self.account_dir().join(format!("{}_session.sqlite", account_id))
+        self.account_dir()
+            .join(format!("{}_session.sqlite", account_id))
     }
     // === 身份 CRUD ===
 
@@ -198,7 +199,10 @@ impl DatabaseManager {
             .count(&self.db)
             .await?;
         if count > 0 {
-            tracing::warn!("[DB] create_identity: name '{}' already exists", params.name);
+            tracing::warn!(
+                "[DB] create_identity: name '{}' already exists",
+                params.name
+            );
             return Err(AppError::Validation(format!(
                 "身份名称 '{}' 已存在",
                 params.name
@@ -245,7 +249,10 @@ impl DatabaseManager {
     ///
     /// 级联删除：合并账单 -> 操作日志 -> 原始账单 -> 会话信息 -> 账号 -> 身份本身。
     pub async fn delete_identity(&self, identity_id: i64) -> AppResult<()> {
-        tracing::warn!("[DB] delete_identity: id={}, cascading delete all related data", identity_id);
+        tracing::warn!(
+            "[DB] delete_identity: id={}, cascading delete all related data",
+            identity_id
+        );
 
         bill_merged::Entity::delete_many()
             .filter(bill_merged::Column::IdentityId.eq(identity_id))
@@ -274,7 +281,11 @@ impl DatabaseManager {
             .exec(&self.db)
             .await?;
 
-        tracing::info!("[DB] delete_identity: id={} deleted with {} accounts", identity_id, accts.len());
+        tracing::info!(
+            "[DB] delete_identity: id={} deleted with {} accounts",
+            identity_id,
+            accts.len()
+        );
         Ok(())
     }
 
@@ -303,7 +314,10 @@ impl DatabaseManager {
 
     /// 查询指定身份下的所有账号，按 ID 升序排列。
     pub async fn list_accounts_by_identity(&self, identity_id: i64) -> AppResult<Vec<Account>> {
-        tracing::debug!("[DB] list_accounts_by_identity: identity_id={}", identity_id);
+        tracing::debug!(
+            "[DB] list_accounts_by_identity: identity_id={}",
+            identity_id
+        );
 
         let models = accounts::Entity::find()
             .filter(accounts::Column::IdentityId.eq(identity_id))
@@ -322,7 +336,10 @@ impl DatabaseManager {
         tracing::info!("[DB] create_account: student_id={}", params.account_id);
 
         if params.account_id.len() != 12 || !params.account_id.chars().all(|c| c.is_ascii_digit()) {
-            tracing::warn!("[DB] create_account: invalid student_id format '{}'", params.account_id);
+            tracing::warn!(
+                "[DB] create_account: invalid student_id format '{}'",
+                params.account_id
+            );
             return Err(AppError::Validation("学号必须为12位数字".to_string()));
         }
         if params.password.is_empty() {
@@ -342,7 +359,11 @@ impl DatabaseManager {
             enable_update: Set(params.enable_update.unwrap_or(true)),
             admission_date: Set(params.admission_date.clone()),
             graduation_date: Set(params.graduation_date.clone()),
-            expire_date: Set(params.expire_date.as_deref().unwrap_or("2099-12-31").to_string()),
+            expire_date: Set(params
+                .expire_date
+                .as_deref()
+                .unwrap_or("2099-12-31")
+                .to_string()),
             last_update_time: Set(String::new()),
             created_at: Set(now.clone()),
             updated_at: Set(now),
@@ -429,7 +450,10 @@ impl DatabaseManager {
         tracing::info!("[DB] update_account_password: id={}", account_id);
 
         if new_password.is_empty() {
-            tracing::warn!("[DB] update_account_password: empty password for id={}", account_id);
+            tracing::warn!(
+                "[DB] update_account_password: empty password for id={}",
+                account_id
+            );
             return Err(AppError::Validation("密码不能为空".to_string()));
         }
         let encrypted = crypto.encrypt_string(new_password)?;
@@ -551,7 +575,10 @@ impl DatabaseManager {
                 }))
             }
             None => {
-                tracing::debug!("[DB] get_session: no valid session for account_id={}", account_id);
+                tracing::debug!(
+                    "[DB] get_session: no valid session for account_id={}",
+                    account_id
+                );
                 Ok(None)
             }
         }
@@ -597,7 +624,11 @@ impl DatabaseManager {
     /// 清除指定身份+账号下的非手动合并账单。
     ///
     /// 仅删除 `is_manual=false` 的记录，保留用户手动添加的账单。
-    pub async fn clear_merged_by_account(&self, identity_id: i64, account_id: &str) -> AppResult<()> {
+    pub async fn clear_merged_by_account(
+        &self,
+        identity_id: i64,
+        account_id: &str,
+    ) -> AppResult<()> {
         tracing::info!(
             "[DB] clear_merged_by_account: identity_id={}, account_id={}",
             identity_id,

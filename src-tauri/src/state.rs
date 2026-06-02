@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
+use shmtu_cas::cas::epay::EpayAuth;
 use shmtu_ocr::backend::CasOnnxBackend;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 use crate::classification::BillClassifier;
 use crate::config::TomlConfig;
@@ -12,6 +13,11 @@ use crate::error::AppResult;
 use crate::export::ExportService;
 use crate::session_refresh::SessionExpirationService;
 use crate::sync::BillSyncService;
+
+pub struct CaptchaTestSession {
+    pub epay: EpayAuth,
+    pub execution: String,
+}
 
 /// 应用全局状态，通过 tauri::State 注入到所有命令中
 pub struct AppState {
@@ -27,6 +33,8 @@ pub struct AppState {
     pub session_expiration_service: Arc<SessionExpirationService>,
     /// 本地 ONNX 推理后端（CPU 密集同步操作，使用 std::sync::Mutex）
     pub local_ocr: Arc<std::sync::Mutex<Option<CasOnnxBackend>>>,
+    /// 验证码测试使用的待提交 challenge，会话需与展示的验证码保持一致。
+    pub captcha_test_session: Arc<Mutex<Option<CaptchaTestSession>>>,
 }
 
 impl AppState {
@@ -102,6 +110,7 @@ impl AppState {
             db_file_manager: Arc::new(db_file_manager),
             session_expiration_service,
             local_ocr: Arc::new(std::sync::Mutex::new(None)),
+            captcha_test_session: Arc::new(Mutex::new(None)),
         })
     }
 

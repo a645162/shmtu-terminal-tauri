@@ -1,21 +1,15 @@
-use tauri::State;
 use crate::state::AppState;
 use std::sync::atomic::{AtomicU64, Ordering};
+use tauri::State;
 
 static ERROR_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[tauri::command]
-pub async fn log_error(
-    state: State<'_, AppState>,
-    message: String,
-) -> Result<(), String> {
+pub async fn log_error(state: State<'_, AppState>, message: String) -> Result<(), String> {
     let count = ERROR_COUNTER.fetch_add(1, Ordering::Relaxed);
     let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
-    let error_entry = format!(
-        "[{}] #{} Error: {}\n",
-        timestamp, count, message
-    );
+    let error_entry = format!("[{}] #{} Error: {}\n", timestamp, count, message);
 
     // 记录到日志
     tracing::error!("[Frontend Error] #{}: {}", count, message);

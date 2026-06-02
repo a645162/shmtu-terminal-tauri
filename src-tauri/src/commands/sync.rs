@@ -213,7 +213,10 @@ impl SyncProgressFrontend {
 
 fn create_progress_callback(app: AppHandle) -> SyncProgressCallback {
     Box::new(move |progress: SyncProgress| {
-        let _ = app.emit("sync-progress", SyncProgressFrontend::from_runtime(progress));
+        let _ = app.emit(
+            "sync-progress",
+            SyncProgressFrontend::from_runtime(progress),
+        );
     })
 }
 
@@ -351,14 +354,21 @@ pub async fn incremental_sync_account(
 ) -> Result<SyncProgressFrontend, String> {
     tracing::info!(
         "[Command] incremental_sync_account called, identity_id={}, account_id={}, sync_range={:?}",
-        identity_id, account_id, sync_range
+        identity_id,
+        account_id,
+        sync_range
     );
 
     let sync_service = state.sync_service.read().await;
     let progress_callback = create_progress_callback(app.clone());
-    let result = sync_service.sync_single_account_by_id(
-        identity_id, &account_id, sync_range, Some(&progress_callback),
-    ).await;
+    let result = sync_service
+        .sync_single_account_by_id(
+            identity_id,
+            &account_id,
+            sync_range,
+            Some(&progress_callback),
+        )
+        .await;
 
     match result {
         Ok(r) => {
@@ -372,7 +382,8 @@ pub async fn incremental_sync_account(
             );
             tracing::info!(
                 "[Command] incremental_sync_account completed, account_id={}, new_items={}",
-                account_id, r.total_new_count
+                account_id,
+                r.total_new_count
             );
             Ok(SyncProgressFrontend::success(r.total_new_count))
         }
@@ -409,14 +420,21 @@ pub async fn full_sync_account(
 ) -> Result<SyncProgressFrontend, String> {
     tracing::info!(
         "[Command] full_sync_account called, identity_id={}, account_id={}, sync_range={:?}",
-        identity_id, account_id, sync_range
+        identity_id,
+        account_id,
+        sync_range
     );
 
     let sync_service = state.sync_service.read().await;
     let progress_callback = create_progress_callback(app.clone());
-    let result = sync_service.full_sync_single_account(
-        identity_id, &account_id, sync_range, Some(&progress_callback),
-    ).await;
+    let result = sync_service
+        .full_sync_single_account(
+            identity_id,
+            &account_id,
+            sync_range,
+            Some(&progress_callback),
+        )
+        .await;
 
     match result {
         Ok(r) => {
@@ -430,7 +448,8 @@ pub async fn full_sync_account(
             );
             tracing::info!(
                 "[Command] full_sync_account completed, account_id={}, new_items={}",
-                account_id, r.total_new_count
+                account_id,
+                r.total_new_count
             );
             Ok(SyncProgressFrontend::success(r.total_new_count))
         }
@@ -480,7 +499,12 @@ pub async fn sync_with_captcha(
     let progress_callback = create_progress_callback(app.clone());
 
     match sync_service
-        .sync_with_captcha(identity_id, &captcha_code, &execution, Some(&progress_callback))
+        .sync_with_captcha(
+            identity_id,
+            &captcha_code,
+            &execution,
+            Some(&progress_callback),
+        )
         .await
     {
         Ok(result) => {
@@ -570,7 +594,8 @@ pub async fn cas_login(
 
     let db = state.db_manager.read().await;
     let account = db
-        .get_account_by_student_id(&account_id).await
+        .get_account_by_student_id(&account_id)
+        .await
         .map_err(|e| {
             tracing::error!("[Command] cas_login: account not found: {}", e);
             e.to_string()

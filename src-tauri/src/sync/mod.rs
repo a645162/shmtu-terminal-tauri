@@ -173,7 +173,11 @@ impl ConfigAccess {
 }
 
 impl BillSyncService {
-    pub fn new(db_manager: DatabaseManager, crypto: CryptoService, translator: PositionTranslator) -> Self {
+    pub fn new(
+        db_manager: DatabaseManager,
+        crypto: CryptoService,
+        translator: PositionTranslator,
+    ) -> Self {
         Self {
             db_manager,
             crypto,
@@ -182,8 +186,14 @@ impl BillSyncService {
         }
     }
 
-    pub async fn get_enabled_accounts_for_identity(&self, identity_id: i64) -> AppResult<Vec<Account>> {
-        let accounts = self.db_manager.list_accounts_by_identity(identity_id).await?;
+    pub async fn get_enabled_accounts_for_identity(
+        &self,
+        identity_id: i64,
+    ) -> AppResult<Vec<Account>> {
+        let accounts = self
+            .db_manager
+            .list_accounts_by_identity(identity_id)
+            .await?;
         let cfg = ConfigAccess::new(&self.db_manager);
         let skip_graduated_accounts = cfg.skip_graduated_accounts();
         let today = chrono::Local::now().format("%Y-%m-%d").to_string();
@@ -244,7 +254,8 @@ impl BillSyncService {
             sync_options.max_pages,
             sync_options.early_stop_threshold
         );
-        self.run_accounts(&accounts, sync_options, progress_callback).await
+        self.run_accounts(&accounts, sync_options, progress_callback)
+            .await
     }
 
     async fn sync_single_account(
@@ -558,9 +569,7 @@ impl BillSyncService {
                         .into_final_answer()
                 }
                 _ => {
-                    return Err(AppError::Sync(
-                        "当前验证码模式不支持自动登录".to_string(),
-                    ));
+                    return Err(AppError::Sync("当前验证码模式不支持自动登录".to_string()));
                 }
             };
 
@@ -678,7 +687,8 @@ impl BillSyncService {
                         SyncStatus::Completed,
                     );
                 }
-                self.continue_pending_manual_sync(pending, progress_callback).await
+                self.continue_pending_manual_sync(pending, progress_callback)
+                    .await
             }
             LoginSubmitResult::ValidateCodeError => {
                 tracing::error!("[Sync] Captcha WRONG!");
@@ -771,7 +781,9 @@ impl BillSyncService {
 
     async fn save_session(&self, epay: &EpayAuth, account_id: &str) -> AppResult<()> {
         let cookies_json = epay.extract_session()?;
-        self.db_manager.save_session(account_id, &cookies_json, &self.crypto).await?;
+        self.db_manager
+            .save_session(account_id, &cookies_json, &self.crypto)
+            .await?;
         tracing::info!(
             "[Sync] saved encrypted session for account_id={}, cookies_len={}",
             account_id,
@@ -793,12 +805,21 @@ impl BillSyncService {
         );
         // 全量更新：清空旧数据
         self.db_manager.clear_merged_non_manual(identity_id).await?;
-        let _ = self.db_manager.clear_operation_logs(identity_id, None).await;
+        let _ = self
+            .db_manager
+            .clear_operation_logs(identity_id, None)
+            .await;
         let accounts = self.get_enabled_accounts_for_identity(identity_id).await?;
         // 清除所有账号的旧数据和 session
         for account in &accounts {
-            let _ = self.db_manager.clear_account_original(&account.account_id).await;
-            let _ = self.db_manager.invalidate_session(&account.account_id).await;
+            let _ = self
+                .db_manager
+                .clear_account_original(&account.account_id)
+                .await;
+            let _ = self
+                .db_manager
+                .invalidate_session(&account.account_id)
+                .await;
         }
 
         let sync_options = SyncOptions {
@@ -818,7 +839,8 @@ impl BillSyncService {
                 .await;
         }
 
-        self.run_accounts(&accounts, &sync_options, progress_callback).await
+        self.run_accounts(&accounts, &sync_options, progress_callback)
+            .await
     }
 
     /// 增量同步单个账号
@@ -835,12 +857,11 @@ impl BillSyncService {
             account_id,
             sync_range
         );
-        let account = self
-            .find_enabled_account(identity_id, account_id)
-            .await?;
+        let account = self.find_enabled_account(identity_id, account_id).await?;
 
         let sync_options = Self::default_incremental_sync_options(sync_range);
-        self.run_accounts(&[account], &sync_options, progress_callback).await
+        self.run_accounts(&[account], &sync_options, progress_callback)
+            .await
     }
 
     /// 全量同步单个账号（清空旧数据 + 清空旧 session 后重新同步）
@@ -857,16 +878,23 @@ impl BillSyncService {
             account_id,
             sync_range
         );
-        let account = self
-            .find_enabled_account(identity_id, account_id)
-            .await?;
+        let account = self.find_enabled_account(identity_id, account_id).await?;
 
         // 全量更新：清除该账号的旧数据和 session
-        let _ = self.db_manager.clear_account_original(&account.account_id).await;
+        let _ = self
+            .db_manager
+            .clear_account_original(&account.account_id)
+            .await;
         // 清除旧 session，强制重新登录
-        let _ = self.db_manager.invalidate_session(&account.account_id).await;
+        let _ = self
+            .db_manager
+            .invalidate_session(&account.account_id)
+            .await;
         // 清除该账号在合并表中的相关记录（非手动）
-        let _ = self.db_manager.clear_merged_by_account(identity_id, &account.account_id).await;
+        let _ = self
+            .db_manager
+            .clear_merged_by_account(identity_id, &account.account_id)
+            .await;
 
         let sync_options = SyncOptions {
             start_page: 1,
@@ -875,7 +903,8 @@ impl BillSyncService {
             early_stop_threshold: u32::MAX,
             since_timestamp: Self::range_since_timestamp(sync_range),
         };
-        self.run_accounts(&[account], &sync_options, progress_callback).await
+        self.run_accounts(&[account], &sync_options, progress_callback)
+            .await
     }
 
     async fn continue_pending_manual_sync(
@@ -890,8 +919,11 @@ impl BillSyncService {
                 pending.results.len(),
                 pending.remaining_accounts.len()
             );
-            let progress_context =
-                AccountProgressContext::new(&account, pending.results.len(), pending.total_accounts);
+            let progress_context = AccountProgressContext::new(
+                &account,
+                pending.results.len(),
+                pending.total_accounts,
+            );
             Self::emit_progress(
                 progress_callback,
                 &progress_context,
@@ -1017,7 +1049,10 @@ impl BillSyncService {
             account.account_id,
             total_new_before
         );
-        if let Some(session) = self.db_manager.get_session(&account.account_id, &self.crypto).await?
+        if let Some(session) = self
+            .db_manager
+            .get_session(&account.account_id, &self.crypto)
+            .await?
         {
             tracing::info!(
                 "[Sync] found saved session for account_id={}, expire_time={:?}",
@@ -1197,7 +1232,8 @@ impl BillSyncService {
             &account.account_id,
             account.identity_id,
             self.translator.clone(),
-        ).await?;
+        )
+        .await?;
         let mut result = AccountSyncResult {
             account_id: account.account_id.clone(),
             account_name: account.account_name.clone(),

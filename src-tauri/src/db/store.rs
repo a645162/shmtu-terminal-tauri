@@ -1,17 +1,17 @@
 use std::collections::{HashMap, HashSet};
 
-use sea_orm::{
-    ColumnTrait, Condition, DatabaseConnection, EntityTrait,
-    PaginatorTrait, QueryFilter, QueryOrder, Set,
-};
-use shmtu_cas::classifier::PositionTranslator;
-use shmtu_cas::datatype::bill::BillItem;
 use crate::db::init::{
     bill_merged_model_to_app, bill_original_model_to_app, operation_log_model_to_app,
 };
 use crate::entity::*;
 use crate::error::AppResult;
 use crate::models::{BillMerged, BillOriginal, OperationLog};
+use sea_orm::{
+    ColumnTrait, Condition, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
+    QueryOrder, Set,
+};
+use shmtu_cas::classifier::PositionTranslator;
+use shmtu_cas::datatype::bill::BillItem;
 
 /// 账单存储实现，负责原始账单和合并账单的持久化、去重与规范化。
 ///
@@ -189,9 +189,8 @@ impl BillStoreImpl {
                 .await?;
 
             for orig in originals {
-                let (position, room) = self.resolve_position_and_room(
-                    &orig.target_user.clone().unwrap_or_default(),
-                );
+                let (position, room) =
+                    self.resolve_position_and_room(&orig.target_user.clone().unwrap_or_default());
 
                 let model = bill_merged::ActiveModel {
                     identity_id: Set(identity_id),
@@ -296,7 +295,10 @@ impl BillStoreImpl {
     pub async fn backfill_merged_metadata(&self, identity_id: i64) -> AppResult<usize> {
         use sea_orm::{ActiveModelTrait, IntoActiveModel};
 
-        tracing::info!("[Store] backfill_merged_metadata: identity_id={}", identity_id);
+        tracing::info!(
+            "[Store] backfill_merged_metadata: identity_id={}",
+            identity_id
+        );
 
         let candidates = bill_merged::Entity::find()
             .filter(bill_merged::Column::IdentityId.eq(identity_id))
@@ -321,15 +323,20 @@ impl BillStoreImpl {
         let mut updated = 0usize;
 
         for model in candidates {
-            let normalized_item_type =
-                model.item_type.as_deref().map(normalize_item_type).filter(|s| !s.is_empty());
+            let normalized_item_type = model
+                .item_type
+                .as_deref()
+                .map(normalize_item_type)
+                .filter(|s| !s.is_empty());
             let normalized_number = normalize_number(
                 model.number.as_deref(),
                 model.item_type.as_deref(),
                 model.number_list.as_deref(),
             );
-            let normalized_number_list =
-                normalize_number_list_json(model.number_list.as_deref(), normalized_number.as_deref());
+            let normalized_number_list = normalize_number_list_json(
+                model.number_list.as_deref(),
+                normalized_number.as_deref(),
+            );
             let normalized_target_user = model
                 .target_user
                 .as_deref()
@@ -340,13 +347,12 @@ impl BillStoreImpl {
                 .as_deref()
                 .map(|target_user| self.resolve_position_and_room(target_user));
 
-            let needs_update =
-                normalized_item_type != model.item_type
-                    || normalized_number != model.number
-                    || normalized_number_list != model.number_list
-                    || normalized_target_user != model.target_user
-                    || normalized_position_room.as_ref().map(|(p, _)| p) != model.position.as_ref()
-                    || normalized_position_room.as_ref().map(|(_, r)| r) != model.room.as_ref();
+            let needs_update = normalized_item_type != model.item_type
+                || normalized_number != model.number
+                || normalized_number_list != model.number_list
+                || normalized_target_user != model.target_user
+                || normalized_position_room.as_ref().map(|(p, _)| p) != model.position.as_ref()
+                || normalized_position_room.as_ref().map(|(_, r)| r) != model.room.as_ref();
 
             if !needs_update {
                 continue;
@@ -387,7 +393,10 @@ impl BillStoreImpl {
     pub async fn backfill_original_metadata(&self, account_id: &str) -> AppResult<usize> {
         use sea_orm::{ActiveModelTrait, IntoActiveModel};
 
-        tracing::info!("[Store] backfill_original_metadata: account_id={}", account_id);
+        tracing::info!(
+            "[Store] backfill_original_metadata: account_id={}",
+            account_id
+        );
 
         let candidates = bill_original::Entity::find()
             .filter(bill_original::Column::AccountId.eq(account_id))
@@ -408,15 +417,20 @@ impl BillStoreImpl {
         let mut updated = 0usize;
 
         for model in candidates {
-            let normalized_item_type =
-                model.item_type.as_deref().map(normalize_item_type).filter(|s| !s.is_empty());
+            let normalized_item_type = model
+                .item_type
+                .as_deref()
+                .map(normalize_item_type)
+                .filter(|s| !s.is_empty());
             let normalized_number = normalize_number(
                 model.number.as_deref(),
                 model.item_type.as_deref(),
                 model.number_list.as_deref(),
             );
-            let normalized_number_list =
-                normalize_number_list_json(model.number_list.as_deref(), normalized_number.as_deref());
+            let normalized_number_list = normalize_number_list_json(
+                model.number_list.as_deref(),
+                normalized_number.as_deref(),
+            );
 
             let needs_update = normalized_item_type != model.item_type
                 || normalized_number != model.number
@@ -454,7 +468,10 @@ impl BillStoreImpl {
     /// 按交易号（纯数字）分组，每组保留 `merged_keep_rank` 最高的记录，
     /// 其余全部删除。返回被删除的记录数。
     pub async fn dedupe_merged_by_identity(&self, identity_id: i64) -> AppResult<usize> {
-        tracing::info!("[Store] dedupe_merged_by_identity: identity_id={}", identity_id);
+        tracing::info!(
+            "[Store] dedupe_merged_by_identity: identity_id={}",
+            identity_id
+        );
 
         let models = bill_merged::Entity::find()
             .filter(bill_merged::Column::IdentityId.eq(identity_id))
@@ -464,7 +481,12 @@ impl BillStoreImpl {
 
         let mut grouped: HashMap<String, Vec<bill_merged::Model>> = HashMap::new();
         for model in models {
-            let Some(number) = model.number.as_deref().map(digits_only).filter(|n| !n.is_empty()) else {
+            let Some(number) = model
+                .number
+                .as_deref()
+                .map(digits_only)
+                .filter(|n| !n.is_empty())
+            else {
                 continue;
             };
             grouped.entry(number).or_default().push(model);
@@ -512,7 +534,10 @@ impl BillStoreImpl {
     /// 逻辑与 `dedupe_merged_by_identity` 相同，但操作原始账单表，
     /// 使用 `original_keep_rank` 作为保留优先级。
     pub async fn dedupe_original_by_account(&self, account_id: &str) -> AppResult<usize> {
-        tracing::info!("[Store] dedupe_original_by_account: account_id={}", account_id);
+        tracing::info!(
+            "[Store] dedupe_original_by_account: account_id={}",
+            account_id
+        );
 
         let models = bill_original::Entity::find()
             .filter(bill_original::Column::AccountId.eq(account_id))
@@ -522,7 +547,12 @@ impl BillStoreImpl {
 
         let mut grouped: HashMap<String, Vec<bill_original::Model>> = HashMap::new();
         for model in models {
-            let Some(number) = model.number.as_deref().map(digits_only).filter(|n| !n.is_empty()) else {
+            let Some(number) = model
+                .number
+                .as_deref()
+                .map(digits_only)
+                .filter(|n| !n.is_empty())
+            else {
                 continue;
             };
             grouped.entry(number).or_default().push(model);
@@ -590,7 +620,10 @@ impl BillStoreImpl {
             self.append_to_merged(bill, &now).await?;
         }
 
-        tracing::info!("[Store] flush_pending_bills: {} bills flushed", pending_bills.len());
+        tracing::info!(
+            "[Store] flush_pending_bills: {} bills flushed",
+            pending_bills.len()
+        );
         Ok(())
     }
 
@@ -619,10 +652,7 @@ impl BillStoreImpl {
         let total_pages = total.div_ceil(page_size);
 
         let models = paginator.fetch_page(page as u64).await?;
-        let bills: Vec<BillOriginal> = models
-            .into_iter()
-            .map(bill_original_model_to_app)
-            .collect();
+        let bills: Vec<BillOriginal> = models.into_iter().map(bill_original_model_to_app).collect();
 
         tracing::debug!(
             "[Store] list_original_bills: returned {} bills, total_pages={}",
@@ -662,10 +692,7 @@ impl BillStoreImpl {
         };
 
         let models = paginator.fetch_page(page as u64).await?;
-        let bills: Vec<BillMerged> = models
-            .into_iter()
-            .map(bill_merged_model_to_app)
-            .collect();
+        let bills: Vec<BillMerged> = models.into_iter().map(bill_merged_model_to_app).collect();
 
         tracing::debug!(
             "[Store] list_merged_bills: returned {} bills, total_pages={}",
@@ -744,7 +771,9 @@ impl BillStoreImpl {
         tracing::debug!(
             "[Store] update_bill_notes: bill_id={}, notes={:?}",
             bill_id,
-            notes.as_deref().map(|n| if n.len() > 20 { &n[..20] } else { n })
+            notes
+                .as_deref()
+                .map(|n| if n.len() > 20 { &n[..20] } else { n })
         );
 
         use sea_orm::{ActiveModelTrait, IntoActiveModel};
@@ -772,13 +801,8 @@ impl BillStoreImpl {
             .await?;
 
         if let Some(nl) = number_list {
-            self.log_operation(
-                "delete",
-                &nl,
-                &format!("手动删除账单 ID={}", bill_id),
-                None,
-            )
-            .await?;
+            self.log_operation("delete", &nl, &format!("手动删除账单 ID={}", bill_id), None)
+                .await?;
         }
 
         Ok(())
@@ -880,7 +904,11 @@ impl shmtu_cas::sync::BillStore for BillStoreImpl {
         for bill in new_bills {
             let numbers = candidate_bill_numbers(&bill);
             // 任意一个交易号命中已知集合，即视为重复
-            if !numbers.is_empty() && numbers.iter().any(|number| self.known_numbers.contains(number)) {
+            if !numbers.is_empty()
+                && numbers
+                    .iter()
+                    .any(|number| self.known_numbers.contains(number))
+            {
                 duplicate_count += 1;
                 continue;
             }
@@ -954,7 +982,10 @@ fn normalize_number(
 /// 先解析现有 JSON 数组中的数字（去除非数字字符），
 /// 再将 `number` 参数（来自 `normalize_number` 的结果）追加到列表末尾（若不存在）。
 /// 返回去重后的 JSON 数组字符串。
-fn normalize_number_list_json(raw_number_list: Option<&str>, number: Option<&str>) -> Option<String> {
+fn normalize_number_list_json(
+    raw_number_list: Option<&str>,
+    number: Option<&str>,
+) -> Option<String> {
     let mut numbers = Vec::new();
 
     if let Some(raw_number_list) = raw_number_list {
@@ -1118,7 +1149,13 @@ fn merged_keep_rank(model: &bill_merged::Model) -> (i32, i32, i64) {
         + option_filled_score(&model.item_type)
         + option_filled_score(&model.synced_at)
         + option_filled_score(&model.source_account_id);
-    let note_bonus = if model.notes.as_deref().map(str::trim).filter(|v| !v.is_empty()).is_some() {
+    let note_bonus = if model
+        .notes
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .is_some()
+    {
         1
     } else {
         0
@@ -1142,7 +1179,12 @@ fn original_keep_rank(model: &bill_original::Model) -> (i32, i64) {
 ///
 /// 有内容返回 1，无内容返回 0。用于计算记录的完整度得分。
 fn option_filled_score(value: &Option<String>) -> i32 {
-    if value.as_deref().map(str::trim).filter(|v| !v.is_empty()).is_some() {
+    if value
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .is_some()
+    {
         1
     } else {
         0

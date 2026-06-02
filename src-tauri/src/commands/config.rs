@@ -19,9 +19,7 @@ pub async fn check_session_expiration(
 }
 
 #[tauri::command]
-pub async fn restart_session_expiration_service(
-    state: State<'_, AppState>,
-) -> Result<(), String> {
+pub async fn restart_session_expiration_service(state: State<'_, AppState>) -> Result<(), String> {
     state.session_expiration_service.restart().await;
     Ok(())
 }

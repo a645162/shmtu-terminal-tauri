@@ -5,7 +5,7 @@ use shmtu_ocr::backend::CasOnnxBackend;
 use tauri::State;
 
 use crate::config::CaptchaMode;
-use crate::state::AppState;
+use crate::state::{AppState, CaptchaTestSession};
 
 /// 验证码测试结果（前端展示用）
 #[derive(Debug, Clone, Serialize)]
@@ -16,7 +16,131 @@ pub struct CaptchaTestResultFrontend {
     pub answer: String,
     pub duration_ms: u64,
     pub mode: String,
+    pub verification: Option<String>,
     pub error: Option<String>,
+    pub captcha_image: Option<String>,
+}
+
+const CAPTCHA_TEST_PROBE_USERNAME: &str = "__captcha_test_invalid_user__";
+const CAPTCHA_TEST_PROBE_PASSWORD: &str = "__captcha_test_invalid_password__";
+
+async fn verify_captcha_answer(
+    epay: &shmtu_cas::cas::epay::EpayAuth,
+    execution: &str,
+    answer: &str,
+) -> Result<(bool, Option<String>, Option<String>), String> {
+    use shmtu_cas::cas::epay::LoginSubmitResult;
+
+    match epay
+        .submit_login(
+            CAPTCHA_TEST_PROBE_USERNAME,
+            CAPTCHA_TEST_PROBE_PASSWORD,
+            answer,
+            execution,
+        )
+        .await
+        .map_err(|e| format!("提交验证码校验失败: {}", e))?
+    {
+        LoginSubmitResult::PasswordError => {
+            Ok((true, Some("密码错误，说明验证码正确".to_string()), None))
+        }
+        LoginSubmitResult::ValidateCodeError => Ok((
+            false,
+            Some("验证码错误".to_string()),
+            Some("验证码错误".to_string()),
+        )),
+        LoginSubmitResult::Success => Ok((true, Some("登录成功，验证码正确".to_string()), None)),
+        LoginSubmitResult::Failure(msg) => Ok((
+            false,
+            Some(format!("登录返回异常: {}", msg)),
+            Some(format!("登录探测失败: {}", msg)),
+        )),
+    }
+}
+
+async fn do_manual_test_captcha(
+    state: &AppState,
+    answer: &str,
+    duration_ms: u64,
+) -> Result<CaptchaTestResultFrontend, String> {
+    use shmtu_cas::cas::epay::LoginSubmitResult;
+
+    let mut session_guard = state.captcha_test_session.lock().await;
+    let pending = session_guard
+        .as_mut()
+        .ok_or_else(|| "请先刷新验证码，再输入当前图片中的答案".to_string())?;
+
+    match pending
+        .epay
+        .submit_login(
+            CAPTCHA_TEST_PROBE_USERNAME,
+            CAPTCHA_TEST_PROBE_PASSWORD,
+            answer,
+            &pending.execution,
+        )
+        .await
+        .map_err(|e| format!("提交验证码校验失败: {}", e))?
+    {
+        LoginSubmitResult::PasswordError => {
+            *session_guard = None;
+            Ok(CaptchaTestResultFrontend {
+                id: 1,
+                success: true,
+                expression: String::new(),
+                answer: answer.to_string(),
+                duration_ms,
+                mode: "manual".to_string(),
+                verification: Some("密码错误，说明验证码正确".to_string()),
+                error: None,
+                captcha_image: None,
+            })
+        }
+        LoginSubmitResult::ValidateCodeError => {
+            let challenge = pending
+                .epay
+                .prepare_challenge()
+                .await
+                .map_err(|e| format!("刷新验证码失败: {}", e))?;
+            let image = BASE64.encode(&challenge.captcha_image);
+            pending.execution = challenge.execution;
+            Ok(CaptchaTestResultFrontend {
+                id: 1,
+                success: false,
+                expression: String::new(),
+                answer: answer.to_string(),
+                duration_ms,
+                mode: "manual".to_string(),
+                verification: Some("验证码错误".to_string()),
+                error: Some("验证码错误".to_string()),
+                captcha_image: Some(image),
+            })
+        }
+        LoginSubmitResult::Success => {
+            *session_guard = None;
+            Ok(CaptchaTestResultFrontend {
+                id: 1,
+                success: true,
+                expression: String::new(),
+                answer: answer.to_string(),
+                duration_ms,
+                mode: "manual".to_string(),
+                verification: Some("登录成功，验证码正确".to_string()),
+                error: None,
+                captcha_image: None,
+            })
+        }
+        LoginSubmitResult::Failure(msg) => Ok(CaptchaTestResultFrontend {
+            id: 1,
+            success: false,
+            expression: String::new(),
+            answer: answer.to_string(),
+            duration_ms,
+            mode: "manual".to_string(),
+            verification: Some(format!("登录返回异常: {}", msg)),
+            error: Some(format!("登录探测失败: {}", msg)),
+            captcha_image: None,
+        }),
+    }
 }
 
 /// 获取验证码图片（base64 编码）。
@@ -79,7 +203,9 @@ pub struct CaptchaChallengeResponse {
 /// 与 `get_captcha_image` 类似，但额外返回 CAS 登录所需的 execution 字段，
 /// 供前端在自动登录流程中使用。
 #[tauri::command]
-pub async fn get_captcha_with_execution() -> Result<CaptchaChallengeResponse, String> {
+pub async fn get_captcha_with_execution(
+    state: State<'_, AppState>,
+) -> Result<CaptchaChallengeResponse, String> {
     tracing::debug!("[Captcha] get_captcha_with_execution called");
 
     use shmtu_cas::cas::epay::EpayAuth;
@@ -102,9 +228,15 @@ pub async fn get_captcha_with_execution() -> Result<CaptchaChallengeResponse, St
                 Ok(challenge) => {
                     let base64_image = BASE64.encode(&challenge.captcha_image);
                     tracing::info!("[Captcha] get_captcha_with_execution success");
+                    let execution = challenge.execution;
+                    let mut session = state.captcha_test_session.lock().await;
+                    *session = Some(CaptchaTestSession {
+                        epay,
+                        execution: execution.clone(),
+                    });
                     Ok(CaptchaChallengeResponse {
                         captcha_image: base64_image,
-                        execution: challenge.execution,
+                        execution,
                     })
                 }
                 Err(e) => {
@@ -135,6 +267,7 @@ pub async fn get_captcha_with_execution() -> Result<CaptchaChallengeResponse, St
 async fn do_test_captcha(
     state: Option<&AppState>,
     mode: &str,
+    manual_input: Option<&str>,
 ) -> Result<CaptchaTestResultFrontend, String> {
     tracing::debug!("[Captcha] do_test_captcha called, mode={}", mode);
 
@@ -151,34 +284,38 @@ async fn do_test_captcha(
 
     let start = std::time::Instant::now();
 
+    if matches!(captcha_mode, CaptchaMode::Manual) {
+        let answer = manual_input
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| "手动模式请输入验证码".to_string())?;
+        let state_ref = state.ok_or_else(|| "手动模式需要应用状态".to_string())?;
+        return do_manual_test_captcha(state_ref, answer, start.elapsed().as_millis() as u64).await;
+    }
+
     use shmtu_cas::cas::epay::EpayAuth;
     let mut epay = EpayAuth::new().map_err(|e| {
         tracing::error!("[Captcha] do_test_captcha: EpayAuth::new() failed: {}", e);
         format!("创建EpayAuth失败: {}", e)
     })?;
 
-    let _ = epay.probe_login().await.map_err(|e| {
+    match epay.probe_login().await.map_err(|e| {
         tracing::error!("[Captcha] do_test_captcha: probe_login failed: {}", e);
         format!("探测登录状态失败: {}", e)
-    })?;
+    })? {
+        shmtu_cas::cas::epay::LoginProbe::AlreadyLoggedIn => {
+            return Err("当前已登录，无需验证码测试；请先清理会话后再试".to_string());
+        }
+        shmtu_cas::cas::epay::LoginProbe::NeedLogin { .. } => {}
+    }
 
     let challenge = epay.prepare_challenge().await.map_err(|e| {
         tracing::error!("[Captcha] do_test_captcha: prepare_challenge failed: {}", e);
         format!("获取验证码失败: {}", e)
     })?;
 
-    let duration_ms = start.elapsed().as_millis() as u64;
-
-    let (expression, answer, success, error) = match captcha_mode {
-        CaptchaMode::Manual => {
-            tracing::info!("[Captcha] do_test_captcha: manual mode, no recognition");
-            (
-                String::new(),
-                String::new(),
-                false,
-                Some("手动模式需要用户输入".to_string()),
-            )
-        }
+    let recognition = match captcha_mode {
+        CaptchaMode::Manual => unreachable!("manual mode handled above"),
         CaptchaMode::RemoteOcr => {
             let (host, port, retry_count) = if let Some(state) = state {
                 let config = state.config.read().await;
@@ -194,12 +331,7 @@ async fn do_test_captcha(
 
             if host.is_empty() || port == 0 {
                 tracing::error!("[Captcha] do_test_captcha: remote OCR (TCP) not configured");
-                (
-                    String::new(),
-                    String::new(),
-                    false,
-                    Some("未配置远程OCR服务器地址".to_string()),
-                )
+                Err("未配置远程OCR服务器地址".to_string())
             } else {
                 tracing::info!(
                     "[Captcha] do_test_captcha: using remote OCR (TCP) {}:{}",
@@ -212,17 +344,15 @@ async fn do_test_captcha(
                     Ok(result) => {
                         let expr = result.value.clone();
                         let ans = result.into_final_answer();
-                        tracing::info!("[Captcha] do_test_captcha: OCR (TCP) success, answer={}", ans);
-                        (expr, ans, true, None)
+                        tracing::info!(
+                            "[Captcha] do_test_captcha: OCR (TCP) success, answer={}",
+                            ans
+                        );
+                        Ok((expr, ans))
                     }
                     Err(e) => {
                         tracing::error!("[Captcha] do_test_captcha: OCR (TCP) failed: {}", e);
-                        (
-                            String::new(),
-                            String::new(),
-                            false,
-                            Some(format!("远程OCR识别失败: {}", e)),
-                        )
+                        Err(format!("远程OCR识别失败: {}", e))
                     }
                 }
             }
@@ -241,12 +371,7 @@ async fn do_test_captcha(
 
             if http_url.is_empty() {
                 tracing::error!("[Captcha] do_test_captcha: RESTful OCR URL not configured");
-                (
-                    String::new(),
-                    String::new(),
-                    false,
-                    Some("未配置RESTful OCR服务器地址".to_string()),
-                )
+                Err("未配置RESTful OCR服务器地址".to_string())
             } else {
                 tracing::info!(
                     "[Captcha] do_test_captcha: using remote OCR (RESTful) {}",
@@ -258,17 +383,15 @@ async fn do_test_captcha(
                     Ok(result) => {
                         let expr = result.value.clone();
                         let ans = result.into_final_answer();
-                        tracing::info!("[Captcha] do_test_captcha: OCR (RESTful) success, answer={}", ans);
-                        (expr, ans, true, None)
+                        tracing::info!(
+                            "[Captcha] do_test_captcha: OCR (RESTful) success, answer={}",
+                            ans
+                        );
+                        Ok((expr, ans))
                     }
                     Err(e) => {
                         tracing::error!("[Captcha] do_test_captcha: OCR (RESTful) failed: {}", e);
-                        (
-                            String::new(),
-                            String::new(),
-                            false,
-                            Some(format!("RESTful OCR识别失败: {}", e)),
-                        )
+                        Err(format!("RESTful OCR识别失败: {}", e))
                     }
                 }
             }
@@ -279,7 +402,9 @@ async fn do_test_captcha(
 
             // 检查是否已初始化，未初始化则尝试加载模型
             let needs_load = {
-                let guard = local_ocr.lock().map_err(|e| format!("获取ONNX锁失败: {}", e))?;
+                let guard = local_ocr
+                    .lock()
+                    .map_err(|e| format!("获取ONNX锁失败: {}", e))?;
                 guard.is_none()
             };
             // guard 已释放，可以安全 await
@@ -290,16 +415,23 @@ async fn do_test_captcha(
                 let missing = CasOnnxBackend::missing_model_files(&model_path);
                 if !missing.is_empty() {
                     let missing_str = missing.join(", ");
-                    tracing::error!("[Captcha] do_test_captcha: ONNX模型文件不完整，缺少: {}", missing_str);
+                    tracing::error!(
+                        "[Captcha] do_test_captcha: ONNX模型文件不完整，缺少: {}",
+                        missing_str
+                    );
                     return Err(format!("ONNX模型文件不完整，缺少: {}", missing_str));
                 }
-                tracing::info!("[Captcha] do_test_captcha: loading ONNX models from {:?}", model_path);
-                let backend = CasOnnxBackend::load(&model_path)
-                    .map_err(|e| {
-                        tracing::error!("[Captcha] do_test_captcha: 加载ONNX模型失败: {}", e);
-                        format!("加载ONNX模型失败: {}", e)
-                    })?;
-                let mut guard = local_ocr.lock().map_err(|e| format!("获取ONNX锁失败: {}", e))?;
+                tracing::info!(
+                    "[Captcha] do_test_captcha: loading ONNX models from {:?}",
+                    model_path
+                );
+                let backend = CasOnnxBackend::load(&model_path).map_err(|e| {
+                    tracing::error!("[Captcha] do_test_captcha: 加载ONNX模型失败: {}", e);
+                    format!("加载ONNX模型失败: {}", e)
+                })?;
+                let mut guard = local_ocr
+                    .lock()
+                    .map_err(|e| format!("获取ONNX锁失败: {}", e))?;
                 *guard = Some(backend);
                 tracing::info!("[Captcha] do_test_captcha: ONNX models loaded successfully");
             }
@@ -307,7 +439,9 @@ async fn do_test_captcha(
             // 使用 ONNX 推理（CPU 密集操作，spawn_blocking）
             let image_data = challenge.captcha_image.clone();
             let result = tokio::task::spawn_blocking(move || -> Result<String, String> {
-                let mut guard = local_ocr.lock().map_err(|e| format!("获取ONNX锁失败: {}", e))?;
+                let mut guard = local_ocr
+                    .lock()
+                    .map_err(|e| format!("获取ONNX锁失败: {}", e))?;
                 let backend = guard
                     .as_mut()
                     .ok_or_else(|| "ONNX后端未初始化".to_string())?;
@@ -322,21 +456,31 @@ async fn do_test_captcha(
             match result {
                 Ok(expr) => {
                     let ans = shmtu_cas::captcha::get_expr_result(&expr);
-                    tracing::info!("[Captcha] do_test_captcha: Local ONNX success, expr={}, answer={}", expr, ans);
-                    (expr, ans, true, None)
+                    tracing::info!(
+                        "[Captcha] do_test_captcha: Local ONNX success, expr={}, answer={}",
+                        expr,
+                        ans
+                    );
+                    Ok((expr, ans))
                 }
                 Err(e) => {
                     tracing::error!("[Captcha] do_test_captcha: Local ONNX failed: {}", e);
-                    (
-                        String::new(),
-                        String::new(),
-                        false,
-                        Some(format!("本地ONNX识别失败: {}", e)),
-                    )
+                    Err(format!("本地ONNX识别失败: {}", e))
                 }
             }
         }
     };
+
+    let (expression, answer, success, verification, error) = match recognition {
+        Ok((expression, answer)) => {
+            let (success, verification, error) =
+                verify_captcha_answer(&epay, &challenge.execution, &answer).await?;
+            (expression, answer, success, verification, error)
+        }
+        Err(error) => (String::new(), String::new(), false, None, Some(error)),
+    };
+
+    let duration_ms = start.elapsed().as_millis() as u64;
 
     Ok(CaptchaTestResultFrontend {
         id: 1,
@@ -345,7 +489,9 @@ async fn do_test_captcha(
         answer,
         duration_ms,
         mode: mode.to_string(),
+        verification,
         error,
+        captcha_image: None,
     })
 }
 
@@ -356,9 +502,10 @@ async fn do_test_captcha(
 pub async fn test_captcha(
     state: State<'_, AppState>,
     mode: String,
+    manual_input: Option<String>,
 ) -> Result<CaptchaTestResultFrontend, String> {
     tracing::info!("[Captcha] test_captcha called, mode={}", mode);
-    match do_test_captcha(Some(&state), &mode).await {
+    match do_test_captcha(Some(&state), &mode, manual_input.as_deref()).await {
         Ok(result) => {
             tracing::info!("[Captcha] test_captcha success");
             Ok(result)
@@ -386,8 +533,11 @@ pub async fn batch_test_captcha(
     );
     let state_ref = &*state;
     let mut results = Vec::new();
+    if mode == "manual" {
+        return Err("手动模式不支持批量测试，请使用单次测试".to_string());
+    }
     for i in 0..count {
-        match do_test_captcha(Some(state_ref), &mode).await {
+        match do_test_captcha(Some(state_ref), &mode, None).await {
             Ok(mut result) => {
                 result.id = i + 1;
                 results.push(result);
@@ -418,7 +568,9 @@ pub async fn init_local_ocr(state: State<'_, AppState>) -> Result<(), String> {
 
     let local_ocr = state.local_ocr.clone();
     {
-        let guard = local_ocr.lock().map_err(|e| format!("获取ONNX锁失败: {}", e))?;
+        let guard = local_ocr
+            .lock()
+            .map_err(|e| format!("获取ONNX锁失败: {}", e))?;
         if guard.is_some() {
             tracing::info!("[Captcha] init_local_ocr: already initialized, skipping");
             return Ok(());
@@ -430,18 +582,26 @@ pub async fn init_local_ocr(state: State<'_, AppState>) -> Result<(), String> {
     let missing = CasOnnxBackend::missing_model_files(&model_path);
     if !missing.is_empty() {
         let missing_str = missing.join(", ");
-        tracing::error!("[Captcha] init_local_ocr: 模型文件不完整，缺少: {}", missing_str);
+        tracing::error!(
+            "[Captcha] init_local_ocr: 模型文件不完整，缺少: {}",
+            missing_str
+        );
         return Err(format!("模型文件不完整，缺少: {}", missing_str));
     }
 
-    tracing::info!("[Captcha] init_local_ocr: loading models from {:?}", model_path);
+    tracing::info!(
+        "[Captcha] init_local_ocr: loading models from {:?}",
+        model_path
+    );
     let backend = tokio::task::spawn_blocking(move || {
         CasOnnxBackend::load(&model_path).map_err(|e| format!("加载ONNX模型失败: {}", e))
     })
     .await
     .map_err(|e| format!("ONNX加载任务执行失败: {}", e))??;
 
-    let mut guard = local_ocr.lock().map_err(|e| format!("获取ONNX锁失败: {}", e))?;
+    let mut guard = local_ocr
+        .lock()
+        .map_err(|e| format!("获取ONNX锁失败: {}", e))?;
     *guard = Some(backend);
     tracing::info!("[Captcha] init_local_ocr: ONNX models loaded successfully");
     Ok(())
@@ -453,7 +613,9 @@ pub async fn unload_local_ocr(state: State<'_, AppState>) -> Result<(), String> 
     tracing::info!("[Captcha] unload_local_ocr called");
 
     let local_ocr = state.local_ocr.clone();
-    let mut guard = local_ocr.lock().map_err(|e| format!("获取ONNX锁失败: {}", e))?;
+    let mut guard = local_ocr
+        .lock()
+        .map_err(|e| format!("获取ONNX锁失败: {}", e))?;
     if guard.is_some() {
         *guard = None;
         tracing::info!("[Captcha] unload_local_ocr: ONNX models unloaded");
