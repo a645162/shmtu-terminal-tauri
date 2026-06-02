@@ -98,6 +98,9 @@ export const SettingsDialog: React.FC = () => {
   const [earlyStop, setEarlyStop] = useState(config?.sync.early_stop_threshold ?? 5);
   const [skipGraduatedAccounts, setSkipGraduatedAccounts] = useState(config?.sync.skip_graduated_accounts ?? true);
   const [autoMerge, setAutoMerge] = useState(config?.sync.auto_merge_after_sync ?? true);
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState(config?.sync.auto_sync_enabled ?? false);
+  const [autoSyncIntervalMinutes, setAutoSyncIntervalMinutes] = useState(config?.sync.auto_sync_interval_minutes ?? 60);
+  const [autoSyncRange, setAutoSyncRange] = useState<tauri.SyncRangePreset>(config?.sync.auto_sync_range ?? 'month');
 
   // Data settings
   const [dataDir, setDataDir] = useState(config?.data.data_directory || 'Data');
@@ -134,6 +137,9 @@ export const SettingsDialog: React.FC = () => {
     setEarlyStop(config.sync.early_stop_threshold ?? 5);
     setSkipGraduatedAccounts(config.sync.skip_graduated_accounts ?? true);
     setAutoMerge(config.sync.auto_merge_after_sync ?? true);
+    setAutoSyncEnabled(config.sync.auto_sync_enabled ?? false);
+    setAutoSyncIntervalMinutes(config.sync.auto_sync_interval_minutes ?? 60);
+    setAutoSyncRange(config.sync.auto_sync_range ?? 'month');
     setDataDir(config.data.data_directory || 'Data');
     setSnapshotKeep(config.data.snapshot_keep_count ?? 10);
     setRulesUpdateUrl(config.classification.rules_update_url ?? '');
@@ -184,6 +190,9 @@ export const SettingsDialog: React.FC = () => {
           early_stop_threshold: earlyStop,
           skip_graduated_accounts: skipGraduatedAccounts,
           auto_merge_after_sync: autoMerge,
+          auto_sync_enabled: autoSyncEnabled,
+          auto_sync_interval_minutes: autoSyncIntervalMinutes,
+          auto_sync_range: autoSyncRange,
         },
         data: {
           data_directory: dataDir,
@@ -450,6 +459,56 @@ export const SettingsDialog: React.FC = () => {
                 </Text>
               </div>
               <Switch checked={autoMerge} onChange={(_, data) => setAutoMerge(data.checked)} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <InfoLabel info="启用后，应用会在后台按设定周期对默认身份执行账单增量同步。手动验证码模式下会自动跳过。">
+                  启用定时账单同步
+                </InfoLabel>
+                <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                  仅对默认身份生效，建议配合自动识别验证码模式使用
+                </Text>
+              </div>
+              <Switch checked={autoSyncEnabled} onChange={(_, data) => setAutoSyncEnabled(data.checked)} />
+            </div>
+            <div>
+              <InfoLabel info="后台自动同步的时间间隔，单位分钟。">
+                定时同步间隔: {autoSyncIntervalMinutes} 分钟
+              </InfoLabel>
+              <Slider
+                min={5}
+                max={720}
+                step={5}
+                value={autoSyncIntervalMinutes}
+                onChange={(_, data) => setAutoSyncIntervalMinutes(data.value)}
+                disabled={!autoSyncEnabled}
+              />
+            </div>
+            <div>
+              <InfoLabel info="每次后台自动同步时使用的账单时间范围。">
+                定时同步范围
+              </InfoLabel>
+              <Dropdown
+                value={
+                  autoSyncRange === 'week' ? '最近一周'
+                    : autoSyncRange === 'half_month' ? '最近半个月'
+                    : autoSyncRange === 'month' ? '最近一个月'
+                    : autoSyncRange === 'half_year' ? '最近半年'
+                    : autoSyncRange === 'year' ? '最近一年'
+                    : '全部'
+                }
+                selectedOptions={[autoSyncRange]}
+                onOptionSelect={(_, data) => setAutoSyncRange(data.optionValue as tauri.SyncRangePreset)}
+                disabled={!autoSyncEnabled}
+                style={{ width: '100%' }}
+              >
+                <Option value="week">最近一周</Option>
+                <Option value="half_month">最近半个月</Option>
+                <Option value="month">最近一个月</Option>
+                <Option value="half_year">最近半年</Option>
+                <Option value="year">最近一年</Option>
+                <Option value="all">全部</Option>
+              </Dropdown>
             </div>
           </div>
         );

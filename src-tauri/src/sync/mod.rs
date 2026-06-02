@@ -69,6 +69,7 @@ pub struct BillSyncService {
     db_manager: DatabaseManager,
     crypto: CryptoService,
     pending_manual_sync: Mutex<Option<PendingManualSync>>,
+    sync_lock: Mutex<()>,
     translator: PositionTranslator,
 }
 
@@ -182,6 +183,7 @@ impl BillSyncService {
             db_manager,
             crypto,
             pending_manual_sync: Mutex::new(None),
+            sync_lock: Mutex::new(()),
             translator,
         }
     }
@@ -219,6 +221,7 @@ impl BillSyncService {
         sync_range: SyncRangePreset,
         progress_callback: Option<&SyncProgressCallback>,
     ) -> AppResult<IdentitySyncResult> {
+        let _sync_guard = self.sync_lock.lock().await;
         tracing::info!(
             "[Sync] sync_identity called, identity_id={}, sync_range={:?}",
             identity_id,
@@ -611,6 +614,7 @@ impl BillSyncService {
         execution: &str,
         progress_callback: Option<&SyncProgressCallback>,
     ) -> AppResult<IdentitySyncResult> {
+        let _sync_guard = self.sync_lock.lock().await;
         tracing::info!(
             "[Sync] sync_with_captcha, identity_id={}, captcha={}, execution_len={}",
             identity_id,
@@ -798,6 +802,7 @@ impl BillSyncService {
         sync_range: SyncRangePreset,
         progress_callback: Option<&SyncProgressCallback>,
     ) -> AppResult<IdentitySyncResult> {
+        let _sync_guard = self.sync_lock.lock().await;
         tracing::info!(
             "[Sync] full_sync_identity, identity_id={}, sync_range={:?}",
             identity_id,
@@ -851,6 +856,7 @@ impl BillSyncService {
         sync_range: SyncRangePreset,
         progress_callback: Option<&SyncProgressCallback>,
     ) -> AppResult<IdentitySyncResult> {
+        let _sync_guard = self.sync_lock.lock().await;
         tracing::info!(
             "[Sync] sync_single_account_by_id, identity_id={}, account_id={}, sync_range={:?}",
             identity_id,
@@ -872,6 +878,7 @@ impl BillSyncService {
         sync_range: SyncRangePreset,
         progress_callback: Option<&SyncProgressCallback>,
     ) -> AppResult<IdentitySyncResult> {
+        let _sync_guard = self.sync_lock.lock().await;
         tracing::info!(
             "[Sync] full_sync_single_account, identity_id={}, account_id={}, sync_range={:?}",
             identity_id,

@@ -42,6 +42,9 @@ export interface AppConfig {
     early_stop_threshold: number;
     skip_graduated_accounts: boolean;
     auto_merge_after_sync: boolean;
+    auto_sync_enabled: boolean;
+    auto_sync_interval_minutes: number;
+    auto_sync_range: SyncRangePreset;
   };
   data: {
     data_directory: string;

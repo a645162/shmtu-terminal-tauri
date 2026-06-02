@@ -99,6 +99,12 @@ pub struct SyncConfig {
     pub skip_graduated_accounts: bool,
     #[serde(default = "default_true")]
     pub auto_merge_after_sync: bool,
+    #[serde(default)]
+    pub auto_sync_enabled: bool,
+    #[serde(default = "default_auto_sync_interval_minutes")]
+    pub auto_sync_interval_minutes: u64,
+    #[serde(default = "default_auto_sync_range")]
+    pub auto_sync_range: SyncRangePresetConfig,
 }
 
 fn default_max_pages() -> u32 {
@@ -109,6 +115,29 @@ fn default_early_stop_threshold() -> u32 {
 }
 fn default_true() -> bool {
     true
+}
+fn default_auto_sync_interval_minutes() -> u64 {
+    60
+}
+fn default_auto_sync_range() -> SyncRangePresetConfig {
+    SyncRangePresetConfig::Month
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SyncRangePresetConfig {
+    Week,
+    HalfMonth,
+    Month,
+    HalfYear,
+    Year,
+    All,
+}
+
+impl Default for SyncRangePresetConfig {
+    fn default() -> Self {
+        Self::Month
+    }
 }
 
 /// 数据目录配置

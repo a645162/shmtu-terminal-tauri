@@ -310,7 +310,7 @@ impl SessionExpirationService {
 }
 
 /// 简单的随机数生成器
-fn rand_simple() -> u64 {
+pub(crate) fn rand_simple() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

@@ -41,6 +41,7 @@ pub async fn save_config(state: State<'_, AppState>, config: AppConfig) -> Resul
 
     // 重启 session 过期检查服务（配置可能已变更）
     state.session_expiration_service.restart().await;
+    state.auto_sync_service.restart().await;
     Ok(())
 }
 

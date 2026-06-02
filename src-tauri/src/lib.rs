@@ -1,3 +1,4 @@
+pub mod auto_sync;
 pub mod classification;
 pub mod commands;
 pub mod config;

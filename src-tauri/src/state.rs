@@ -11,6 +11,7 @@ use crate::database::DatabaseFileManager;
 use crate::db::DatabaseManager;
 use crate::error::AppResult;
 use crate::export::ExportService;
+use crate::auto_sync::AutoSyncService;
 use crate::session_refresh::SessionExpirationService;
 use crate::sync::BillSyncService;
 
@@ -31,6 +32,8 @@ pub struct AppState {
     pub db_file_manager: Arc<DatabaseFileManager>,
     /// Session 过期检查服务
     pub session_expiration_service: Arc<SessionExpirationService>,
+    /// 账单自动同步服务
+    pub auto_sync_service: Arc<AutoSyncService>,
     /// 本地 ONNX 推理后端（CPU 密集同步操作，使用 std::sync::Mutex）
     pub local_ocr: Arc<std::sync::Mutex<Option<CasOnnxBackend>>>,
     /// 本地 ONNX 模型下载取消标记
@@ -71,6 +74,7 @@ impl AppState {
         );
 
         let export_service = ExportService::new(db_manager.clone_ref(), position_translator);
+        let sync_service_arc = Arc::new(RwLock::new(sync_service));
 
         // Session 过期检查服务 - 创建 Arc 包装
         let config_arc: Arc<RwLock<TomlConfig>> = Arc::new(RwLock::new(config));
@@ -80,10 +84,18 @@ impl AppState {
             db_manager_arc,
             Arc::new(CryptoService::from_device_id("shmtu-terminal-device-key")),
         ));
+        let auto_sync_service = Arc::new(AutoSyncService::new(
+            config_arc.clone(),
+            sync_service_arc.clone(),
+        ));
         // 异步启动 session 过期检查服务
         let expiration_service = session_expiration_service.clone();
         tokio::spawn(async move {
             expiration_service.start().await;
+        });
+        let auto_sync = auto_sync_service.clone();
+        tokio::spawn(async move {
+            auto_sync.start().await;
         });
 
         // 从本地文件加载分类器
@@ -110,11 +122,12 @@ impl AppState {
             db_manager: Arc::new(RwLock::new(db_manager)),
             crypto: Arc::new(RwLock::new(crypto)),
             config: config_arc,
-            sync_service: Arc::new(RwLock::new(sync_service)),
+            sync_service: sync_service_arc,
             export_service: Arc::new(RwLock::new(export_service)),
             classifier: Arc::new(RwLock::new(classifier)),
             db_file_manager: Arc::new(db_file_manager),
             session_expiration_service,
+            auto_sync_service,
             local_ocr: Arc::new(std::sync::Mutex::new(None)),
             local_ocr_download_cancel: Arc::new(AtomicBool::new(false)),
             local_ocr_download_active: Arc::new(AtomicBool::new(false)),
