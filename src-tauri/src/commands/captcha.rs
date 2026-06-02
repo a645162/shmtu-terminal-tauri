@@ -6,6 +6,7 @@ use shmtu_ocr::const_value;
 use std::path::Path;
 use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, State};
+use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
 
 use crate::config::CaptchaMode;
@@ -193,6 +194,40 @@ async fn do_manual_test_captcha(
     }
 }
 
+/// 计算文件的 SHA256 哈希值（异步，用于校验模型完整性）。
+async fn compute_file_sha256(path: &Path) -> Result<String, String> {
+    use tokio::io::AsyncReadExt;
+    let mut hasher = Sha256::new();
+    let mut file = tokio::fs::File::open(path)
+        .await
+        .map_err(|e| format!("打开文件失败: {}", e))?;
+    let mut buf = [0u8; 8192];
+    loop {
+        let n = file.read(&mut buf).await.map_err(|e| format!("读取文件失败: {}", e))?;
+        if n == 0 { break; }
+        hasher.update(&buf[..n]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+/// 解析 SHA256SUMS.txt 格式的校验文件。
+fn parse_checksum_file(text: &str) -> std::collections::HashMap<String, String> {
+    let mut map = std::collections::HashMap::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() { continue; }
+        let parts: Vec<&str> = line.splitn(2, "  ").collect();
+        if parts.len() == 2 {
+            let hash = parts[0].trim();
+            let name = parts[1].trim().trim_start_matches('*');
+            if hash.len() == 64 {
+                map.insert(name.to_string(), hash.to_string());
+            }
+        }
+    }
+    map
+}
+
 async fn ensure_local_ocr_model_files(
     app: &AppHandle,
     state: &AppState,
@@ -242,6 +277,27 @@ async fn ensure_local_ocr_model_files(
         ];
         let total_files = files.len() as u32;
         let client = reqwest::Client::new();
+
+        // 获取校验文件
+        let checksums = match client
+            .get(const_value::MODEL_ONNX_CHECKSUM_URL)
+            .send()
+            .await
+        {
+            Ok(resp) if resp.status().is_success() => {
+                let text = resp.text().await.unwrap_or_default();
+                parse_checksum_file(&text)
+            }
+            Ok(resp) => {
+                tracing::warn!("获取校验文件失败 (HTTP {})，跳过完整性验证", resp.status());
+                std::collections::HashMap::new()
+            }
+            Err(e) => {
+                tracing::warn!("获取校验文件失败 ({})，跳过完整性验证", e);
+                std::collections::HashMap::new()
+            }
+        };
+
         let mut completed_files = 0_u32;
 
         emit_local_ocr_download_progress(
@@ -268,115 +324,62 @@ async fn ensure_local_ocr_model_files(
 
             let dest_path = model_path.join(file_name);
             if dest_path.exists() {
-                completed_files += 1;
-                emit_local_ocr_download_progress(
-                    app,
-                    &LocalOcrModelDownloadProgress {
-                        phase: "downloading".to_string(),
-                        model_dir: model_path.display().to_string(),
-                        total_files,
-                        completed_files,
-                        current_file_index: Some(index as u32 + 1),
-                        current_file_name: Some((*file_name).to_string()),
-                        current_file_progress: 1.0,
-                        overall_progress: completed_files as f32 / total_files as f32,
-                        downloaded_bytes: None,
-                        total_bytes: None,
-                        message: format!("模型已存在，跳过 {}", file_name),
-                    },
-                );
-                continue;
-            }
-
-            let url = format!("{}/{}", const_value::MODEL_ONNX_BASE_URL, file_name);
-            let tmp_path = model_path.join(format!("{}.download", file_name));
-            if tmp_path.exists() {
-                let _ = tokio::fs::remove_file(&tmp_path).await;
-            }
-
-            emit_local_ocr_download_progress(
-                app,
-                &LocalOcrModelDownloadProgress {
-                    phase: "downloading".to_string(),
-                    model_dir: model_path.display().to_string(),
-                    total_files,
-                    completed_files,
-                    current_file_index: Some(index as u32 + 1),
-                    current_file_name: Some((*file_name).to_string()),
-                    current_file_progress: 0.0,
-                    overall_progress: completed_files as f32 / total_files as f32,
-                    downloaded_bytes: Some(0),
-                    total_bytes: None,
-                    message: format!("正在下载模型 {}/{}: {}", index + 1, total_files, file_name),
-                },
-            );
-
-            let mut response = client
-                .get(&url)
-                .send()
-                .await
-                .map_err(|e| format!("下载模型失败: {}", e))?
-                .error_for_status()
-                .map_err(|e| format!("模型接口返回异常状态: {}", e))?;
-            let total_bytes = response.content_length();
-            let mut output = tokio::fs::File::create(&tmp_path)
-                .await
-                .map_err(|e| format!("创建模型文件失败: {}", e))?;
-            let mut downloaded = 0_u64;
-
-            while let Some(chunk) = response
-                .chunk()
-                .await
-                .map_err(|e| format!("读取模型下载流失败: {}", e))?
-            {
-                if state.local_ocr_download_cancel.load(Ordering::SeqCst) {
-                    let _ = output.flush().await;
-                    drop(output);
-                    let _ = tokio::fs::remove_file(&tmp_path).await;
+                // 已存在的文件也校验完整性
+                let existing_ok = if let Some(expected) = checksums.get(*file_name) {
+                    match compute_file_sha256(&dest_path).await {
+                        Ok(actual) => actual == *expected,
+                        Err(_) => false,
+                    }
+                } else {
+                    true
+                };
+                if existing_ok {
+                    completed_files += 1;
                     emit_local_ocr_download_progress(
                         app,
                         &LocalOcrModelDownloadProgress {
-                            phase: "cancelled".to_string(),
+                            phase: "downloading".to_string(),
                             model_dir: model_path.display().to_string(),
                             total_files,
                             completed_files,
                             current_file_index: Some(index as u32 + 1),
                             current_file_name: Some((*file_name).to_string()),
-                            current_file_progress: if let Some(total) = total_bytes {
-                                if total > 0 {
-                                    downloaded as f32 / total as f32
-                                } else {
-                                    0.0
-                                }
-                            } else {
-                                0.0
-                            },
+                            current_file_progress: 1.0,
                             overall_progress: completed_files as f32 / total_files as f32,
-                            downloaded_bytes: Some(downloaded),
-                            total_bytes,
-                            message: format!("已取消下载，未完成文件已删除: {}", file_name),
+                            downloaded_bytes: None,
+                            total_bytes: None,
+                            message: format!("模型已存在，跳过 {}", file_name),
                         },
                     );
+                    continue;
+                }
+                // 校验失败，删除损坏文件后重新下载
+                tracing::warn!("{} 已存在但校验失败，删除后重新下载", file_name);
+                let _ = tokio::fs::remove_file(&dest_path).await;
+            }
+
+            let max_attempts = 3_u32;
+            let mut file_download_ok = false;
+
+            for attempt in 1..=max_attempts {
+                if state.local_ocr_download_cancel.load(Ordering::SeqCst) {
                     return Err("本地 OCR 模型下载已取消".to_string());
                 }
 
-                output
-                    .write_all(&chunk)
-                    .await
-                    .map_err(|e| format!("写入模型文件失败: {}", e))?;
-                downloaded += chunk.len() as u64;
+                let url = format!("{}/{}", const_value::MODEL_ONNX_BASE_URL, file_name);
+                let tmp_path = model_path.join(format!("{}.download", file_name));
+                if tmp_path.exists() {
+                    let _ = tokio::fs::remove_file(&tmp_path).await;
+                }
 
-                let current_file_progress = if let Some(total) = total_bytes {
-                    if total > 0 {
-                        downloaded as f32 / total as f32
-                    } else {
-                        0.0
-                    }
+                let attempt_msg = if attempt > 1 {
+                    format!(
+                        "校验失败，第 {}/{} 次重试下载 {}/{}: {}",
+                        attempt, max_attempts, index + 1, total_files, file_name
+                    )
                 } else {
-                    0.0
+                    format!("正在下载模型 {}/{}: {}", index + 1, total_files, file_name)
                 };
-                let overall_progress =
-                    (completed_files as f32 + current_file_progress) / total_files as f32;
 
                 emit_local_ocr_download_progress(
                     app,
@@ -387,28 +390,152 @@ async fn ensure_local_ocr_model_files(
                         completed_files,
                         current_file_index: Some(index as u32 + 1),
                         current_file_name: Some((*file_name).to_string()),
-                        current_file_progress,
-                        overall_progress,
-                        downloaded_bytes: Some(downloaded),
-                        total_bytes,
-                        message: format!(
-                            "正在下载模型 {}/{}: {}",
-                            index + 1,
-                            total_files,
-                            file_name
-                        ),
+                        current_file_progress: 0.0,
+                        overall_progress: completed_files as f32 / total_files as f32,
+                        downloaded_bytes: Some(0),
+                        total_bytes: None,
+                        message: attempt_msg,
                     },
                 );
+
+                let mut response = client
+                    .get(&url)
+                    .send()
+                    .await
+                    .map_err(|e| format!("下载模型失败: {}", e))?
+                    .error_for_status()
+                    .map_err(|e| format!("模型接口返回异常状态: {}", e))?;
+                let total_bytes = response.content_length();
+                let mut output = tokio::fs::File::create(&tmp_path)
+                    .await
+                    .map_err(|e| format!("创建模型文件失败: {}", e))?;
+                let mut downloaded = 0_u64;
+
+                while let Some(chunk) = response
+                    .chunk()
+                    .await
+                    .map_err(|e| format!("读取模型下载流失败: {}", e))?
+                {
+                    if state.local_ocr_download_cancel.load(Ordering::SeqCst) {
+                        let _ = output.flush().await;
+                        drop(output);
+                        let _ = tokio::fs::remove_file(&tmp_path).await;
+                        emit_local_ocr_download_progress(
+                            app,
+                            &LocalOcrModelDownloadProgress {
+                                phase: "cancelled".to_string(),
+                                model_dir: model_path.display().to_string(),
+                                total_files,
+                                completed_files,
+                                current_file_index: Some(index as u32 + 1),
+                                current_file_name: Some((*file_name).to_string()),
+                                current_file_progress: if let Some(total) = total_bytes {
+                                    if total > 0 {
+                                        downloaded as f32 / total as f32
+                                    } else {
+                                        0.0
+                                    }
+                                } else {
+                                    0.0
+                                },
+                                overall_progress: completed_files as f32 / total_files as f32,
+                                downloaded_bytes: Some(downloaded),
+                                total_bytes,
+                                message: format!("已取消下载，未完成文件已删除: {}", file_name),
+                            },
+                        );
+                        return Err("本地 OCR 模型下载已取消".to_string());
+                    }
+
+                    output
+                        .write_all(&chunk)
+                        .await
+                        .map_err(|e| format!("写入模型文件失败: {}", e))?;
+                    downloaded += chunk.len() as u64;
+
+                    let current_file_progress = if let Some(total) = total_bytes {
+                        if total > 0 {
+                            downloaded as f32 / total as f32
+                        } else {
+                            0.0
+                        }
+                    } else {
+                        0.0
+                    };
+                    let overall_progress =
+                        (completed_files as f32 + current_file_progress) / total_files as f32;
+
+                    emit_local_ocr_download_progress(
+                        app,
+                        &LocalOcrModelDownloadProgress {
+                            phase: "downloading".to_string(),
+                            model_dir: model_path.display().to_string(),
+                            total_files,
+                            completed_files,
+                            current_file_index: Some(index as u32 + 1),
+                            current_file_name: Some((*file_name).to_string()),
+                            current_file_progress,
+                            overall_progress,
+                            downloaded_bytes: Some(downloaded),
+                            total_bytes,
+                            message: format!(
+                                "正在下载模型 {}/{}: {}",
+                                index + 1,
+                                total_files,
+                                file_name
+                            ),
+                        },
+                    );
+                }
+
+                output
+                    .flush()
+                    .await
+                    .map_err(|e| format!("刷新模型文件失败: {}", e))?;
+                drop(output);
+                tokio::fs::rename(&tmp_path, &dest_path)
+                    .await
+                    .map_err(|e| format!("保存模型文件失败: {}", e))?;
+
+                // 校验 SHA256
+                if let Some(expected) = checksums.get(*file_name) {
+                    match compute_file_sha256(&dest_path).await {
+                        Ok(actual) if actual == *expected => {
+                            file_download_ok = true;
+                        }
+                        Ok(actual) => {
+                            tracing::warn!(
+                                "{} 校验失败 (期望: {}，实际: {})",
+                                file_name, expected, actual
+                            );
+                            let _ = tokio::fs::remove_file(&dest_path).await;
+                            if attempt == max_attempts {
+                                return Err(format!(
+                                    "{} 校验失败，已重试 {} 次仍不通过",
+                                    file_name, max_attempts
+                                ));
+                            }
+                            continue; // 重试
+                        }
+                        Err(e) => {
+                            tracing::warn!("{} 校验读取失败: {}", file_name, e);
+                            let _ = tokio::fs::remove_file(&dest_path).await;
+                            if attempt == max_attempts {
+                                return Err(e);
+                            }
+                            continue; // 重试
+                        }
+                    }
+                } else {
+                    file_download_ok = true;
+                }
+
+                break; // 下载成功
             }
 
-            output
-                .flush()
-                .await
-                .map_err(|e| format!("刷新模型文件失败: {}", e))?;
-            drop(output);
-            tokio::fs::rename(&tmp_path, &dest_path)
-                .await
-                .map_err(|e| format!("保存模型文件失败: {}", e))?;
+            if !file_download_ok {
+                return Err(format!("{} 下载失败", file_name));
+            }
 
             completed_files += 1;
             emit_local_ocr_download_progress(
@@ -422,8 +549,8 @@ async fn ensure_local_ocr_model_files(
                     current_file_name: Some((*file_name).to_string()),
                     current_file_progress: 1.0,
                     overall_progress: completed_files as f32 / total_files as f32,
-                    downloaded_bytes: total_bytes,
-                    total_bytes,
+                    downloaded_bytes: None,
+                    total_bytes: None,
                     message: format!("模型下载完成: {}", file_name),
                 },
             );
