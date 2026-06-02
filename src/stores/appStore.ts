@@ -7,6 +7,7 @@ import type {
   SyncProgress,
   SyncRangePreset,
   AppTheme,
+  AppSettingsTab,
   StatisticsSummary,
   DailyTrendItem,
   CategoryItem,
@@ -85,6 +86,7 @@ interface AppState {
   showIdentitySelectDialog: boolean;
   showIdentityManagerDialog: boolean;
   showSettingsDialog: boolean;
+  settingsDialogTab: AppSettingsTab;
   showAboutDialog: boolean;
   showCaptchaTestDialog: boolean;
   showDataTransferDialog: boolean;
@@ -122,6 +124,7 @@ interface AppState {
   setShowIdentitySelectDialog: (show: boolean) => void;
   setShowIdentityManagerDialog: (show: boolean) => void;
   setShowSettingsDialog: (show: boolean) => void;
+  openSettingsDialog: (tab?: AppSettingsTab) => void;
   setShowAboutDialog: (show: boolean) => void;
   setShowCaptchaTestDialog: (show: boolean) => void;
   setShowDataTransferDialog: (show: boolean) => void;
@@ -181,6 +184,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   showIdentitySelectDialog: false,
   showIdentityManagerDialog: false,
   showSettingsDialog: false,
+  settingsDialogTab: 'ui',
   showAboutDialog: false,
   showCaptchaTestDialog: false,
   showDataTransferDialog: false,
@@ -513,7 +517,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   setShowStartupDialog: (show) => set({ showStartupDialog: show }),
   setShowIdentitySelectDialog: (show) => set({ showIdentitySelectDialog: show }),
   setShowIdentityManagerDialog: (show) => set({ showIdentityManagerDialog: show }),
-  setShowSettingsDialog: (show) => set({ showSettingsDialog: show }),
+  setShowSettingsDialog: (show) =>
+    set((state) => ({
+      showSettingsDialog: show,
+      settingsDialogTab: show ? state.settingsDialogTab : 'ui',
+    })),
+  openSettingsDialog: (tab = 'ui') =>
+    set({
+      showSettingsDialog: true,
+      settingsDialogTab: tab,
+    }),
   setShowAboutDialog: (show) => set({ showAboutDialog: show }),
   setShowCaptchaTestDialog: (show) => set({ showCaptchaTestDialog: show }),
   setShowDataTransferDialog: (show) => set({ showDataTransferDialog: show }),

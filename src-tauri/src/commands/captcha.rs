@@ -625,6 +625,55 @@ pub async fn cancel_local_ocr_model_download(state: State<'_, AppState>) -> Resu
     Ok(())
 }
 
+#[tauri::command]
+pub async fn delete_local_ocr_models(state: State<'_, AppState>) -> Result<LocalOcrModelStatus, String> {
+    tracing::info!("[Captcha] delete_local_ocr_models called");
+
+    let _download_guard = state.local_ocr_download_lock.lock().await;
+    state
+        .local_ocr_download_cancel
+        .store(true, Ordering::SeqCst);
+    state
+        .local_ocr_download_active
+        .store(false, Ordering::SeqCst);
+
+    {
+        let mut guard = state
+            .local_ocr
+            .lock()
+            .map_err(|e| format!("获取ONNX锁失败: {}", e))?;
+        *guard = None;
+    }
+
+    let config = state.config.read().await;
+    let model_path = config.onnx_model_path();
+    drop(config);
+
+    let files = [
+        const_value::MODEL_ONNX_EQUAL_FP32,
+        const_value::MODEL_ONNX_OPERATOR_FP32,
+        const_value::MODEL_ONNX_DIGIT_FP32,
+    ];
+
+    for file_name in files {
+        let file_path = model_path.join(file_name);
+        if file_path.exists() {
+            tokio::fs::remove_file(&file_path)
+                .await
+                .map_err(|e| format!("删除模型文件失败 {}: {}", file_name, e))?;
+        }
+
+        let partial_path = model_path.join(format!("{}.download", file_name));
+        if partial_path.exists() {
+            tokio::fs::remove_file(&partial_path)
+                .await
+                .map_err(|e| format!("删除临时模型文件失败 {}: {}", file_name, e))?;
+        }
+    }
+
+    Ok(local_ocr_model_status(&model_path))
+}
+
 /// 内部实现：获取验证码并尝试识别。
 ///
 /// 支持三种模式：

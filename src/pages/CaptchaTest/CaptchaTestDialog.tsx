@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Dialog,
+  DialogTrigger,
   DialogSurface,
   DialogTitle,
   DialogBody,
@@ -37,9 +38,10 @@ import { LocalOcrModelDownloadDialog } from './LocalOcrModelDownloadDialog';
 export const CaptchaTestDialog: React.FC = () => {
   const showCaptchaTestDialog = useAppStore((s) => s.showCaptchaTestDialog);
   const setShowCaptchaTestDialog = useAppStore((s) => s.setShowCaptchaTestDialog);
+  const openSettingsDialog = useAppStore((s) => s.openSettingsDialog);
   const config = useAppStore((s) => s.config);
 
-  const [mode, setMode] = useState<CaptchaMode>('manual');
+  const [mode, setMode] = useState<CaptchaMode>(config?.captcha.mode ?? 'manual');
   const [captchaImage, setCaptchaImage] = useState<string>('');
   const [testing, setTesting] = useState(false);
   const [batchTesting, setBatchTesting] = useState(false);
@@ -49,6 +51,9 @@ export const CaptchaTestDialog: React.FC = () => {
   const [showLocalModelDownloadDialog, setShowLocalModelDownloadDialog] = useState(false);
   const [localModelCancelling, setLocalModelCancelling] = useState(false);
   const [localModelMessage, setLocalModelMessage] = useState('');
+  const [showLocalModelRecoveryDialog, setShowLocalModelRecoveryDialog] = useState(false);
+  const [localModelRecoveryError, setLocalModelRecoveryError] = useState('');
+  const [recoveringLocalModels, setRecoveringLocalModels] = useState(false);
 
   const normalizeCaptchaSrc = (value: string) =>
     value.startsWith('data:') ? value : `data:image/png;base64,${value}`;
@@ -56,6 +61,16 @@ export const CaptchaTestDialog: React.FC = () => {
   const localModelDownloadBusy =
     showLocalModelDownloadDialog &&
     (localModelProgress?.phase === 'checking' || localModelProgress?.phase === 'downloading');
+
+  const isRecoverableLocalModelError = (message: string) =>
+    mode === 'local_onnx' &&
+    !localModelDownloadBusy &&
+    (message.includes('加载ONNX模型失败') ||
+      message.includes('加载数字模型失败') ||
+      message.includes('加载运算符模型失败') ||
+      message.includes('加载等号模型失败') ||
+      message.includes('本地ONNX识别失败: ONNX推理失败') ||
+      message.includes('本地ONNX识别失败: 解析图片字节失败'));
 
   useEffect(() => {
     let disposed = false;
@@ -95,6 +110,13 @@ export const CaptchaTestDialog: React.FC = () => {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!showCaptchaTestDialog || !config?.captcha.mode) {
+      return;
+    }
+    setMode(config.captcha.mode);
+  }, [config?.captcha.mode, showCaptchaTestDialog]);
 
   const ensureLocalModelsReady = async () => {
     const status = await tauri.get_local_ocr_model_status();
@@ -159,6 +181,25 @@ export const CaptchaTestDialog: React.FC = () => {
       }
     }
     setTestResults((prev) => [result, ...prev]);
+    return result;
+  };
+
+  const handleRecoverLocalModels = async () => {
+    setRecoveringLocalModels(true);
+    try {
+      await tauri.delete_local_ocr_models();
+      const ready = await ensureLocalModelsReady();
+      if (!ready) {
+        return;
+      }
+      setShowLocalModelRecoveryDialog(false);
+      setLocalModelRecoveryError('');
+      await runSingleTest();
+    } catch (error) {
+      setLocalModelMessage(String(error));
+    } finally {
+      setRecoveringLocalModels(false);
+    }
   };
 
   const handleTest = async () => {
@@ -172,6 +213,12 @@ export const CaptchaTestDialog: React.FC = () => {
       }
       await runSingleTest();
     } catch (e) {
+      const errorMessage = String(e);
+      if (isRecoverableLocalModelError(errorMessage)) {
+        setLocalModelRecoveryError(errorMessage);
+        setShowLocalModelRecoveryDialog(true);
+        return;
+      }
       setTestResults((prev) => [
         {
           id: Date.now(),
@@ -180,7 +227,7 @@ export const CaptchaTestDialog: React.FC = () => {
           answer: '',
           duration_ms: 0,
           mode,
-          error: String(e),
+          error: errorMessage,
         },
         ...prev,
       ]);
@@ -198,8 +245,27 @@ export const CaptchaTestDialog: React.FC = () => {
           return;
         }
       }
-      const results = await tauri.batch_test_captcha(mode, 10);
-      setTestResults((prev) => [...results, ...prev]);
+      for (let index = 0; index < 10; index += 1) {
+        try {
+          const result = await tauri.test_captcha(mode);
+          setTestResults((prev) => [{ ...result, id: Date.now() + index }, ...prev]);
+        } catch (error) {
+          const errorMessage = String(error);
+          setTestResults((prev) => [
+            {
+              id: Date.now() + index,
+              success: false,
+              expression: '',
+              answer: '',
+              duration_ms: 0,
+              mode,
+              error: `第 ${index + 1} 次失败: ${errorMessage}`,
+            },
+            ...prev,
+          ]);
+          break;
+        }
+      }
     } catch (e) {
       console.error('Batch test failed:', e);
     } finally {
@@ -216,24 +282,33 @@ export const CaptchaTestDialog: React.FC = () => {
           ? '远程OCR(RESTful)'
           : '本地ONNX';
   const imgSrc = captchaImage ? normalizeCaptchaSrc(captchaImage) : '';
+  const totalTests = testResults.length;
+  const successCount = testResults.filter((result) => result.success).length;
+  const failureCount = totalTests - successCount;
+  const accuracy = totalTests > 0 ? (successCount / totalTests) * 100 : 0;
+  const averageDuration =
+    totalTests > 0
+      ? testResults.reduce((sum, result) => sum + result.duration_ms, 0) / totalTests
+      : 0;
 
   return (
-    <Dialog
-      open={showCaptchaTestDialog}
-      onOpenChange={(_, data) => {
-        if (!data.open && !localModelDownloadBusy) {
-          setShowCaptchaTestDialog(false);
-        }
-      }}
-    >
-      <DialogSurface style={{ width: 'min(92vw, 860px)', maxWidth: 860 }}>
-        <DialogBody>
-          <DialogTitle>
-            <ShieldTask24Regular style={{ marginRight: 8 }} />
-            验证码测试
-          </DialogTitle>
-          <DialogContent>
-            <div style={{ display: 'grid', gap: 16 }}>
+    <>
+      <Dialog
+        open={showCaptchaTestDialog}
+        onOpenChange={(_, data) => {
+          if (!data.open && !localModelDownloadBusy) {
+            setShowCaptchaTestDialog(false);
+          }
+        }}
+      >
+        <DialogSurface style={{ width: 'min(92vw, 860px)', maxWidth: 860 }}>
+          <DialogBody>
+            <DialogTitle>
+              <ShieldTask24Regular style={{ marginRight: 8 }} />
+              验证码测试
+            </DialogTitle>
+            <DialogContent>
+              <div style={{ display: 'grid', gap: 16 }}>
               <div
                 style={{
                   display: 'grid',
@@ -265,6 +340,19 @@ export const CaptchaTestDialog: React.FC = () => {
                       <Option value="remote_ocr_http">远程OCR(RESTful)</Option>
                       <Option value="local_onnx">本地ONNX</Option>
                     </Dropdown>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginTop: 8, alignItems: 'center' }}>
+                      <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                        默认模式跟随“设置 → 验证码”
+                      </Text>
+                      <Button
+                        appearance="subtle"
+                        size="small"
+                        onClick={() => openSettingsDialog('captcha')}
+                        disabled={localModelDownloadBusy}
+                      >
+                        打开验证码设置
+                      </Button>
+                    </div>
                   </div>
 
                   {mode === 'manual' ? (
@@ -380,6 +468,69 @@ export const CaptchaTestDialog: React.FC = () => {
                   }}
                 >
                   <Label>测试历史</Label>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+                      gap: 10,
+                    }}
+                  >
+                    <div
+                      style={{
+                        padding: 12,
+                        borderRadius: 8,
+                        background: 'var(--colorNeutralBackground2)',
+                        border: '1px solid var(--colorNeutralStroke2)',
+                      }}
+                    >
+                      <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>总次数</Text>
+                      <Text weight="semibold" size={400}>{totalTests}</Text>
+                    </div>
+                    <div
+                      style={{
+                        padding: 12,
+                        borderRadius: 8,
+                        background: 'var(--colorPaletteGreenBackground1)',
+                        border: '1px solid var(--colorPaletteGreenBorder2)',
+                      }}
+                    >
+                      <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>通过</Text>
+                      <Text weight="semibold" size={400}>{successCount}</Text>
+                    </div>
+                    <div
+                      style={{
+                        padding: 12,
+                        borderRadius: 8,
+                        background: 'var(--colorPaletteRedBackground1)',
+                        border: '1px solid var(--colorPaletteRedBorder2)',
+                      }}
+                    >
+                      <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>失败</Text>
+                      <Text weight="semibold" size={400}>{failureCount}</Text>
+                    </div>
+                    <div
+                      style={{
+                        padding: 12,
+                        borderRadius: 8,
+                        background: 'var(--colorNeutralBackground2)',
+                        border: '1px solid var(--colorNeutralStroke2)',
+                      }}
+                    >
+                      <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>正确率</Text>
+                      <Text weight="semibold" size={400}>{accuracy.toFixed(1)}%</Text>
+                    </div>
+                    <div
+                      style={{
+                        padding: 12,
+                        borderRadius: 8,
+                        background: 'var(--colorNeutralBackground2)',
+                        border: '1px solid var(--colorNeutralStroke2)',
+                      }}
+                    >
+                      <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>平均耗时</Text>
+                      <Text weight="semibold" size={400}>{averageDuration.toFixed(0)}ms</Text>
+                    </div>
+                  </div>
                   <div style={{ maxHeight: 240, overflow: 'auto' }}>
                     <Table>
                       <TableHeader>
@@ -420,19 +571,20 @@ export const CaptchaTestDialog: React.FC = () => {
                   </div>
                 </div>
               )}
-            </div>
-          </DialogContent>
-          <DialogActions>
-            <Button
-              appearance="secondary"
-              onClick={() => setShowCaptchaTestDialog(false)}
-              disabled={localModelDownloadBusy}
-            >
-              关闭
-            </Button>
-          </DialogActions>
-        </DialogBody>
-      </DialogSurface>
+              </div>
+            </DialogContent>
+            <DialogActions>
+              <Button
+                appearance="secondary"
+                onClick={() => setShowCaptchaTestDialog(false)}
+                disabled={localModelDownloadBusy}
+              >
+                关闭
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
       <LocalOcrModelDownloadDialog
         open={showLocalModelDownloadDialog}
         progress={localModelProgress}
@@ -445,6 +597,43 @@ export const CaptchaTestDialog: React.FC = () => {
           });
         }}
       />
-    </Dialog>
+      <Dialog open={showLocalModelRecoveryDialog}>
+        <DialogSurface style={{ width: 'min(92vw, 520px)' }}>
+          <DialogBody>
+            <DialogTitle>本地 OCR 模型加载失败</DialogTitle>
+            <DialogContent>
+              <div style={{ display: 'grid', gap: 12 }}>
+                <Text>
+                  检测到模型文件已存在，但加载失败。是否删除现有模型文件后重新下载，再重试本次识别？
+                </Text>
+                {localModelRecoveryError && (
+                  <MessageBar intent="warning">
+                    <MessageBarBody>{localModelRecoveryError}</MessageBarBody>
+                  </MessageBar>
+                )}
+              </div>
+            </DialogContent>
+            <DialogActions>
+              <DialogTrigger disableButtonEnhancement>
+                <Button
+                  appearance="secondary"
+                  onClick={() => {
+                    if (!recoveringLocalModels) {
+                      setShowLocalModelRecoveryDialog(false);
+                    }
+                  }}
+                  disabled={recoveringLocalModels}
+                >
+                  取消
+                </Button>
+              </DialogTrigger>
+              <Button appearance="primary" onClick={handleRecoverLocalModels} disabled={recoveringLocalModels}>
+                {recoveringLocalModels ? <Spinner size="tiny" /> : '删除并重新下载'}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+    </>
   );
 };

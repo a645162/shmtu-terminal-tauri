@@ -91,6 +91,17 @@ export type SyncRangePreset = 'week' | 'half_month' | 'month' | 'half_year' | 'y
 
 // App theme
 export type AppTheme = 'light' | 'dark' | 'system';
+export type AppSettingsTab =
+  | 'security'
+  | 'identity'
+  | 'captcha'
+  | 'sync'
+  | 'data'
+  | 'ui'
+  | 'home'
+  | 'classification'
+  | 'update'
+  | 'debug';
 
 // App UI config
 export interface AppUiConfig {

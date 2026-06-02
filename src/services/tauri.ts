@@ -231,6 +231,10 @@ export async function cancel_local_ocr_model_download(): Promise<void> {
   return invoke('cancel_local_ocr_model_download');
 }
 
+export async function delete_local_ocr_models(): Promise<LocalOcrModelStatus> {
+  return invoke<LocalOcrModelStatus>('delete_local_ocr_models');
+}
+
 export async function init_local_ocr(): Promise<void> {
   return invoke('init_local_ocr');
 }

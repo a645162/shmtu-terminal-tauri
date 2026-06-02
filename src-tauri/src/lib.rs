@@ -101,6 +101,7 @@ pub fn run() {
             captcha::get_local_ocr_model_status,
             captcha::ensure_local_ocr_models,
             captcha::cancel_local_ocr_model_download,
+            captcha::delete_local_ocr_models,
             captcha::test_captcha,
             captcha::batch_test_captcha,
             captcha::init_local_ocr,

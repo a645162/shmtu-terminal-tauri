@@ -34,7 +34,7 @@ import {
   ArrowDownload24Regular,
   Bug24Regular,
 } from '@fluentui/react-icons';
-import type { CaptchaMode, AppTheme } from '../../types';
+import type { AppSettingsTab, CaptchaMode, AppTheme } from '../../types';
 import * as tauri from '../../services/tauri';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import {
@@ -42,7 +42,7 @@ import {
   SectionEnterMotion,
 } from '../../components/Common/motion';
 
-type SettingsTab = 'security' | 'identity' | 'captcha' | 'sync' | 'data' | 'ui' | 'home' | 'classification' | 'update' | 'debug';
+type SettingsTab = AppSettingsTab;
 type IdentityStartupMode = 'last_used' | 'configured_default';
 
 function normalizeSyncMaxPages(value?: number): number {
@@ -55,6 +55,7 @@ function normalizeSyncMaxPages(value?: number): number {
 export const SettingsDialog: React.FC = () => {
   const showSettingsDialog = useAppStore((s) => s.showSettingsDialog);
   const setShowSettingsDialog = useAppStore((s) => s.setShowSettingsDialog);
+  const settingsDialogTab = useAppStore((s) => s.settingsDialogTab);
   const config = useAppStore((s) => s.config);
   const theme = useAppStore((s) => s.theme);
   const setTheme = useAppStore((s) => s.setTheme);
@@ -144,10 +145,17 @@ export const SettingsDialog: React.FC = () => {
     setCheckIntervalHours(config.update.check_interval_hours ?? 24);
   }, [config]);
 
+  useEffect(() => {
+    if (!showSettingsDialog) {
+      return;
+    }
+    setSelectedTab(settingsDialogTab);
+  }, [settingsDialogTab, showSettingsDialog]);
+
   const currentDefaultIdentity =
     identities.find((identity) => identity.id === config?.identity.default_identity_id) ?? null;
 
-  const handleSave = async () => {
+  const persistSettings = async (closeAfterSave: boolean) => {
     if (!config) return;
 
     setSaving(true);
@@ -207,12 +215,23 @@ export const SettingsDialog: React.FC = () => {
 
       await loadConfig();
       setMessage('设置已保存');
+      if (closeAfterSave) {
+        setShowSettingsDialog(false);
+      }
     } catch (e) {
       setMessage('保存失败');
       console.error('Failed to save config:', e);
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleApply = async () => {
+    await persistSettings(false);
+  };
+
+  const handleSaveAndClose = async () => {
+    await persistSettings(true);
   };
 
   const renderContent = () => {
@@ -809,9 +828,12 @@ export const SettingsDialog: React.FC = () => {
           </DialogContent>
           <DialogActions>
             <Button appearance="secondary" onClick={() => setShowSettingsDialog(false)}>
-              取消
+              关闭
             </Button>
-            <Button appearance="primary" onClick={handleSave} disabled={saving}>
+            <Button appearance="secondary" onClick={handleApply} disabled={saving}>
+              {saving ? '应用中...' : '应用'}
+            </Button>
+            <Button appearance="primary" onClick={handleSaveAndClose} disabled={saving}>
               {saving ? '保存中...' : '保存'}
             </Button>
           </DialogActions>
