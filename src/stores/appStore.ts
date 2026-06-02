@@ -213,7 +213,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   loadIdentities: async () => {
     try {
       const identities = await tauri.list_identities();
-      set({ identities });
+      const { currentIdentity } = get();
+      const nextCurrentIdentity = currentIdentity
+        ? identities.find((identity) => identity.id === currentIdentity.id) ?? null
+        : null;
+
+      set({
+        identities,
+        currentIdentity: nextCurrentIdentity,
+        ...(currentIdentity && !nextCurrentIdentity
+          ? { accounts: [], bills: [], billTotal: 0 }
+          : {}),
+      });
     } catch (e) {
       console.error('Failed to load identities:', e);
     }

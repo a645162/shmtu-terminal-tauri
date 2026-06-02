@@ -30,6 +30,8 @@ export const IdentityManagerDialog: React.FC = () => {
   const setShowIdentityManagerDialog = useAppStore((s) => s.setShowIdentityManagerDialog);
   const identities = useAppStore((s) => s.identities);
   const loadIdentities = useAppStore((s) => s.loadIdentities);
+  const currentIdentity = useAppStore((s) => s.currentIdentity);
+  const setCurrentIdentity = useAppStore((s) => s.setCurrentIdentity);
 
   const [selectedIdentity, setSelectedIdentity] = useState<Identity | null>(null);
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
@@ -98,10 +100,14 @@ export const IdentityManagerDialog: React.FC = () => {
     try {
       const identity = identities.find((i) => i.id === editingIdentityId);
       if (identity) {
-        await tauri.update_identity({ ...identity, name: editingIdentityName.trim() });
-        loadIdentities();
+        const updatedIdentity = { ...identity, name: editingIdentityName.trim() };
+        await tauri.update_identity(updatedIdentity);
+        await loadIdentities();
         if (selectedIdentity?.id === editingIdentityId) {
-          setSelectedIdentity({ ...identity, name: editingIdentityName.trim() });
+          setSelectedIdentity(updatedIdentity);
+        }
+        if (currentIdentity?.id === editingIdentityId) {
+          setCurrentIdentity(updatedIdentity);
         }
       }
     } catch (e) {
