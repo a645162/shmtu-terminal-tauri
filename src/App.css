@@ -75,16 +75,16 @@ body,
     transform 180ms var(--app-motion-curve),
     box-shadow 180ms var(--app-motion-curve),
     background-color 180ms ease;
-  will-change: transform;
+  will-change: auto;
 }
 
 .motion-hover-lift:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--app-motion-shadow);
+  transform: none;
+  box-shadow: none;
 }
 
 .motion-hover-lift:active {
-  transform: translateY(0) scale(0.995);
+  transform: none;
 }
 
 .motion-sheen {
@@ -94,17 +94,7 @@ body,
 }
 
 .motion-sheen::after {
-  content: '';
-  position: absolute;
-  inset: -30%;
-  background: linear-gradient(115deg, transparent 35%, rgba(255, 255, 255, 0.22) 50%, transparent 65%);
-  transform: translateX(-120%) rotate(10deg);
-  transition: transform 700ms var(--app-motion-curve);
-  pointer-events: none;
-}
-
-.motion-sheen:hover::after {
-  transform: translateX(120%) rotate(10deg);
+  content: none;
 }
 
 .motion-spin-indefinite {
@@ -145,6 +135,62 @@ body,
 .motion-table-row:hover {
   transform: translateX(1px);
   background: var(--colorNeutralBackground1Hover);
+}
+
+.motion-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--colorNeutralBackground3) 82%, var(--colorNeutralBackground1));
+}
+
+.motion-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, #fff 34%, transparent) 48%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  animation: appSkeletonShimmer 1.35s ease-in-out infinite;
+}
+
+.app-context-menu {
+  min-width: 168px;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid var(--colorNeutralStroke2, rgba(0, 0, 0, 0.12));
+  background: var(--colorNeutralBackground1, #ffffff);
+  box-shadow: 0 14px 40px rgba(15, 23, 42, 0.18);
+  animation: appFadeIn 140ms ease;
+  z-index: 10000;
+}
+
+.app-context-menu-item {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  cursor: default;
+  user-select: none;
+  outline: none;
+}
+
+.app-context-menu-item:hover,
+.app-context-menu-item[data-highlighted] {
+  background: var(--colorNeutralBackground1Hover);
+}
+
+.app-context-menu-item.danger {
+  color: var(--colorPaletteRedForeground3);
+}
+
+.app-context-menu-item[data-disabled] {
+  opacity: 0.45;
+  pointer-events: none;
 }
 
 .motion-empty-state {
@@ -192,5 +238,15 @@ body,
 
   to {
     opacity: 1;
+  }
+}
+
+@keyframes appSkeletonShimmer {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(100%);
   }
 }

@@ -20,6 +20,7 @@ import { ManualCaptchaDialog } from './ManualCaptchaDialog';
 import { SyncRangeDialog } from './SyncRangeDialog';
 import { ErrorDialog } from './ErrorDialog';
 import { SyncStatusPanel } from './SyncStatusPanel';
+import { GlobalContextMenuGuard } from './GlobalContextMenuGuard';
 import type { SyncProgress } from '../../types';
 
 export const AppProvider: React.FC = () => {
@@ -168,7 +169,9 @@ export const AppProvider: React.FC = () => {
 
   return (
     <FluentProvider theme={fluentTheme}>
+      <GlobalContextMenuGuard />
       <AppLayout />
+      <div id="app-context-menu-portal" />
       <Toaster />
       <SyncStatusPanel />
 

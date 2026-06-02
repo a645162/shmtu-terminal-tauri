@@ -19,6 +19,7 @@ import {
   TabList,
   Tab,
   Textarea,
+  InfoLabel,
 } from '@fluentui/react-components';
 import { useAppStore } from '../../stores/appStore';
 import {
@@ -43,6 +44,13 @@ import {
 
 type SettingsTab = 'security' | 'identity' | 'captcha' | 'sync' | 'data' | 'ui' | 'home' | 'classification' | 'update' | 'debug';
 type IdentityStartupMode = 'last_used' | 'configured_default';
+
+function normalizeSyncMaxPages(value?: number): number {
+  if (!value || value < 10) {
+    return 100;
+  }
+  return value;
+}
 
 export const SettingsDialog: React.FC = () => {
   const showSettingsDialog = useAppStore((s) => s.showSettingsDialog);
@@ -85,7 +93,7 @@ export const SettingsDialog: React.FC = () => {
   const [ocrRetry, setOcrRetry] = useState(config?.captcha.ocr_retry_count ?? 5);
 
   // Sync settings
-  const [maxPages, setMaxPages] = useState(config?.sync.max_pages ?? 100);
+  const [maxPages, setMaxPages] = useState(normalizeSyncMaxPages(config?.sync.max_pages));
   const [earlyStop, setEarlyStop] = useState(config?.sync.early_stop_threshold ?? 5);
   const [autoMerge, setAutoMerge] = useState(config?.sync.auto_merge_after_sync ?? true);
 
@@ -108,6 +116,8 @@ export const SettingsDialog: React.FC = () => {
   const [decimalPlaces, setDecimalPlaces] = useState(config?.ui.decimal_places ?? 2);
   const [homeTrendRange, setHomeTrendRange] = useState(config?.ui.home_trend_range ?? 'week');
   const [homeCategoryRange, setHomeCategoryRange] = useState(config?.ui.home_category_range ?? 'month');
+  const [autoCheckUpdate, setAutoCheckUpdate] = useState(config?.update.auto_check ?? true);
+  const [checkIntervalHours, setCheckIntervalHours] = useState(config?.update.check_interval_hours ?? 24);
 
   useEffect(() => {
     if (!config) return;
@@ -118,7 +128,7 @@ export const SettingsDialog: React.FC = () => {
     setOcrPort(config.captcha.remote_ocr_port ? String(config.captcha.remote_ocr_port) : '');
     setOcrHttpUrl(config.captcha.remote_ocr_http_url || 'http://127.0.0.1:5000');
     setOcrRetry(config.captcha.ocr_retry_count || (config.captcha.mode !== 'manual' ? 5 : 0));
-    setMaxPages(config.sync.max_pages ?? 100);
+    setMaxPages(normalizeSyncMaxPages(config.sync.max_pages));
     setEarlyStop(config.sync.early_stop_threshold ?? 5);
     setAutoMerge(config.sync.auto_merge_after_sync ?? true);
     setDataDir(config.data.data_directory || 'Data');
@@ -128,6 +138,8 @@ export const SettingsDialog: React.FC = () => {
     setDecimalPlaces(config.ui.decimal_places ?? 2);
     setHomeTrendRange(config.ui.home_trend_range ?? 'week');
     setHomeCategoryRange(config.ui.home_category_range ?? 'month');
+    setAutoCheckUpdate(config.update.auto_check ?? true);
+    setCheckIntervalHours(config.update.check_interval_hours ?? 24);
   }, [config]);
 
   const currentDefaultIdentity =
@@ -158,7 +170,7 @@ export const SettingsDialog: React.FC = () => {
           ocr_retry_count: ocrRetry,
         },
         sync: {
-          max_pages: maxPages,
+          max_pages: normalizeSyncMaxPages(maxPages),
           early_stop_threshold: earlyStop,
           auto_merge_after_sync: autoMerge,
         },
@@ -172,6 +184,8 @@ export const SettingsDialog: React.FC = () => {
         },
         update: {
           ...config.update,
+          auto_check: autoCheckUpdate,
+          check_interval_hours: checkIntervalHours,
         },
         ui: {
           theme,
@@ -206,7 +220,9 @@ export const SettingsDialog: React.FC = () => {
             <Text weight="semibold" size={400}>安全设置</Text>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <Text block>启动保护</Text>
+                <InfoLabel info="启用后，每次启动应用前都必须输入启动密码。适合共享电脑或希望保护本地账单数据的场景。">
+                  启动保护
+                </InfoLabel>
                 <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
                   开启后每次启动需要输入密码
                 </Text>
@@ -218,7 +234,9 @@ export const SettingsDialog: React.FC = () => {
             </div>
             {startupProtection && (
               <div>
-                <Label>保护密码</Label>
+                <InfoLabel info="仅在你修改密码时生效。留空不会覆盖当前已保存的启动密码。">
+                  保护密码
+                </InfoLabel>
                 <Input
                   type="password"
                   value={protectionPassword}
@@ -236,7 +254,9 @@ export const SettingsDialog: React.FC = () => {
           <div style={{ display: 'grid', gap: 16 }}>
             <Text weight="semibold" size={400}>身份设置</Text>
             <div>
-              <Label>启动时优先加载</Label>
+              <InfoLabel info="决定应用启动后优先尝试进入哪个身份。若只有一个启用身份，会直接进入该身份。">
+                启动时优先加载
+              </InfoLabel>
               <Dropdown
                 value={identityStartupMode === 'last_used' ? '上一次使用的身份' : '设置的默认身份'}
                 selectedOptions={[identityStartupMode]}
@@ -275,7 +295,9 @@ export const SettingsDialog: React.FC = () => {
           <div style={{ display: 'grid', gap: 16 }}>
             <Text weight="semibold" size={400}>验证码设置</Text>
             <div>
-              <Label>识别模式</Label>
+              <InfoLabel info="手动输入最稳定；远程 OCR 适合已有识别服务；本地 ONNX 适合离线识别。不同模式对速度和成功率影响较大。">
+                识别模式
+              </InfoLabel>
               <Dropdown
                 value={
                   captchaMode === 'manual' ? '手动输入'
@@ -300,7 +322,9 @@ export const SettingsDialog: React.FC = () => {
             {captchaMode === 'remote_ocr' && (
               <>
                 <div>
-                  <Label>OCR服务器地址</Label>
+                  <InfoLabel info="旧版 OCR 服务的主机地址，不包含协议和端口，例如 192.168.1.100。">
+                    OCR服务器地址
+                  </InfoLabel>
                   <Input
                     value={ocrHost}
                     onChange={(e) => setOcrHost(e.currentTarget.value)}
@@ -309,7 +333,9 @@ export const SettingsDialog: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <Label>OCR服务器端口</Label>
+                  <InfoLabel info="旧版 OCR 服务监听的端口，例如 8888。">
+                    OCR服务器端口
+                  </InfoLabel>
                   <Input
                     value={ocrPort}
                     onChange={(e) => setOcrPort(e.currentTarget.value)}
@@ -321,7 +347,9 @@ export const SettingsDialog: React.FC = () => {
             )}
             {captchaMode === 'remote_ocr_http' && (
               <div>
-                <Label>RESTful OCR 服务地址</Label>
+                <InfoLabel info="RESTful OCR 接口完整地址，通常形如 http://127.0.0.1:5000。">
+                  RESTful OCR 服务地址
+                </InfoLabel>
                 <Input
                   value={ocrHttpUrl}
                   onChange={(e) => setOcrHttpUrl(e.currentTarget.value)}
@@ -332,7 +360,9 @@ export const SettingsDialog: React.FC = () => {
             )}
             {captchaMode !== 'manual' && (
               <div>
-                <Label>验证码错误重试次数: {ocrRetry}</Label>
+                <InfoLabel info="验证码识别失败后自动重新尝试的次数。次数越高越稳，但登录耗时也会更长。">
+                  验证码错误重试次数: {ocrRetry}
+                </InfoLabel>
                 <Slider
                   min={1}
                   max={20}
@@ -355,7 +385,9 @@ export const SettingsDialog: React.FC = () => {
           <div style={{ display: 'grid', gap: 16 }}>
             <Text weight="semibold" size={400}>同步设置</Text>
             <div>
-              <Label>默认同步页数上限: {maxPages}</Label>
+              <InfoLabel info="单次同步最多抓取的账单页数。数值越大，补历史账单越完整，但同步时间也越长。旧配置中的 0 会自动按默认 100 处理。">
+                默认同步页数上限: {maxPages}
+              </InfoLabel>
               <Slider
                 min={10}
                 max={500}
@@ -365,7 +397,9 @@ export const SettingsDialog: React.FC = () => {
               />
             </div>
             <div>
-              <Label>提前停止阈值: {earlyStop}</Label>
+              <InfoLabel info="连续遇到旧数据时，提前结束同步的阈值。阈值越小，同步越快；越大，越适合补录边界日期附近的数据。">
+                提前停止阈值: {earlyStop}
+              </InfoLabel>
               <Slider
                 min={1}
                 max={20}
@@ -375,7 +409,9 @@ export const SettingsDialog: React.FC = () => {
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <Text block>同步后自动合并</Text>
+                <InfoLabel info="同步成功后，自动把新抓取的原始账单并入合并账单表。通常建议开启。">
+                  同步后自动合并
+                </InfoLabel>
                 <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
                   自动将新条目追加到合并数据表
                 </Text>
@@ -390,7 +426,9 @@ export const SettingsDialog: React.FC = () => {
           <div style={{ display: 'grid', gap: 16 }}>
             <Text weight="semibold" size={400}>数据设置</Text>
             <div>
-              <Label>数据目录</Label>
+              <InfoLabel info="应用存放数据库、配置和快照的目录。修改后应确保新目录可读写，并注意手动迁移旧数据。">
+                数据目录
+              </InfoLabel>
               <div style={{ display: 'flex', gap: 8 }}>
                 <Input
                   value={dataDir}
@@ -409,7 +447,9 @@ export const SettingsDialog: React.FC = () => {
               </div>
             </div>
             <div>
-              <Label>快照自动保留数: {snapshotKeep}</Label>
+              <InfoLabel info="创建新快照后，系统自动保留的最近快照数量。超过数量的旧快照会被自动清理。">
+                快照自动保留数: {snapshotKeep}
+              </InfoLabel>
               <Slider
                 min={1}
                 max={50}
@@ -499,7 +539,9 @@ export const SettingsDialog: React.FC = () => {
           <div style={{ display: 'grid', gap: 16 }}>
             <Text weight="semibold" size={400}>界面设置</Text>
             <div>
-              <Label>主题</Label>
+              <InfoLabel info="控制应用使用亮色、暗色，或跟随系统主题。">
+                主题
+              </InfoLabel>
               <Dropdown
                 value={theme === 'light' ? '亮色' : theme === 'dark' ? '暗色' : '跟随系统'}
                 selectedOptions={[theme]}
@@ -512,7 +554,9 @@ export const SettingsDialog: React.FC = () => {
               </Dropdown>
             </div>
             <div>
-              <Label>统计小数位数: {decimalPlaces}</Label>
+              <InfoLabel info="控制统计页面和图表里金额数据保留的小数位数。">
+                统计小数位数: {decimalPlaces}
+              </InfoLabel>
               <Slider
                 min={0}
                 max={6}
@@ -532,7 +576,9 @@ export const SettingsDialog: React.FC = () => {
           <div style={{ display: 'grid', gap: 16 }}>
             <Text weight="semibold" size={400}>首页图表设置</Text>
             <div>
-              <Label>趋势图表范围</Label>
+              <InfoLabel info="控制首页消费趋势图默认展示的时间范围。">
+                趋势图表范围
+              </InfoLabel>
               <Dropdown
                 value={
                   homeTrendRange === 'today' ? '今天' :
@@ -554,7 +600,9 @@ export const SettingsDialog: React.FC = () => {
               </Text>
             </div>
             <div>
-              <Label>分类图表范围</Label>
+              <InfoLabel info="控制首页分类占比图默认统计的时间范围。">
+                分类图表范围
+              </InfoLabel>
               <Dropdown
                 value={
                   homeCategoryRange === 'today' ? '今天' :
@@ -583,7 +631,9 @@ export const SettingsDialog: React.FC = () => {
           <div style={{ display: 'grid', gap: 16 }}>
             <Text weight="semibold" size={400}>分类规则设置</Text>
             <div>
-              <Label>分类规则文件路径</Label>
+              <InfoLabel info="本地分类规则文件路径。应用会优先使用这里的 TOML 规则进行分类、位置映射和时段判断。">
+                分类规则文件路径
+              </InfoLabel>
               <div style={{ display: 'flex', gap: 8 }}>
                 <Input
                   value={rulesPath}
@@ -606,7 +656,9 @@ export const SettingsDialog: React.FC = () => {
               </div>
             </div>
             <div>
-              <Label>规则更新源(GitHub)</Label>
+              <InfoLabel info="远程规则更新地址。用于从 GitHub 或其他 HTTP 源拉取最新版分类规则。">
+                规则更新源(GitHub)
+              </InfoLabel>
               <Input
                 value={rulesUpdateUrl}
                 onChange={(e) => setRulesUpdateUrl(e.currentTarget.value)}
@@ -622,12 +674,16 @@ export const SettingsDialog: React.FC = () => {
           <div style={{ display: 'grid', gap: 16 }}>
             <Text weight="semibold" size={400}>更新设置</Text>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text>自动检查更新</Text>
-              <Switch defaultChecked />
+              <InfoLabel info="启用后，应用会按设定时间间隔自动检查新版本。">
+                自动检查更新
+              </InfoLabel>
+              <Switch checked={autoCheckUpdate} onChange={(_, data) => setAutoCheckUpdate(data.checked)} />
             </div>
             <div>
-              <Label>检查间隔(小时)</Label>
-              <Slider min={1} max={168} defaultValue={24} />
+              <InfoLabel info="自动检查更新的时间间隔，单位为小时。1 表示每小时检查一次，168 表示每周一次。">
+                检查间隔(小时): {checkIntervalHours}
+              </InfoLabel>
+              <Slider min={1} max={168} value={checkIntervalHours} onChange={(_, data) => setCheckIntervalHours(data.value)} />
             </div>
           </div>
         );
@@ -640,7 +696,9 @@ export const SettingsDialog: React.FC = () => {
               测试错误上报功能。输入错误信息后点击"触发错误"，错误会被发送到后端并显示错误对话框。
             </Text>
             <div>
-              <Label>错误信息</Label>
+              <InfoLabel info="输入一段测试用错误文本，用于验证前端错误记录和错误弹窗是否工作正常。">
+                错误信息
+              </InfoLabel>
               <Textarea
                 value={debugMessage}
                 onChange={(_, data) => setDebugMessage(data.value)}

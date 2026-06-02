@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   Card,
   CardHeader,
@@ -10,6 +10,7 @@ import {
   InfoLabel,
   TabList,
   Tab,
+  Badge,
 } from '@fluentui/react-components';
 import {
   Money24Regular,
@@ -24,11 +25,18 @@ import { CategoryPieChart } from '../../components/Charts/CategoryPieChart';
 import { MonthComparisonCard } from '../../components/Charts/MonthComparisonCard';
 import { formatBillMoney } from '../../hooks';
 import * as tauri from '../../services/tauri';
+import type { BillItem } from '../../types';
 import { formatLocalDate } from '../../utils/date';
+import { BillDetailDialog } from '../../components/Common/BillDetailDialog';
+import { ContextMenu } from '../../components/Common/ContextMenu';
+import {
+  SkeletonCardGrid,
+  SkeletonChartBlock,
+  SkeletonLine,
+} from '../../components/Common/LoadingSkeleton';
 import {
   CardEnterMotion,
   SectionEnterMotion,
-  SlideInFromRightMotion,
   getStaggerDelay,
 } from '../../components/Common/motion';
 
@@ -100,7 +108,7 @@ export const HomePage: React.FC = () => {
   const categoryRange = config?.ui.home_category_range ?? 'month';
 
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [homeTab, setHomeTab] = useState<string>('overview');
+  const [detailBill, setDetailBill] = useState<BillItem | null>(null);
 
   useEffect(() => {
     if (!currentIdentity) return;
@@ -123,6 +131,16 @@ export const HomePage: React.FC = () => {
       setIsRefreshing(false);
     }
   };
+
+  const handleOpenBillDetail = useCallback(async (billId: number) => {
+    if (!currentIdentity) return;
+    try {
+      const bill = await tauri.get_bill_detail(currentIdentity.id, billId);
+      setDetailBill(bill);
+    } catch (e) {
+      console.error('Failed to load home bill detail:', e);
+    }
+  }, [currentIdentity]);
 
   const recentBills = bills.slice(0, 5);
   const summaryCards = [
@@ -214,74 +232,125 @@ export const HomePage: React.FC = () => {
           {/* Charts Row */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
             <CardEnterMotion delay={getStaggerDelay(0, 90, 220)}>
-              <Card className="motion-hover-lift motion-sheen" style={{ padding: 16 }}>
+              <Card style={{ padding: 16 }}>
                 <CardHeader>
                   <InfoLabel info="点击图例可切换显示/隐藏线条。">
                     {rangeLabel(trendRange)}消费趋势
                   </InfoLabel>
                 </CardHeader>
                 {isLoadingStatistics ? (
-                  <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
-                    <Spinner label="加载中..." />
-                  </div>
+                  <SkeletonChartBlock height={240} />
                 ) : (
                   <ExpenseTrendChart data={dailyTrend} />
                 )}
               </Card>
             </CardEnterMotion>
             <CardEnterMotion delay={getStaggerDelay(1, 90, 220)}>
-              <Card className="motion-hover-lift motion-sheen" style={{ padding: 16 }}>
+              <Card style={{ padding: 16 }}>
                 <CardHeader>
                   <InfoLabel info="点击扇区查看该分类详情。">
                     {rangeLabel(categoryRange)}消费分类占比
                   </InfoLabel>
                 </CardHeader>
-                <CategoryPieChart data={categoryDistribution} />
+                {isLoadingStatistics ? <SkeletonChartBlock height={220} /> : <CategoryPieChart data={categoryDistribution} />}
               </Card>
             </CardEnterMotion>
           </div>
 
           {/* Recent Transactions */}
           <CardEnterMotion delay={320}>
-            <Card className="motion-hover-lift" style={{ padding: 16 }}>
+            <Card style={{ padding: 16 }}>
               <CardHeader>
                 <Subtitle2>最近交易</Subtitle2>
               </CardHeader>
-              {recentBills.length === 0 ? (
+              {useAppStore.getState().isLoading ? (
+                <div style={{ display: 'grid', gap: 10 }}>
+                  {Array.from({ length: 5 }).map((_, index) => (
+                    <div
+                      key={index}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '10px 0',
+                        borderBottom: '1px solid var(--colorNeutralStroke2)',
+                      }}
+                    >
+                      <div style={{ display: 'grid', gap: 6, width: '100%' }}>
+                        <SkeletonLine width="48%" height={12} />
+                        <SkeletonLine width="32%" height={10} />
+                      </div>
+                      <SkeletonLine width={64} height={14} />
+                    </div>
+                  ))}
+                </div>
+              ) : recentBills.length === 0 ? (
                 <Text size={200} style={{ color: 'var(--colorNeutralForeground3)', padding: 24, display: 'block', textAlign: 'center' }}>
                   暂无交易记录
                 </Text>
               ) : (
                 <div>
                   {recentBills.map((bill) => (
-                    <div
+                    <ContextMenu
                       key={bill.id}
-                      className="motion-list-row"
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        borderBottom: '1px solid var(--colorNeutralStroke2)',
-                      }}
+                      actions={[
+                        {
+                          key: 'detail',
+                          label: '查看详情',
+                          onSelect: () => void handleOpenBillDetail(bill.id),
+                        },
+                        {
+                          key: 'copy-target',
+                          label: '复制对方账户',
+                          onSelect: () => navigator.clipboard.writeText(bill.target_user || ''),
+                        },
+                        {
+                          key: 'copy-money',
+                          label: '复制金额',
+                          onSelect: () => navigator.clipboard.writeText(formatBillMoney(bill.money, bill.item_type || '')),
+                        },
+                      ]}
                     >
-                      <div>
-                        <Text block size={200}>{bill.item_type}</Text>
-                        <Text size={100} style={{ color: 'var(--colorNeutralForeground3)' }}>
-                          {bill.date_time_formatted}
+                      <div
+                        className="motion-list-row"
+                        data-app-context-menu-root="true"
+                        onClick={() => { void handleOpenBillDetail(bill.id); }}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          borderBottom: '1px solid var(--colorNeutralStroke2)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <div style={{ display: 'grid', gap: 4 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <Text block size={200}>{bill.item_type}</Text>
+                            {bill.is_combined && <Badge appearance="outline" size="small">合并</Badge>}
+                          </div>
+                          <Text size={100} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                            {bill.date_time_formatted || `${bill.date_str} ${bill.time_str_formatted}`}
+                          </Text>
+                          <Text size={100} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                            {bill.target_user || '—'}
+                          </Text>
+                        </div>
+                        <Text
+                          weight="semibold"
+                          style={{ color: bill.item_type?.includes('充值') || bill.item_type?.includes('冲正') || bill.item_type?.includes('退款') ? 'var(--colorPaletteGreenForeground3)' : 'var(--colorPaletteRedForeground3)' }}
+                        >
+                          {formatBillMoney(bill.money, bill.item_type || '')}
                         </Text>
                       </div>
-                      <Text
-                        weight="semibold"
-                        style={{ color: bill.item_type?.includes('充值') || bill.item_type?.includes('冲正') || bill.item_type?.includes('退款') ? 'var(--colorPaletteGreenForeground3)' : 'var(--colorPaletteRedForeground3)' }}
-                      >
-                        {formatBillMoney(bill.money, bill.item_type || '')}
-                      </Text>
-                    </div>
+                    </ContextMenu>
                   ))}
                 </div>
               )}
             </Card>
           </CardEnterMotion>
+      {detailBill && (
+        <BillDetailDialog bill={detailBill} onClose={() => setDetailBill(null)} />
+      )}
     </div>
   );
 };
@@ -294,7 +363,7 @@ interface StatCardProps {
 }
 
 const StatCard: React.FC<StatCardProps> = ({ title, value, icon, color }) => (
-  <Card className="motion-hover-lift motion-sheen" style={{ padding: 16 }}>
+  <Card style={{ padding: 16 }}>
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
       <span className="motion-float" style={{ color }}>{icon}</span>
       <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>{title}</Text>

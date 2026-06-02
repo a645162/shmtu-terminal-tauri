@@ -52,6 +52,7 @@ import type { BillItem } from '../../types';
 import { formatLocalDate } from '../../utils/date';
 import { getCategoryDisplayName, getCategoryColor } from '../../utils/translation';
 import { BillDetailDialog } from '../../components/Common/BillDetailDialog';
+import { ContextMenu } from '../../components/Common/ContextMenu';
 import {
   CardEnterMotion,
   PageEnterMotion,
@@ -639,60 +640,81 @@ export const StatisticsDialog: React.FC = () => {
                           </TableHeader>
                           <TableBody>
                             {categoryBills.map((bill) => (
-                              <TableRow key={bill.id} className="motion-table-row">
-                                <TableCell>
-                                  <Text size={200}>{bill.date} {bill.time}</Text>
-                                </TableCell>
-                                <TableCell>
-                                  <Text size={200}>{bill.itemType || getCategoryDisplayName(selectedCategory)}</Text>
-                                </TableCell>
-                                <TableCell>
-                                  <Text size={200}>{bill.targetUser || '—'}</Text>
-                                </TableCell>
-                                <TableCell>
-                                  <Text
-                                    size={200}
-                                    weight="semibold"
-                                    style={{ color: 'var(--colorPaletteRedForeground3)' }}
-                                  >
-                                    {formatBillMoney(bill.amount, bill.itemType || '')}
-                                  </Text>
-                                </TableCell>
-                                <TableCell>
-                                  <Text size={200}>{bill.method || '—'}</Text>
-                                </TableCell>
-                                <TableCell>
-                                  <Badge appearance="filled" color="success">
-                                    交易成功
-                                  </Badge>
-                                </TableCell>
-                                <TableCell>
-                                  <Menu>
-                                    <MenuTrigger>
-                                      <Button appearance="subtle" icon={<MoreVertical24Regular />} size="small" />
-                                    </MenuTrigger>
-                                    <MenuPopover>
-                                      <MenuList>
-                                        <MenuItem
-                                          icon={<Copy24Regular />}
-                                          onClick={() => navigator.clipboard.writeText(bill.targetUser || '')}
-                                        >
-                                          复制对方账户
-                                        </MenuItem>
-                                        <MenuItem
-                                          icon={<Copy24Regular />}
-                                          onClick={() => navigator.clipboard.writeText(formatBillMoney(bill.amount, bill.itemType || ''))}
-                                        >
-                                          复制金额
-                                        </MenuItem>
-                                        <MenuItem icon={<Info24Regular />} onClick={() => { void handleOpenBillDetail(bill); }}>
-                                          查看详情
-                                        </MenuItem>
-                                      </MenuList>
-                                    </MenuPopover>
-                                  </Menu>
-                                </TableCell>
-                              </TableRow>
+                              <ContextMenu
+                                key={bill.id}
+                                actions={[
+                                  {
+                                    key: 'copy-target',
+                                    label: '复制对方账户',
+                                    onSelect: () => navigator.clipboard.writeText(bill.targetUser || ''),
+                                  },
+                                  {
+                                    key: 'copy-money',
+                                    label: '复制金额',
+                                    onSelect: () => navigator.clipboard.writeText(formatBillMoney(bill.amount, bill.itemType || '')),
+                                  },
+                                  {
+                                    key: 'detail',
+                                    label: '查看详情',
+                                    onSelect: () => void handleOpenBillDetail(bill),
+                                  },
+                                ]}
+                              >
+                                <TableRow className="motion-table-row" data-app-context-menu-root="true">
+                                  <TableCell>
+                                    <Text size={200}>{bill.date} {bill.time}</Text>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Text size={200}>{bill.itemType || getCategoryDisplayName(selectedCategory)}</Text>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Text size={200}>{bill.targetUser || '—'}</Text>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Text
+                                      size={200}
+                                      weight="semibold"
+                                      style={{ color: 'var(--colorPaletteRedForeground3)' }}
+                                    >
+                                      {formatBillMoney(bill.amount, bill.itemType || '')}
+                                    </Text>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Text size={200}>{bill.method || '—'}</Text>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Badge appearance="filled" color="success">
+                                      交易成功
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Menu>
+                                      <MenuTrigger>
+                                        <Button appearance="subtle" icon={<MoreVertical24Regular />} size="small" />
+                                      </MenuTrigger>
+                                      <MenuPopover>
+                                        <MenuList>
+                                          <MenuItem
+                                            icon={<Copy24Regular />}
+                                            onClick={() => navigator.clipboard.writeText(bill.targetUser || '')}
+                                          >
+                                            复制对方账户
+                                          </MenuItem>
+                                          <MenuItem
+                                            icon={<Copy24Regular />}
+                                            onClick={() => navigator.clipboard.writeText(formatBillMoney(bill.amount, bill.itemType || ''))}
+                                          >
+                                            复制金额
+                                          </MenuItem>
+                                          <MenuItem icon={<Info24Regular />} onClick={() => { void handleOpenBillDetail(bill); }}>
+                                            查看详情
+                                          </MenuItem>
+                                        </MenuList>
+                                      </MenuPopover>
+                                    </Menu>
+                                  </TableCell>
+                                </TableRow>
+                              </ContextMenu>
                             ))}
                           </TableBody>
                         </Table>

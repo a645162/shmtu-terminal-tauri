@@ -46,6 +46,7 @@ import {
   SlideInFromRightMotion,
 } from '../../components/Common/motion';
 import { BillDetailDialog } from '../../components/Common/BillDetailDialog';
+import { ContextMenu } from '../../components/Common/ContextMenu';
 
 const BILL_TYPE_OPTIONS: { key: BillType; text: string }[] = [
   { key: 'all', text: '全部' },
@@ -439,68 +440,95 @@ export const BillPage: React.FC = () => {
                 </TableHeader>
                 <TableBody>
                   {bills.map((item) => (
-                    <TableRow key={item.id} className="motion-table-row">
-                      <TableCell>
-                        <Text size={200}>{item.date_time_formatted || `${item.date_str} ${item.time_str_formatted}`}</Text>
-                      </TableCell>
-                      <TableCell>
-                        <TableCellLayout>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <Text size={200}>{normalizeTransactionName(item)}</Text>
-                            {item.is_combined && <Badge appearance="outline" size="small">合并</Badge>}
-                          </div>
-                        </TableCellLayout>
-                      </TableCell>
-                      <TableCell>
-                        <Text size={200}>{item.target_user || '—'}</Text>
-                      </TableCell>
-                      <TableCell>
-                        <Text size={200}>{formatBillLocation(item)}</Text>
-                      </TableCell>
-                      <TableCell>
-                        <Text
-                          size={200}
-                          weight="semibold"
-                          style={{ color: item.item_type?.includes('充值') || item.item_type?.includes('冲正') || item.item_type?.includes('退款') ? 'var(--colorPaletteGreenForeground3)' : 'var(--colorPaletteRedForeground3)' }}
-                        >
-                          {formatBillMoney(item.money, item.item_type || '')}
-                        </Text>
-                      </TableCell>
-                      <TableCell>
-                        <Text size={200}>{item.method}</Text>
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          appearance="filled"
-                          color={item.status_str === '交易成功' ? 'success' : item.status_str === '#fail' ? 'danger' : 'informative'}
-                        >
-                          {item.status_str}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Menu>
-                          <MenuTrigger>
-                            <Button appearance="subtle" icon={<MoreVertical24Regular />} size="small" />
-                          </MenuTrigger>
-                          <MenuPopover>
-                            <MenuList>
-                              <MenuItem icon={<Copy24Regular />} onClick={() => navigator.clipboard.writeText(normalizeTransactionNumber(item))}>
-                                复制交易号
-                              </MenuItem>
-                              <MenuItem icon={<Copy24Regular />} onClick={() => navigator.clipboard.writeText(item.money_str)}>
-                                复制金额
-                              </MenuItem>
-                              <MenuItem icon={<Info24Regular />} onClick={() => setDetailBill(item)}>
-                                查看详情
-                              </MenuItem>
-                              <MenuItem icon={<Delete24Regular />} onClick={() => handleDeleteBill(item)}>
-                                删除
-                              </MenuItem>
-                            </MenuList>
-                          </MenuPopover>
-                        </Menu>
-                      </TableCell>
-                    </TableRow>
+                    <ContextMenu
+                      key={item.id}
+                      actions={[
+                        {
+                          key: 'copy-number',
+                          label: '复制交易号',
+                          onSelect: () => navigator.clipboard.writeText(normalizeTransactionNumber(item)),
+                        },
+                        {
+                          key: 'copy-money',
+                          label: '复制金额',
+                          onSelect: () => navigator.clipboard.writeText(item.money_str || ''),
+                        },
+                        {
+                          key: 'detail',
+                          label: '查看详情',
+                          onSelect: () => setDetailBill(item),
+                        },
+                        {
+                          key: 'delete',
+                          label: '删除',
+                          danger: true,
+                          onSelect: () => void handleDeleteBill(item),
+                        },
+                      ]}
+                    >
+                      <TableRow className="motion-table-row" data-app-context-menu-root="true">
+                        <TableCell>
+                          <Text size={200}>{item.date_time_formatted || `${item.date_str} ${item.time_str_formatted}`}</Text>
+                        </TableCell>
+                        <TableCell>
+                          <TableCellLayout>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <Text size={200}>{normalizeTransactionName(item)}</Text>
+                              {item.is_combined && <Badge appearance="outline" size="small">合并</Badge>}
+                            </div>
+                          </TableCellLayout>
+                        </TableCell>
+                        <TableCell>
+                          <Text size={200}>{item.target_user || '—'}</Text>
+                        </TableCell>
+                        <TableCell>
+                          <Text size={200}>{formatBillLocation(item)}</Text>
+                        </TableCell>
+                        <TableCell>
+                          <Text
+                            size={200}
+                            weight="semibold"
+                            style={{ color: item.item_type?.includes('充值') || item.item_type?.includes('冲正') || item.item_type?.includes('退款') ? 'var(--colorPaletteGreenForeground3)' : 'var(--colorPaletteRedForeground3)' }}
+                          >
+                            {formatBillMoney(item.money, item.item_type || '')}
+                          </Text>
+                        </TableCell>
+                        <TableCell>
+                          <Text size={200}>{item.method}</Text>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            appearance="filled"
+                            color={item.status_str === '交易成功' ? 'success' : item.status_str === '#fail' ? 'danger' : 'informative'}
+                          >
+                            {item.status_str}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Menu>
+                            <MenuTrigger>
+                              <Button appearance="subtle" icon={<MoreVertical24Regular />} size="small" />
+                            </MenuTrigger>
+                            <MenuPopover>
+                              <MenuList>
+                                <MenuItem icon={<Copy24Regular />} onClick={() => navigator.clipboard.writeText(normalizeTransactionNumber(item))}>
+                                  复制交易号
+                                </MenuItem>
+                                <MenuItem icon={<Copy24Regular />} onClick={() => navigator.clipboard.writeText(item.money_str || '')}>
+                                  复制金额
+                                </MenuItem>
+                                <MenuItem icon={<Info24Regular />} onClick={() => setDetailBill(item)}>
+                                  查看详情
+                                </MenuItem>
+                                <MenuItem icon={<Delete24Regular />} onClick={() => handleDeleteBill(item)}>
+                                  删除
+                                </MenuItem>
+                              </MenuList>
+                            </MenuPopover>
+                          </Menu>
+                        </TableCell>
+                      </TableRow>
+                    </ContextMenu>
                   ))}
                 </TableBody>
               </Table>
