@@ -118,6 +118,8 @@ export const SettingsDialog: React.FC = () => {
   const [selectedAccountId, setSelectedAccountId] = useState('');
   const [repairingIdentity, setRepairingIdentity] = useState(false);
   const [repairingAccount, setRepairingAccount] = useState(false);
+  const [reclassifyingAll, setReclassifyingAll] = useState(false);
+  const [reclassifyingIdentity, setReclassifyingIdentity] = useState(false);
   const showError = useAppStore((s) => s.showError);
 
   // UI settings
@@ -824,6 +826,71 @@ export const SettingsDialog: React.FC = () => {
                 placeholder="https://github.com/..."
                 style={{ width: '100%' }}
               />
+            </div>
+            <div
+              style={{
+                padding: 14,
+                borderRadius: 10,
+                border: '1px solid var(--colorNeutralStroke2)',
+                background: 'var(--colorNeutralBackground2)',
+                display: 'grid',
+                gap: 12,
+              }}
+            >
+              <Text weight="semibold">重算历史账单</Text>
+              <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                用当前最新的 position.toml + type.toml 重新翻译数据库中已有账单的
+                position/room/category。适合在分类规则修复后补齐历史数据。
+              </Text>
+              <div style={{ display: 'grid', gap: 8 }}>
+                <Button
+                  appearance="primary"
+                  disabled={reclassifyingAll}
+                  onClick={async () => {
+                    setReclassifyingAll(true);
+                    setMessage('');
+                    try {
+                      const result = await tauri.reclassify_all_bills();
+                      await loadBills();
+                      setMessage(
+                        `重算完成：扫描 ${result.total_scanned} 条，命中 ${result.translated} 条，` +
+                        `分类更新 ${result.category_updated} 条，未命中 ${result.missed} 条，` +
+                        `耗时 ${result.duration_ms} ms`,
+                      );
+                    } catch (e) {
+                      setMessage(`重算历史账单失败: ${e}`);
+                    } finally {
+                      setReclassifyingAll(false);
+                    }
+                  }}
+                >
+                  {reclassifyingAll ? '重算中(全部)...' : '重算所有身份的历史账单'}
+                </Button>
+                <Button
+                  appearance="secondary"
+                  disabled={!currentIdentity || reclassifyingIdentity}
+                  onClick={async () => {
+                    if (!currentIdentity) return;
+                    setReclassifyingIdentity(true);
+                    setMessage('');
+                    try {
+                      const result = await tauri.reclassify_bills_by_identity(currentIdentity.id);
+                      await loadBills();
+                      setMessage(
+                        `当前身份重算完成：扫描 ${result.total_scanned} 条，命中 ${result.translated} 条，` +
+                        `分类更新 ${result.category_updated} 条，未命中 ${result.missed} 条，` +
+                        `耗时 ${result.duration_ms} ms`,
+                      );
+                    } catch (e) {
+                      setMessage(`当前身份重算失败: ${e}`);
+                    } finally {
+                      setReclassifyingIdentity(false);
+                    }
+                  }}
+                >
+                  {reclassifyingIdentity ? '重算中(当前身份)...' : '仅重算当前身份的历史账单'}
+                </Button>
+              </div>
             </div>
           </div>
         );

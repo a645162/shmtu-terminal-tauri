@@ -53,6 +53,7 @@ export interface BillItem {
   is_manual?: boolean;
   position?: string;
   room?: string;
+  category?: string;
   notes?: string;
 }
 
@@ -257,4 +258,13 @@ export interface ClassificationRules {
     valid_date: { start_date: string; end_date: string };
     timetable: Record<string, { name: string; start_time: string; end_time: string }>;
   }>;
+}
+
+// 重算历史账单的结果
+export interface ReclassifyResult {
+  total_scanned: number;
+  translated: number;
+  category_updated: number;
+  missed: number;
+  duration_ms: number;
 }

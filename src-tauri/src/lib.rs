@@ -135,6 +135,8 @@ pub fn run() {
             classify::classify_bill,
             classify::get_bill_statistics,
             classify::get_classification_rules,
+            classify::reclassify_all_bills,
+            classify::reclassify_bills_by_identity,
             error_cmd::log_error,
         ])
         .run(tauri::generate_context!())

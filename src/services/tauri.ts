@@ -15,6 +15,7 @@ import type {
   DailyTrendItem,
   CategoryItem,
   MealDistItem,
+  ReclassifyResult,
 } from '../types';
 
 // ========== Config ==========
@@ -381,6 +382,16 @@ export async function get_category_bills(params: CategorySummaryParams): Promise
 
 export async function get_classification_rules(): Promise<import('../types').ClassificationRules> {
   return invoke<import('../types').ClassificationRules>('get_classification_rules');
+}
+
+// ========== Reclassify Historical Bills ==========
+
+export async function reclassify_all_bills(): Promise<ReclassifyResult> {
+  return invoke<ReclassifyResult>('reclassify_all_bills');
+}
+
+export async function reclassify_bills_by_identity(identityId: number): Promise<ReclassifyResult> {
+  return invoke<ReclassifyResult>('reclassify_bills_by_identity', { identityId });
 }
 
 // ========== Startup Protection ==========

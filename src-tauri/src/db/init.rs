@@ -117,6 +117,15 @@ impl DatabaseManager {
             ))
             .await;
 
+        // Migration: add category column to bill_merged (ignore if already exist)
+        let _ = self
+            .db
+            .execute(Statement::from_string(
+                sea_orm::DatabaseBackend::Sqlite,
+                "ALTER TABLE bill_merged ADD COLUMN category TEXT DEFAULT NULL;".to_string(),
+            ))
+            .await;
+
         let _ = self
             .db
             .execute(Statement::from_string(
@@ -737,6 +746,7 @@ pub fn bill_merged_model_to_app(m: bill_merged::Model) -> BillMerged {
         is_manual: m.is_manual,
         position: m.position,
         room: m.room,
+        category: m.category,
         notes: m.notes,
         synced_at: m.synced_at,
     }

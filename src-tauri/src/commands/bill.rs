@@ -72,6 +72,7 @@ pub struct BillItemFrontend {
     pub is_manual: Option<bool>,
     pub position: Option<String>,
     pub room: Option<String>,
+    pub category: Option<String>,
     pub notes: Option<String>,
 }
 
@@ -101,6 +102,7 @@ impl From<BillMerged> for BillItemFrontend {
             is_manual: Some(b.is_manual),
             position: b.position,
             room: b.room,
+            category: b.category,
             notes: b.notes,
         }
     }

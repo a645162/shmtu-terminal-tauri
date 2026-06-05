@@ -26,6 +26,7 @@ pub struct Model {
     pub is_manual: bool,
     pub position: Option<String>,
     pub room: Option<String>,
+    pub category: Option<String>,
     pub notes: Option<String>,
     pub synced_at: Option<String>,
 }
