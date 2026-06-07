@@ -53,6 +53,8 @@ export interface AppConfig {
   };
   p2p: {
     auto_start: boolean;
+    auto_accept: boolean;
+    auto_reconnect: boolean;
     device_name: string;
     port: number;
   };
@@ -461,6 +463,7 @@ export interface P2PSession {
   peer_device_name: string;
   is_paired: boolean;
   is_incoming: boolean;
+  is_connected: boolean;
 }
 
 export interface P2PStatus {
@@ -485,6 +488,9 @@ export interface P2PPairingRequest {
   peer_ip: string;
   peer_port: number;
   peer_device_name: string;
+  pair_code: string;
+  reconnect_ips?: string[];
+  reconnect_port?: number;
 }
 
 export interface P2PTransferComplete {
@@ -544,6 +550,10 @@ export async function p2p_get_status(): Promise<P2PStatus> {
 
 export async function p2p_disconnect(sessionId: string): Promise<void> {
   return invoke('p2p_disconnect', { sessionId });
+}
+
+export async function p2p_reconnect(sessionId: string): Promise<P2PSession> {
+  return invoke<P2PSession>('p2p_reconnect', { sessionId });
 }
 
 export async function p2p_manual_pair(ip: string, port: number, pairCode: string): Promise<P2PSession> {

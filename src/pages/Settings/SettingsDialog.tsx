@@ -132,6 +132,8 @@ export const SettingsDialog: React.FC = () => {
 
   // P2P settings
   const [p2pAutoStart, setP2PAutoStart] = useState(config?.p2p?.auto_start ?? false);
+  const [p2pAutoAccept, setP2PAutoAccept] = useState(config?.p2p?.auto_accept ?? false);
+  const [p2pAutoReconnect, setP2PAutoReconnect] = useState(config?.p2p?.auto_reconnect ?? false);
   const [p2pDeviceName, setP2PDeviceName] = useState(config?.p2p?.device_name ?? '');
   const [p2pPort, setP2PPort] = useState(String(config?.p2p?.port ?? 19827));
 
@@ -162,6 +164,8 @@ export const SettingsDialog: React.FC = () => {
     setAutoCheckUpdate(config.update.auto_check ?? true);
     setCheckIntervalHours(config.update.check_interval_hours ?? 24);
     setP2PAutoStart(config.p2p?.auto_start ?? false);
+    setP2PAutoAccept(config.p2p?.auto_accept ?? false);
+    setP2PAutoReconnect(config.p2p?.auto_reconnect ?? false);
     setP2PDeviceName(config.p2p?.device_name ?? '');
     setP2PPort(String(config.p2p?.port ?? 19827));
   }, [config]);
@@ -277,6 +281,8 @@ export const SettingsDialog: React.FC = () => {
         },
         p2p: {
           auto_start: p2pAutoStart,
+          auto_accept: p2pAutoAccept,
+          auto_reconnect: p2pAutoReconnect,
           device_name: p2pDeviceName,
           port: parseInt(p2pPort) || 19827,
         },
@@ -729,6 +735,22 @@ export const SettingsDialog: React.FC = () => {
                 </InfoLabel>
               </div>
               <Switch checked={p2pAutoStart} onChange={(_, data) => setP2PAutoStart(data.checked)} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <InfoLabel info="启用后，收到新的配对请求时会直接接受，不再弹出确认提示。默认关闭。">
+                  自动接受连接
+                </InfoLabel>
+              </div>
+              <Switch checked={p2pAutoAccept} onChange={(_, data) => setP2PAutoAccept(data.checked)} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <InfoLabel info="启用后，已配对设备断开连接时会自动尝试重新连接。默认关闭。">
+                  自动尝试重连
+                </InfoLabel>
+              </div>
+              <Switch checked={p2pAutoReconnect} onChange={(_, data) => setP2PAutoReconnect(data.checked)} />
             </div>
             <div>
               <InfoLabel info="本机在点对点网络中显示的设备名称，方便其他设备识别。留空则使用系统默认名称。">

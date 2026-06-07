@@ -38,6 +38,7 @@ pub struct P2PSessionFrontend {
     pub peer_device_name: String,
     pub is_paired: bool,
     pub is_incoming: bool,
+    pub is_connected: bool,
 }
 
 impl From<P2PSession> for P2PSessionFrontend {
@@ -49,6 +50,7 @@ impl From<P2PSession> for P2PSessionFrontend {
             peer_device_name: session.peer_device_name,
             is_paired: session.is_paired,
             is_incoming: session.is_incoming,
+            is_connected: session.is_connected,
         }
     }
 }
@@ -316,16 +318,21 @@ pub async fn p2p_disconnect(session_id: String, state: State<'_, AppState>) -> R
     manager.disconnect(&session_id).await.map_err(|e| {
         tracing::error!("[P2P] Failed to disconnect: {}", e);
         e.to_string()
+    })
+}
+
+#[tauri::command]
+pub async fn p2p_reconnect(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<P2PSessionFrontend, String> {
+    tracing::info!("[P2P] p2p_reconnect: session_id={}", session_id);
+    let manager = state.p2p_manager.read().await;
+    let session = manager.reconnect(&session_id).await.map_err(|e| {
+        tracing::error!("[P2P] Failed to reconnect: {}", e);
+        e.to_string()
     })?;
-
-    // 从管理器移除会话
-    drop(manager);
-    {
-        let mgr = state.p2p_manager.write().await;
-        mgr.remove_session(&session_id).await;
-    }
-
-    Ok(())
+    Ok(P2PSessionFrontend::from(session))
 }
 
 /// 手动配对（等价于 connect）

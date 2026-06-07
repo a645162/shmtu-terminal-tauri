@@ -9,8 +9,13 @@ use crate::client::read_loop_inner;
 use crate::crypto::{self, SecureKey};
 use crate::discovery::{generate_qr_payload, get_local_ips};
 use crate::protocol::*;
-use crate::transfer::TransferEngine;
-use crate::{P2PError, P2PEvent, P2PInfo, PairingRequest};
+use crate::transfer::{
+    compute_checksum, take_pending_incoming_transfer, TransferEngine, TransferProgress,
+};
+use crate::{
+    DataReceived, P2PError, P2PEvent, P2PInfo, P2PSession, PairingRequest, TransferComplete,
+    TransferError,
+};
 
 /// 配对请求超时时间（秒）
 const PENDING_SESSION_TIMEOUT_SECS: u64 = 60;
@@ -33,6 +38,8 @@ struct PendingSession {
     device_name: String,
     /// 配对码（用于加密协商）
     pair_code: String,
+    reconnect_ips: Vec<String>,
+    reconnect_port: Option<u16>,
 }
 
 /// 服务端已配对会话
@@ -46,6 +53,15 @@ struct ActiveSession {
     is_incoming: bool,
     /// 加密密钥
     encryption_key: Option<SecureKey>,
+    pair_code: String,
+    reconnect_ips: Vec<String>,
+    reconnect_port: Option<u16>,
+}
+
+#[derive(Clone)]
+struct ActiveSessionHandle {
+    session_id: String,
+    peer_ip: String,
 }
 
 /// 配对失败记录
@@ -70,6 +86,7 @@ pub struct P2PServer {
     shutdown_tx: Arc<Mutex<Option<mpsc::UnboundedSender<()>>>>,
     pending_sessions: Arc<RwLock<HashMap<String, PendingSession>>>,
     active_sessions: Arc<RwLock<HashMap<String, ActiveSession>>>,
+    known_sessions: Arc<RwLock<Vec<P2PSession>>>,
     event_tx: mpsc::UnboundedSender<P2PEvent>,
     /// 配对失败尝试追踪: IP -> 失败记录
     pair_attempts: Arc<RwLock<HashMap<String, PairAttempt>>>,
@@ -81,6 +98,7 @@ impl P2PServer {
     pub async fn start(
         event_tx: mpsc::UnboundedSender<P2PEvent>,
         preferred_port: u16,
+        known_sessions: Arc<RwLock<Vec<P2PSession>>>,
     ) -> Result<Self, P2PError> {
         let pair_code = PairCode::generate();
         let local_ips = get_local_ips();
@@ -122,6 +140,7 @@ impl P2PServer {
             shutdown_tx: Arc::new(Mutex::new(None)),
             pending_sessions: Arc::new(RwLock::new(HashMap::new())),
             active_sessions: Arc::new(RwLock::new(HashMap::new())),
+            known_sessions,
             event_tx,
             pair_attempts: pair_attempts.clone(),
         };
@@ -163,6 +182,7 @@ impl P2PServer {
         let listener = self.listener.clone();
         let pending_sessions = self.pending_sessions.clone();
         let active_sessions = self.active_sessions.clone();
+        let known_sessions = self.known_sessions.clone();
         let event_tx = self.event_tx.clone();
         let expected_pair_code = self.pair_code.clone();
         let shutdown_tx = self.shutdown_tx.clone();
@@ -198,6 +218,7 @@ impl P2PServer {
                                 let event_tx = event_tx.clone();
                                 let pending = pending_sessions.clone();
                                 let active = active_sessions.clone();
+                                let known = known_sessions.clone();
                                 let pair_attempts = pair_attempts.clone();
 
                                 tokio::spawn(async move {
@@ -206,6 +227,7 @@ impl P2PServer {
                                         addr,
                                         &pair_code,
                                         event_tx,
+                                        known,
                                         pending,
                                         active,
                                         pair_attempts,
@@ -282,6 +304,24 @@ impl P2PServer {
     /// 接受配对
     /// 返回 Ok(Some(key)) 如果加密协商成功
     pub async fn accept_pairing(&self, session_id: &str) -> Result<Option<SecureKey>, P2PError> {
+        let (result, _, _) = self
+            .accept_pairing_with_session(session_id, None)
+            .await?;
+        Ok(result)
+    }
+
+    pub async fn accept_pairing_with_session(
+        &self,
+        session_id: &str,
+        disconnect_tx: Option<mpsc::UnboundedSender<String>>,
+    ) -> Result<
+        (
+            Option<SecureKey>,
+            crate::P2PSession,
+            Option<Arc<Mutex<tokio::io::WriteHalf<TcpStream>>>>,
+        ),
+        P2PError,
+    > {
         let pending_session = {
             let mut pending = self.pending_sessions.write().await;
             pending.remove(session_id)
@@ -289,66 +329,15 @@ impl P2PServer {
 
         if let Some(pending) = pending_session {
             let new_session_id = uuid::Uuid::new_v4().to_string();
-
-            // 发送配对接受
-            let accept = PairAccept {
-                device_name: "shmtu-terminal".to_string(),
-                session_id: new_session_id.clone(),
-            };
-            let frame = encode_pair_accept(&accept)?;
-            {
-                let mut wh = pending.write_half.lock().await;
-                wh.write_all(&frame).await?;
-                wh.flush().await?;
-            }
-
-            // ---- 等待客户端加密协商 ----
-            let encryption_key = negotiate_encryption_server(&pending, &new_session_id).await?;
-
-            // 创建活跃会话
-            let active_session = ActiveSession {
-                write_half: pending.write_half.clone(),
-                session_id: new_session_id.clone(),
-                peer_ip: pending.peer_ip.clone(),
-                peer_port: pending.peer_port,
-                peer_device_name: pending.device_name.clone(),
-                is_incoming: true,
-                encryption_key: Some(encryption_key.clone()),
-            };
-
-            // 从 pending session 取出 read_half 启动读取循环
-            let read_half = {
-                let mut rh = pending.read_half.lock().await;
-                rh.take()
-            };
-
-            if let Some(reader) = read_half {
-                let stream = pending.write_half.clone();
-                let event_tx = self.event_tx.clone();
-                let read_session_id = new_session_id.clone();
-                let enc_key = Some(encryption_key.clone());
-                tokio::spawn(async move {
-                    read_loop_inner(reader, &read_session_id, event_tx, stream, enc_key).await;
-                });
-            } else {
-                tracing::warn!(
-                    "[P2P] No read_half available for session {}, read loop not started",
-                    new_session_id
-                );
-            }
-
-            // 存入活跃会话
-            {
-                let mut active = self.active_sessions.write().await;
-                active.insert(new_session_id.clone(), active_session);
-            }
-
-            tracing::info!(
-                "[P2P] Pairing accepted for pending session {}, new session_id={}",
+            accept_pending_session(
+                pending,
                 session_id,
-                new_session_id
-            );
-            Ok(Some(encryption_key))
+                new_session_id,
+                self.event_tx.clone(),
+                self.active_sessions.clone(),
+                disconnect_tx,
+            )
+            .await
         } else {
             Err(P2PError::SessionNotFound(session_id.to_string()))
         }
@@ -380,16 +369,31 @@ impl P2PServer {
 
     /// 发送数据到指定会话
     pub async fn send_data(&self, session_id: &str, data: &[u8]) -> Result<(), P2PError> {
-        let active = self.active_sessions.read().await;
-        if let Some(session) = active.get(session_id) {
+        let session = {
+            let active = self.active_sessions.read().await;
+            active.get(session_id).map(|session| {
+                (
+                    session.write_half.clone(),
+                    session.encryption_key.clone(),
+                    session.peer_ip.clone(),
+                    session.peer_port,
+                    session.session_id.clone(),
+                    session.pair_code.clone(),
+                )
+            })
+        };
+
+        if let Some((write_half, encryption_key, peer_ip, peer_port, active_session_id, pair_code)) = session {
             let transfer_id = uuid::Uuid::new_v4().to_string();
-            let write_half = session.write_half.clone();
-            let encryption_key = session.encryption_key.clone();
             let event_tx = self.event_tx.clone();
-
-            drop(active);
-
-            let engine = TransferEngine::from_write_half(write_half, encryption_key);
+            let engine = TransferEngine::new(
+                write_half,
+                peer_ip,
+                peer_port,
+                active_session_id,
+                pair_code,
+                encryption_key,
+            );
             engine.send(data, &transfer_id, event_tx, session_id).await
         } else {
             Err(P2PError::SessionNotFound(session_id.to_string()))
@@ -432,6 +436,7 @@ impl P2PServer {
         let active = self.active_sessions.read().await;
         active.get(session_id).map(|s| s.write_half.clone())
     }
+
 }
 
 /// 服务端等待客户端加密协商
@@ -645,12 +650,30 @@ async fn handle_incoming_connection(
     addr: std::net::SocketAddr,
     expected_pair_code: &PairCode,
     event_tx: mpsc::UnboundedSender<P2PEvent>,
+    known_sessions: Arc<RwLock<Vec<P2PSession>>>,
     pending_sessions: Arc<RwLock<HashMap<String, PendingSession>>>,
-    _active_sessions: Arc<RwLock<HashMap<String, ActiveSession>>>,
+    active_sessions: Arc<RwLock<HashMap<String, ActiveSession>>>,
     pair_attempts: Arc<RwLock<HashMap<String, PairAttempt>>>,
 ) -> Result<(), P2PError> {
     let peer_ip = addr.ip().to_string();
     let peer_port = addr.port();
+
+    // 拆分 stream 为读写两半
+    let (mut read_half, write_half) = tokio::io::split(stream);
+    let write_half = Arc::new(Mutex::new(write_half));
+
+    let frame = ProtocolFrame::read_from_stream(&mut read_half).await?;
+    if frame.msg_type == MSG_TYPE_TRANSFER_CHANNEL_OPEN {
+        return handle_transfer_channel_connection(
+            frame,
+            read_half,
+            write_half,
+            peer_ip,
+            active_sessions,
+            event_tx,
+        )
+        .await;
+    }
 
     // 检查速率限制
     {
@@ -665,13 +688,6 @@ async fn handle_incoming_connection(
             check_rate_limit(attempt)?;
         }
     }
-
-    // 拆分 stream 为读写两半
-    let (mut read_half, write_half) = tokio::io::split(stream);
-    let write_half = Arc::new(Mutex::new(write_half));
-
-    // 读取配对请求
-    let frame = ProtocolFrame::read_from_stream(&mut read_half).await?;
 
     if frame.msg_type != MSG_TYPE_PAIR_REQUEST {
         tracing::warn!(
@@ -726,8 +742,34 @@ async fn handle_incoming_connection(
         peer_ip: peer_ip.clone(),
         peer_port,
         device_name: device_name.clone(),
-        pair_code: received_code, // 保存配对码用于加密协商
+        pair_code: received_code.clone(), // 保存配对码用于加密协商
+        reconnect_ips: pair_req.listen_ips.clone(),
+        reconnect_port: pair_req.listen_port,
     };
+
+    let trusted_session = {
+        let sessions = known_sessions.read().await;
+        find_trusted_session(&sessions, &peer_ip, &device_name, &received_code)
+    };
+    if let Some(existing) = trusted_session {
+        let (_key, session, _write_half) = accept_pending_session(
+            pending,
+            &existing.session_id,
+            existing.session_id.clone(),
+            event_tx.clone(),
+            active_sessions,
+            None,
+        )
+        .await?;
+        {
+            let mut sessions = known_sessions.write().await;
+            if let Some(current) = sessions.iter_mut().find(|item| item.session_id == existing.session_id) {
+                *current = session;
+            }
+        }
+        return Ok(());
+    }
+
     {
         let mut pending_map = pending_sessions.write().await;
         pending_map.insert(session_id.clone(), pending);
@@ -739,6 +781,9 @@ async fn handle_incoming_connection(
         peer_ip,
         peer_port,
         peer_device_name: device_name,
+        pair_code: pair_req.pair_code,
+        reconnect_ips: pair_req.listen_ips,
+        reconnect_port: pair_req.listen_port,
     };
     let _ = event_tx.send(P2PEvent::PairingRequest(pairing_req));
 
@@ -775,4 +820,259 @@ async fn handle_incoming_connection(
     });
 
     Ok(())
+}
+
+async fn handle_transfer_channel_connection(
+    frame: ProtocolFrame,
+    mut read_half: tokio::io::ReadHalf<TcpStream>,
+    write_half: Arc<Mutex<tokio::io::WriteHalf<TcpStream>>>,
+    peer_ip: String,
+    active_sessions: Arc<RwLock<HashMap<String, ActiveSession>>>,
+    event_tx: mpsc::UnboundedSender<P2PEvent>,
+) -> Result<(), P2PError> {
+    let open: TransferChannelOpen = decode_json(&frame)?;
+    let session = {
+        let active = active_sessions.read().await;
+        active.get(&open.session_id).map(|s| ActiveSessionHandle {
+            session_id: s.session_id.clone(),
+            peer_ip: s.peer_ip.clone(),
+        })
+    }
+    .ok_or_else(|| P2PError::SessionNotFound(open.session_id.clone()))?;
+
+    let key_bytes = crypto::derive_key(&open.pair_code, &open.salt);
+    let channel_key = SecureKey::new(key_bytes);
+
+    if session.peer_ip != peer_ip {
+        tracing::warn!(
+            "[P2P] Transfer channel IP changed for session {}: {} -> {}",
+            session.session_id,
+            session.peer_ip,
+            peer_ip
+        );
+    }
+
+    let pending = take_pending_incoming_transfer(&session.session_id, &open.transfer_id)
+        .await
+        .ok_or_else(|| P2PError::TransferFailed("No pending incoming transfer".to_string()))?;
+
+    let ready = TransferChannelReady {
+        transfer_id: open.transfer_id.clone(),
+    };
+    let ready_frame = encode_frame_maybe_encrypted(
+        MSG_TYPE_TRANSFER_CHANNEL_READY,
+        &ready,
+        Some(&channel_key),
+    )?;
+    {
+        let mut wh = write_half.lock().await;
+        wh.write_all(&ready_frame).await?;
+        wh.flush().await?;
+    }
+
+    let mut received_data = Vec::with_capacity(pending.total_size as usize);
+    let mut total_bytes = 0u64;
+    loop {
+        let frame = ProtocolFrame::read_from_stream(&mut read_half).await?;
+        let payload = decrypt_frame_payload(&frame, Some(&channel_key))?;
+        let decrypted = ProtocolFrame {
+            msg_type: frame.msg_type,
+            payload,
+        };
+
+        match decrypted.msg_type {
+            MSG_TYPE_TRANSFER_DATA => {
+                let data: TransferData = decode_json(&decrypted)?;
+                received_data.extend_from_slice(&data.data);
+                total_bytes += data.data.len() as u64;
+                let percentage = if pending.total_size > 0 {
+                    (total_bytes as f64 / pending.total_size as f64) * 100.0
+                } else {
+                    100.0
+                };
+                let _ = event_tx.send(P2PEvent::TransferProgress(TransferProgress {
+                    session_id: session.session_id.clone(),
+                    transfer_id: data.transfer_id,
+                    bytes_transferred: total_bytes,
+                    total_size: pending.total_size,
+                    percentage,
+                }));
+            }
+            MSG_TYPE_TRANSFER_END => {
+                let end: TransferEnd = decode_json(&decrypted)?;
+                let actual_checksum = compute_checksum(&received_data);
+                let (success, reason) = if actual_checksum == end.checksum {
+                    let _ = event_tx.send(P2PEvent::TransferComplete(TransferComplete {
+                        session_id: session.session_id.clone(),
+                        direction: "receive".to_string(),
+                        bill_count: pending.bill_count,
+                        bytes_transferred: total_bytes,
+                    }));
+                    let _ = event_tx.send(P2PEvent::DataReceived(DataReceived {
+                        session_id: session.session_id.clone(),
+                        data: received_data.clone(),
+                    }));
+                    (true, String::new())
+                } else {
+                    let reason = format!(
+                        "Checksum mismatch: expected={}, actual={}",
+                        end.checksum, actual_checksum
+                    );
+                    let _ = event_tx.send(P2PEvent::TransferError(TransferError {
+                        session_id: session.session_id.clone(),
+                        direction: "receive".to_string(),
+                        error: reason.clone(),
+                    }));
+                    (false, reason)
+                };
+
+                let result = TransferChannelResult {
+                    transfer_id: open.transfer_id.clone(),
+                    success,
+                    reason,
+                };
+                let result_frame = encode_frame_maybe_encrypted(
+                    MSG_TYPE_TRANSFER_CHANNEL_RESULT,
+                    &result,
+                    Some(&channel_key),
+                )?;
+                let mut wh = write_half.lock().await;
+                wh.write_all(&result_frame).await?;
+                wh.flush().await?;
+                return Ok(());
+            }
+            msg_type => {
+                return Err(P2PError::TransferFailed(format!(
+                    "Unexpected transfer channel message: {:#x}",
+                    msg_type
+                )));
+            }
+        }
+    }
+}
+
+async fn accept_pending_session(
+    pending: PendingSession,
+    pending_session_id: &str,
+    accepted_session_id: String,
+    event_tx: mpsc::UnboundedSender<P2PEvent>,
+    active_sessions: Arc<RwLock<HashMap<String, ActiveSession>>>,
+    disconnect_tx: Option<mpsc::UnboundedSender<String>>,
+) -> Result<
+    (
+        Option<SecureKey>,
+        crate::P2PSession,
+        Option<Arc<Mutex<tokio::io::WriteHalf<TcpStream>>>>,
+    ),
+    P2PError,
+> {
+    let accept = PairAccept {
+        device_name: "shmtu-terminal".to_string(),
+        session_id: accepted_session_id.clone(),
+    };
+    let frame = encode_pair_accept(&accept)?;
+    {
+        let mut wh = pending.write_half.lock().await;
+        wh.write_all(&frame).await?;
+        wh.flush().await?;
+    }
+
+    let encryption_key = negotiate_encryption_server(&pending, &accepted_session_id).await?;
+
+    let active_session = ActiveSession {
+        write_half: pending.write_half.clone(),
+        session_id: accepted_session_id.clone(),
+        peer_ip: pending.peer_ip.clone(),
+        peer_port: pending.peer_port,
+        peer_device_name: pending.device_name.clone(),
+        is_incoming: true,
+        encryption_key: Some(encryption_key.clone()),
+        pair_code: pending.pair_code.clone(),
+        reconnect_ips: pending.reconnect_ips.clone(),
+        reconnect_port: pending.reconnect_port,
+    };
+
+    let read_half = {
+        let mut rh = pending.read_half.lock().await;
+        rh.take()
+    };
+
+    if let Some(reader) = read_half {
+        let stream = pending.write_half.clone();
+        let read_session_id = accepted_session_id.clone();
+        let enc_key = Some(encryption_key.clone());
+        tokio::spawn(async move {
+            read_loop_inner(
+                reader,
+                &read_session_id,
+                event_tx,
+                stream,
+                enc_key,
+                disconnect_tx.unwrap_or_else(|| {
+                    let (tx, _rx) = mpsc::unbounded_channel();
+                    tx
+                }),
+            )
+            .await;
+        });
+    } else {
+        tracing::warn!(
+            "[P2P] No read_half available for session {}, read loop not started",
+            accepted_session_id
+        );
+    }
+
+    {
+        let mut active = active_sessions.write().await;
+        active.insert(accepted_session_id.clone(), active_session);
+    }
+
+    tracing::info!(
+        "[P2P] Pairing accepted for pending session {}, session_id={}",
+        pending_session_id,
+        accepted_session_id
+    );
+    let session = crate::P2PSession {
+        session_id: accepted_session_id.clone(),
+        peer_ip: pending.peer_ip.clone(),
+        peer_port: pending.peer_port,
+        peer_device_name: pending.device_name.clone(),
+        is_paired: true,
+        is_incoming: true,
+        is_connected: true,
+        pair_code: Some(pending.pair_code.clone()),
+        reconnect_ips: pending.reconnect_ips.clone(),
+        reconnect_port: pending.reconnect_port,
+    };
+    Ok((Some(encryption_key), session, Some(pending.write_half.clone())))
+}
+
+fn find_trusted_session(
+    sessions: &[P2PSession],
+    peer_ip: &str,
+    device_name: &str,
+    pair_code: &str,
+) -> Option<P2PSession> {
+    sessions
+        .iter()
+        .filter(|session| {
+            session.is_paired
+                && !session.is_connected
+                && session
+                    .pair_code
+                    .as_ref()
+                    .map(|code| code.eq_ignore_ascii_case(pair_code))
+                    .unwrap_or(false)
+                && session.peer_device_name == device_name
+        })
+        .max_by_key(|session| {
+            if session.peer_ip == peer_ip {
+                3
+            } else if session.reconnect_ips.iter().any(|ip| ip == peer_ip) {
+                2
+            } else {
+                1
+            }
+        })
+        .cloned()
 }

@@ -71,6 +71,7 @@ export const P2PTransferDialog: React.FC = () => {
   const setPendingPairRequest = useAppStore((s) => s.setPendingPairRequest);
   const identities = useAppStore((s) => s.identities);
   const currentIdentity = useAppStore((s) => s.currentIdentity);
+  const config = useAppStore((s) => s.config);
 
   const showError = useAppStore((s) => s.showError);
 
@@ -288,6 +289,33 @@ export const P2PTransferDialog: React.FC = () => {
     }
   }, [pendingPairRequest, pairPrompt]);
 
+  useEffect(() => {
+    if (!pairPrompt || pairProcessing) {
+      return;
+    }
+
+    const isTrustedReconnect = p2pStatus?.sessions.some((session) => {
+      if (!session.is_paired) {
+        return false;
+      }
+      if (session.peer_device_name !== pairPrompt.peer_device_name) {
+        return false;
+      }
+      return session.peer_ip === pairPrompt.peer_ip;
+    });
+
+    if (isTrustedReconnect) {
+      void handleAcceptPairing();
+    }
+  }, [pairPrompt, pairProcessing, p2pStatus]);
+
+  useEffect(() => {
+    if (!pairPrompt || !config?.p2p?.auto_accept || pairProcessing) {
+      return;
+    }
+    void handleAcceptPairing();
+  }, [pairPrompt, config?.p2p?.auto_accept, pairProcessing]);
+
   const handleStartServer = async () => {
     setServerStarting(true);
     setMessage('');
@@ -326,7 +354,7 @@ export const P2PTransferDialog: React.FC = () => {
         connectIp.trim(),
         parseInt(connectPort.trim()),
         connectPairCode.trim(),
-        'Tauri Client'
+        config?.p2p?.device_name || 'shmtu-terminal'
       );
       await loadP2PStatus();
       setMessage('连接成功');
@@ -385,12 +413,23 @@ export const P2PTransferDialog: React.FC = () => {
   };
 
   const handleDisconnect = async (sessionId: string) => {
+    const session = p2pStatus?.sessions.find((item) => item.session_id === sessionId);
     try {
       await tauri.p2p_disconnect(sessionId);
       await loadP2PStatus();
-      setMessage('已断开连接');
+      setMessage(session?.is_connected ? '已断开连接' : '已移除已配对设备');
     } catch (e) {
       showError(`断开连接失败: ${e}`);
+    }
+  };
+
+  const handleReconnect = async (sessionId: string) => {
+    try {
+      await tauri.p2p_reconnect(sessionId);
+      await loadP2PStatus();
+      setMessage('重连成功');
+    } catch (e) {
+      showError(`重连失败: ${e}`);
     }
   };
 
@@ -659,7 +698,7 @@ export const P2PTransferDialog: React.FC = () => {
                     {session.is_incoming ? '接收' : '发送'}
                   </TableCell>
                   <TableCell>
-                    {session.is_paired ? '已配对' : '未配对'}
+                    {session.is_connected ? '已连接' : '未连接'}
                   </TableCell>
                   <TableCell>
                     {renderEncryptionBadge(session.session_id)}
@@ -670,7 +709,7 @@ export const P2PTransferDialog: React.FC = () => {
                         size="small"
                         appearance="primary"
                         disabled={
-                          !session.is_paired || sendingSessionId === session.session_id
+                          !session.is_paired || !session.is_connected || sendingSessionId === session.session_id
                         }
                         onClick={() => handleSendBills(session.session_id)}
                       >
@@ -682,10 +721,18 @@ export const P2PTransferDialog: React.FC = () => {
                       </Button>
                       <Button
                         size="small"
+                        appearance="secondary"
+                        disabled={session.is_connected}
+                        onClick={() => handleReconnect(session.session_id)}
+                      >
+                        重连
+                      </Button>
+                      <Button
+                        size="small"
                         appearance="subtle"
                         onClick={() => handleDisconnect(session.session_id)}
                       >
-                        断开
+                        {session.is_connected ? '断开' : '移除'}
                       </Button>
                     </div>
                   </TableCell>

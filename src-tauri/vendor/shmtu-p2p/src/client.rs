@@ -7,8 +7,8 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 
 use crate::crypto::{self, SecureKey};
 use crate::protocol::*;
-use crate::transfer::{compute_checksum, TransferProgress};
-use crate::{DataReceived, P2PError, P2PEvent, P2PSession, TransferComplete, TransferError};
+use crate::transfer::{register_pending_incoming_transfer, PendingIncomingTransfer};
+use crate::{P2PError, P2PEvent, P2PSession};
 
 /// 加密协商超时时间（秒）
 const ENCRYPTION_NEGOTIATION_TIMEOUT_SECS: u64 = 10;
@@ -25,6 +25,9 @@ impl P2PClient {
         pair_code: String,
         device_name: String,
         event_tx: mpsc::UnboundedSender<P2PEvent>,
+        disconnect_tx: mpsc::UnboundedSender<String>,
+        listen_port: Option<u16>,
+        listen_ips: Vec<String>,
     ) -> Result<
         (
             P2PSession,
@@ -50,6 +53,8 @@ impl P2PClient {
         let pair_req = PairRequest {
             pair_code: pair_code.to_uppercase(),
             device_name: device_name.clone(),
+            listen_port,
+            listen_ips,
         };
         let req_frame = encode_pair_request(&pair_req)?;
         {
@@ -97,6 +102,10 @@ impl P2PClient {
                     peer_device_name,
                     is_paired: true,
                     is_incoming: false,
+                    is_connected: true,
+                    pair_code: Some(pair_code.clone()),
+                    reconnect_ips: Vec::new(),
+                    reconnect_port: None,
                 };
 
                 // 启动消息读取循环（使用读半）
@@ -111,6 +120,7 @@ impl P2PClient {
                         event_tx_clone,
                         write_half_clone,
                         encryption_key_clone,
+                        disconnect_tx,
                     )
                     .await;
                 });
@@ -259,19 +269,16 @@ pub async fn register_accept_waiter(
 pub async fn read_loop_inner<R: AsyncReadExt + Unpin + Send + 'static>(
     mut reader: R,
     session_id: &str,
-    event_tx: mpsc::UnboundedSender<P2PEvent>,
+    _event_tx: mpsc::UnboundedSender<P2PEvent>,
     write_half: Arc<Mutex<tokio::io::WriteHalf<TcpStream>>>,
     encryption_key: Option<SecureKey>,
+    disconnect_tx: mpsc::UnboundedSender<String>,
 ) {
     tracing::debug!(
         "[P2P] Read loop started for session {} (encrypted: {})",
         session_id,
         encryption_key.is_some()
     );
-
-    let mut received_data: Vec<u8> = Vec::new();
-    let mut expected_total: u64 = 0;
-    let mut total_bytes: u64 = 0;
 
     // 启动心跳定时任务
     let heartbeat_session_id = session_id.to_string();
@@ -373,10 +380,6 @@ pub async fn read_loop_inner<R: AsyncReadExt + Unpin + Send + 'static>(
                             offer.description,
                             offer.total_size
                         );
-                        expected_total = offer.total_size;
-                        total_bytes = 0;
-                        received_data.clear();
-
                         // 自动接受传输
                         let accept = TransferAccept {
                             transfer_id: offer.transfer_id.clone(),
@@ -401,6 +404,14 @@ pub async fn read_loop_inner<R: AsyncReadExt + Unpin + Send + 'static>(
                             tracing::error!("[P2P] Failed to flush: {}", e);
                             break;
                         }
+
+                        register_pending_incoming_transfer(PendingIncomingTransfer {
+                            session_id: session_id.to_string(),
+                            transfer_id: offer.transfer_id,
+                            total_size: offer.total_size,
+                            bill_count: offer.bill_count,
+                        })
+                        .await;
                     }
                     Err(e) => {
                         tracing::error!("[P2P] Failed to decode transfer offer: {}", e);
@@ -440,101 +451,6 @@ pub async fn read_loop_inner<R: AsyncReadExt + Unpin + Send + 'static>(
                     }
                 }
             }
-            MSG_TYPE_TRANSFER_DATA => {
-                match decode_json::<TransferData>(&decrypted_frame) {
-                    Ok(data) => {
-                        received_data.extend_from_slice(&data.data);
-                        total_bytes += data.data.len() as u64;
-
-                        // 计算进度百分比
-                        let percentage = if expected_total > 0 {
-                            (total_bytes as f64 / expected_total as f64) * 100.0
-                        } else {
-                            0.0
-                        };
-
-                        // 发送进度事件
-                        let progress = TransferProgress {
-                            session_id: session_id.to_string(),
-                            transfer_id: data.transfer_id.clone(),
-                            bytes_transferred: total_bytes,
-                            total_size: expected_total,
-                            percentage,
-                        };
-                        let _ = event_tx.send(P2PEvent::TransferProgress(progress));
-                    }
-                    Err(e) => {
-                        tracing::error!("[P2P] Failed to decode transfer data: {}", e);
-                    }
-                }
-            }
-            MSG_TYPE_TRANSFER_END => {
-                match decode_json::<TransferEnd>(&decrypted_frame) {
-                    Ok(end) => {
-                        tracing::info!(
-                            "[P2P] Transfer complete: {} bytes, checksum={}",
-                            total_bytes,
-                            end.checksum
-                        );
-
-                        // 验证校验和
-                        let actual_checksum = compute_checksum(&received_data);
-                        if actual_checksum != end.checksum {
-                            tracing::error!(
-                                "[P2P] Checksum mismatch: expected={}, actual={}",
-                                end.checksum,
-                                actual_checksum
-                            );
-                            let error = TransferError {
-                                session_id: session_id.to_string(),
-                                direction: "receive".to_string(),
-                                error: format!(
-                                    "Checksum mismatch: expected={}, actual={}",
-                                    end.checksum, actual_checksum
-                                ),
-                            };
-                            let _ = event_tx.send(P2PEvent::TransferError(error));
-                            // 重置传输状态
-                            total_bytes = 0;
-                            expected_total = 0;
-                            received_data.clear();
-                            continue;
-                        }
-
-                        // 解析账单数据计算数量
-                        let bill_count =
-                            serde_json::from_slice::<serde_json::Value>(&received_data)
-                                .ok()
-                                .and_then(|v| {
-                                    v.get("bills").and_then(|b| b.as_array()).map(|a| a.len())
-                                })
-                                .unwrap_or(0);
-
-                        let complete = TransferComplete {
-                            session_id: session_id.to_string(),
-                            direction: "receive".to_string(),
-                            bill_count,
-                            bytes_transferred: total_bytes,
-                        };
-                        let _ = event_tx.send(P2PEvent::TransferComplete(complete));
-
-                        // 发送 DataReceived 事件，携带完整数据
-                        let data_received = DataReceived {
-                            session_id: session_id.to_string(),
-                            data: received_data.clone(),
-                        };
-                        let _ = event_tx.send(P2PEvent::DataReceived(data_received));
-
-                        // 重置传输状态
-                        total_bytes = 0;
-                        expected_total = 0;
-                        received_data.clear();
-                    }
-                    Err(e) => {
-                        tracing::error!("[P2P] Failed to decode transfer end: {}", e);
-                    }
-                }
-            }
             MSG_TYPE_DISCONNECT => {
                 tracing::info!("[P2P] Peer disconnected session {}", session_id);
                 break;
@@ -551,6 +467,7 @@ pub async fn read_loop_inner<R: AsyncReadExt + Unpin + Send + 'static>(
 
     // 关闭心跳任务
     let _ = heartbeat_shutdown_tx.send(());
+    let _ = disconnect_tx.send(session_id.to_string());
 
     tracing::debug!("[P2P] Read loop ended for session {}", session_id);
 }

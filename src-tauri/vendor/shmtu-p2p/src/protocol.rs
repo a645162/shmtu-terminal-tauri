@@ -27,6 +27,9 @@ pub const MSG_TYPE_TRANSFER_ACCEPT: u8 = 0x11;
 pub const MSG_TYPE_TRANSFER_REJECT: u8 = 0x12;
 pub const MSG_TYPE_TRANSFER_DATA: u8 = 0x13;
 pub const MSG_TYPE_TRANSFER_END: u8 = 0x14;
+pub const MSG_TYPE_TRANSFER_CHANNEL_OPEN: u8 = 0x15;
+pub const MSG_TYPE_TRANSFER_CHANNEL_READY: u8 = 0x16;
+pub const MSG_TYPE_TRANSFER_CHANNEL_RESULT: u8 = 0x17;
 pub const MSG_TYPE_DISCONNECT: u8 = 0xFF;
 
 /// 配对码（6 位大写字母）
@@ -73,6 +76,10 @@ impl fmt::Display for PairCode {
 pub struct PairRequest {
     pub pair_code: String,
     pub device_name: String,
+    #[serde(default)]
+    pub listen_port: Option<u16>,
+    #[serde(default)]
+    pub listen_ips: Vec<String>,
 }
 
 /// 配对接受消息
@@ -149,6 +156,29 @@ pub struct TransferData {
 pub struct TransferEnd {
     pub transfer_id: String,
     pub checksum: String,
+}
+
+/// 独立传输通道打开请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransferChannelOpen {
+    pub session_id: String,
+    pub transfer_id: String,
+    pub pair_code: String,
+    pub salt: Vec<u8>,
+}
+
+/// 独立传输通道已就绪
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransferChannelReady {
+    pub transfer_id: String,
+}
+
+/// 独立传输通道结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransferChannelResult {
+    pub transfer_id: String,
+    pub success: bool,
+    pub reason: String,
 }
 
 /// 断开连接消息
@@ -293,6 +323,8 @@ pub fn should_encrypt_msg(msg_type: u8) -> bool {
             | MSG_TYPE_TRANSFER_REJECT
             | MSG_TYPE_TRANSFER_DATA
             | MSG_TYPE_TRANSFER_END
+            | MSG_TYPE_TRANSFER_CHANNEL_READY
+            | MSG_TYPE_TRANSFER_CHANNEL_RESULT
             | MSG_TYPE_DISCONNECT
     )
 }
@@ -388,6 +420,27 @@ pub fn encode_transfer_data(data: &TransferData) -> Result<Vec<u8>, ProtocolErro
 /// 将传输结束编码为帧
 pub fn encode_transfer_end(end: &TransferEnd) -> Result<Vec<u8>, ProtocolError> {
     ProtocolFrame::encode_json(MSG_TYPE_TRANSFER_END, end)
+}
+
+/// 将独立传输通道打开请求编码为帧
+pub fn encode_transfer_channel_open(
+    open: &TransferChannelOpen,
+) -> Result<Vec<u8>, ProtocolError> {
+    ProtocolFrame::encode_json(MSG_TYPE_TRANSFER_CHANNEL_OPEN, open)
+}
+
+/// 将独立传输通道就绪消息编码为帧
+pub fn encode_transfer_channel_ready(
+    ready: &TransferChannelReady,
+) -> Result<Vec<u8>, ProtocolError> {
+    ProtocolFrame::encode_json(MSG_TYPE_TRANSFER_CHANNEL_READY, ready)
+}
+
+/// 将独立传输通道结果编码为帧
+pub fn encode_transfer_channel_result(
+    result: &TransferChannelResult,
+) -> Result<Vec<u8>, ProtocolError> {
+    ProtocolFrame::encode_json(MSG_TYPE_TRANSFER_CHANNEL_RESULT, result)
 }
 
 /// 将断开连接编码为帧

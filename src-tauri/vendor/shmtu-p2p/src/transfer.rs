@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -6,7 +7,7 @@ use tokio::net::TcpStream;
 use tokio::sync::{oneshot, Mutex};
 
 use crate::client::register_accept_waiter;
-use crate::crypto::SecureKey;
+use crate::crypto::{self, SecureKey};
 use crate::protocol::*;
 use crate::{P2PError, P2PEvent, TransferComplete, TransferError};
 
@@ -23,21 +24,52 @@ pub struct TransferProgress {
 /// 传输引擎
 pub struct TransferEngine {
     write_half: Arc<Mutex<tokio::io::WriteHalf<TcpStream>>>,
+    target_ip: String,
+    target_port: u16,
+    session_id: String,
+    pair_code: String,
     /// 加密密钥（可选）
     encryption_key: Option<SecureKey>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PendingIncomingTransfer {
+    pub session_id: String,
+    pub transfer_id: String,
+    pub total_size: u64,
+    pub bill_count: usize,
 }
 
 /// 数据块大小 (64KB)
 const CHUNK_SIZE: usize = 64 * 1024;
 
+type PendingIncomingTransfers = Arc<Mutex<HashMap<String, PendingIncomingTransfer>>>;
+
+static PENDING_INCOMING_TRANSFERS: std::sync::OnceLock<PendingIncomingTransfers> =
+    std::sync::OnceLock::new();
+
+fn get_pending_incoming_transfers() -> PendingIncomingTransfers {
+    PENDING_INCOMING_TRANSFERS
+        .get_or_init(|| Arc::new(Mutex::new(HashMap::new())))
+        .clone()
+}
+
 impl TransferEngine {
     /// 从写半创建传输引擎
-    pub fn from_write_half(
+    pub fn new(
         write_half: Arc<Mutex<tokio::io::WriteHalf<TcpStream>>>,
+        target_ip: String,
+        target_port: u16,
+        session_id: String,
+        pair_code: String,
         encryption_key: Option<SecureKey>,
     ) -> Self {
         Self {
             write_half,
+            target_ip,
+            target_port,
+            session_id,
+            pair_code,
             encryption_key,
         }
     }
@@ -99,7 +131,45 @@ impl TransferEngine {
             }
         }
 
+        let channel_key =
+            open_transfer_channel(&self.target_ip, self.target_port, &self.session_id, transfer_id, &self.pair_code)
+                .await?;
+
         // 分块发送数据
+        let target = format!("{}:{}", self.target_ip, self.target_port);
+        let mut stream = TcpStream::connect(&target).await.map_err(|e| {
+            P2PError::ConnectionFailed(format!("Failed to open transfer channel to {}: {}", target, e))
+        })?;
+        let open = TransferChannelOpen {
+            session_id: self.session_id.clone(),
+            transfer_id: transfer_id.to_string(),
+            pair_code: self.pair_code.clone(),
+            salt: channel_key.1.clone(),
+        };
+        let open_frame = encode_transfer_channel_open(&open)?;
+        stream.write_all(&open_frame).await?;
+        stream.flush().await?;
+
+        let ready_frame = ProtocolFrame::read_from_stream(&mut stream).await?;
+        let ready_payload = decrypt_frame_payload(
+            &ready_frame,
+            Some(&channel_key.0),
+        )?;
+        let ready_frame = ProtocolFrame {
+            msg_type: ready_frame.msg_type,
+            payload: ready_payload,
+        };
+        if ready_frame.msg_type != MSG_TYPE_TRANSFER_CHANNEL_READY {
+            return Err(P2PError::TransferFailed(format!(
+                "Unexpected transfer channel response: {:#x}",
+                ready_frame.msg_type
+            )));
+        }
+        let ready: TransferChannelReady = decode_json(&ready_frame)?;
+        if ready.transfer_id != transfer_id {
+            return Err(P2PError::TransferFailed("Transfer channel ready mismatch".to_string()));
+        }
+
         let mut offset = 0;
         let mut sequence: u32 = 0;
         let mut bytes_sent: u64 = 0;
@@ -115,12 +185,9 @@ impl TransferEngine {
             };
 
             let data_frame =
-                encode_frame_maybe_encrypted(MSG_TYPE_TRANSFER_DATA, &transfer_data, self.encryption_key.as_ref())?;
-            {
-                let mut wh = self.write_half.lock().await;
-                wh.write_all(&data_frame).await?;
-                wh.flush().await?;
-            }
+                encode_frame_maybe_encrypted(MSG_TYPE_TRANSFER_DATA, &transfer_data, Some(&channel_key.0))?;
+            stream.write_all(&data_frame).await?;
+            stream.flush().await?;
 
             bytes_sent += chunk.len() as u64;
             sequence += 1;
@@ -151,11 +218,35 @@ impl TransferEngine {
             checksum: checksum.clone(),
         };
         let end_frame =
-            encode_frame_maybe_encrypted(MSG_TYPE_TRANSFER_END, &end_msg, self.encryption_key.as_ref())?;
-        {
-            let mut wh = self.write_half.lock().await;
-            wh.write_all(&end_frame).await?;
-            wh.flush().await?;
+            encode_frame_maybe_encrypted(MSG_TYPE_TRANSFER_END, &end_msg, Some(&channel_key.0))?;
+        stream.write_all(&end_frame).await?;
+        stream.flush().await?;
+
+        let result_frame = ProtocolFrame::read_from_stream(&mut stream).await?;
+        let result_payload = decrypt_frame_payload(&result_frame, Some(&channel_key.0))?;
+        let result_frame = ProtocolFrame {
+            msg_type: result_frame.msg_type,
+            payload: result_payload,
+        };
+        if result_frame.msg_type != MSG_TYPE_TRANSFER_CHANNEL_RESULT {
+            return Err(P2PError::TransferFailed(format!(
+                "Unexpected transfer result type: {:#x}",
+                result_frame.msg_type
+            )));
+        }
+        let result: TransferChannelResult = decode_json(&result_frame)?;
+        if !result.success {
+            let error = TransferError {
+                session_id: session_id.to_string(),
+                direction: "send".to_string(),
+                error: if is_blank(&result.reason) {
+                    "Transfer failed on receiver".to_string()
+                } else {
+                    result.reason
+                },
+            };
+            let _ = event_tx.send(P2PEvent::TransferError(error));
+            return Err(P2PError::TransferFailed("Receiver reported transfer failure".to_string()));
         }
 
         tracing::info!(
@@ -176,6 +267,41 @@ impl TransferEngine {
 
         Ok(())
     }
+}
+
+pub async fn register_pending_incoming_transfer(pending: PendingIncomingTransfer) {
+    let transfers = get_pending_incoming_transfers();
+    let mut map = transfers.lock().await;
+    map.insert(
+        format!("{}:{}", pending.session_id, pending.transfer_id),
+        pending,
+    );
+}
+
+pub async fn take_pending_incoming_transfer(
+    session_id: &str,
+    transfer_id: &str,
+) -> Option<PendingIncomingTransfer> {
+    let transfers = get_pending_incoming_transfers();
+    let mut map = transfers.lock().await;
+    map.remove(&format!("{}:{}", session_id, transfer_id))
+}
+
+fn is_blank(s: &str) -> bool {
+    s.trim().is_empty()
+}
+
+async fn open_transfer_channel(
+    _target_ip: &str,
+    _target_port: u16,
+    _session_id: &str,
+    _transfer_id: &str,
+    pair_code: &str,
+) -> Result<(SecureKey, Vec<u8>), P2PError> {
+    let salt = crypto::generate_salt().to_vec();
+    let key_bytes = crypto::derive_key(pair_code, &salt);
+    let key = SecureKey::new(key_bytes);
+    Ok((key, salt))
 }
 
 /// 计算数据的简单校验和（FNV-1a hash 的十六进制表示）

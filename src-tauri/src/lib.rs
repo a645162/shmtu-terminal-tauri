@@ -64,6 +64,21 @@ pub fn run() {
                 .block_on(state::AppState::init(data_dir.to_str().unwrap_or("Data")))
                 .expect("Failed to initialize app state");
 
+            let p2p_auto_start = {
+                let config = runtime.block_on(app_state.config.read());
+                config.get().p2p.auto_start
+            };
+            if p2p_auto_start {
+                let p2p_manager = app_state.p2p_manager.clone();
+                let config_handle = app_state.config.clone();
+                runtime.block_on(async {
+                    let config = config_handle.read().await;
+                    if let Err(e) = p2p_manager.read().await.start_server(&config.get().p2p).await {
+                        tracing::error!("[P2P] Auto start failed: {}", e);
+                    }
+                });
+            }
+
             tracing::info!("应用状态初始化完成");
             app.manage(app_state);
             Ok(())
@@ -147,6 +162,7 @@ pub fn run() {
             p2p::p2p_send_bills,
             p2p::p2p_get_status,
             p2p::p2p_disconnect,
+            p2p::p2p_reconnect,
             p2p::p2p_manual_pair,
         ])
         .run(tauri::generate_context!())

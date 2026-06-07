@@ -88,6 +88,10 @@ pub struct P2PSession {
     pub peer_device_name: String,
     pub is_paired: bool,
     pub is_incoming: bool,
+    pub is_connected: bool,
+    pub pair_code: Option<String>,
+    pub reconnect_ips: Vec<String>,
+    pub reconnect_port: Option<u16>,
 }
 
 /// P2P 整体状态
@@ -107,6 +111,9 @@ pub struct PairingRequest {
     pub peer_ip: String,
     pub peer_port: u16,
     pub peer_device_name: String,
+    pub pair_code: String,
+    pub reconnect_ips: Vec<String>,
+    pub reconnect_port: Option<u16>,
 }
 
 /// 传输完成通知
@@ -153,6 +160,10 @@ pub enum P2PEvent {
 pub struct P2PConfig {
     #[serde(default)]
     pub auto_start: bool,
+    #[serde(default)]
+    pub auto_accept: bool,
+    #[serde(default)]
+    pub auto_reconnect: bool,
     #[serde(default = "default_device_name")]
     pub device_name: String,
     #[serde(default = "default_p2p_port")]
@@ -171,6 +182,8 @@ impl Default for P2PConfig {
     fn default() -> Self {
         Self {
             auto_start: false,
+            auto_accept: false,
+            auto_reconnect: false,
             device_name: default_device_name(),
             port: default_p2p_port(),
         }
@@ -187,25 +200,41 @@ pub struct P2PManager {
 struct P2PManagerInner {
     server: Option<P2PServer>,
     sessions: HashMap<String, P2PSession>,
+    known_sessions: Arc<RwLock<Vec<P2PSession>>>,
     event_tx: mpsc::UnboundedSender<P2PEvent>,
+    disconnect_tx: mpsc::UnboundedSender<String>,
     /// 客户端连接的写半，用于 send_bills
     client_write_halves: HashMap<String, Arc<Mutex<WriteHalf<TcpStream>>>>,
     /// 每个 session 的加密密钥（SecureKey 在 drop 时自动清零）
     encryption_keys: HashMap<String, SecureKey>,
+    config: P2PConfig,
 }
 
 impl P2PManager {
     /// 创建新的 P2P 管理器
     pub fn new() -> Self {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let (disconnect_tx, mut disconnect_rx) = mpsc::unbounded_channel();
+        let inner = Arc::new(RwLock::new(P2PManagerInner {
+            server: None,
+            sessions: HashMap::new(),
+            known_sessions: Arc::new(RwLock::new(Vec::new())),
+            event_tx,
+            disconnect_tx: disconnect_tx.clone(),
+            client_write_halves: HashMap::new(),
+            encryption_keys: HashMap::new(),
+            config: P2PConfig::default(),
+        }));
+
+        let inner_for_task = inner.clone();
+        tokio::spawn(async move {
+            while let Some(session_id) = disconnect_rx.recv().await {
+                handle_connection_closed(inner_for_task.clone(), session_id).await;
+            }
+        });
+
         Self {
-            inner: Arc::new(RwLock::new(P2PManagerInner {
-                server: None,
-                sessions: HashMap::new(),
-                event_tx,
-                client_write_halves: HashMap::new(),
-                encryption_keys: HashMap::new(),
-            })),
+            inner,
             event_rx: Arc::new(Mutex::new(Some(event_rx))),
         }
     }
@@ -223,8 +252,9 @@ impl P2PManager {
             return Err(P2PError::ServerAlreadyRunning);
         }
 
+        inner.config = config.clone();
         let event_tx = inner.event_tx.clone();
-        let server = P2PServer::start(event_tx, config.port).await?;
+        let server = P2PServer::start(event_tx, config.port, inner.known_sessions.clone()).await?;
         let info = server.info();
 
         inner.server = Some(server);
@@ -269,16 +299,33 @@ impl P2PManager {
     ) -> P2PResult<P2PSession> {
         let inner = self.inner.read().await;
         let event_tx = inner.event_tx.clone();
+        let disconnect_tx = inner.disconnect_tx.clone();
+        let listen_port = inner
+            .server
+            .as_ref()
+            .map(|server| server.info().port)
+            .unwrap_or(inner.config.port);
         drop(inner);
 
         let (session, write_half, encryption_key) =
-            crate::client::P2PClient::connect(addr, port, pair_code, device_name, event_tx).await?;
+            crate::client::P2PClient::connect(
+                addr,
+                port,
+                pair_code,
+                device_name,
+                event_tx,
+                disconnect_tx,
+                Some(listen_port),
+                crate::discovery::get_local_ips(),
+            )
+            .await?;
 
         let session_clone = session.clone();
         let mut inner = self.inner.write().await;
         inner
             .sessions
             .insert(session.session_id.clone(), session_clone);
+        upsert_known_session(&inner.known_sessions, session.clone()).await;
         inner
             .client_write_halves
             .insert(session.session_id.clone(), write_half);
@@ -292,15 +339,27 @@ impl P2PManager {
 
     /// 接受配对请求
     pub async fn accept_pairing(&self, session_id: &str) -> P2PResult<()> {
-        let encryption_key = {
+        let (encryption_key, active_session, write_half) = {
             let inner = self.inner.read().await;
             let server = inner.server.as_ref().ok_or(P2PError::ServerNotStarted)?;
-            server.accept_pairing(session_id).await?
+            server
+                .accept_pairing_with_session(session_id, Some(inner.disconnect_tx.clone()))
+                .await?
         };
-        // 存储加密密钥到 manager（在写锁下）
+        let mut inner = self.inner.write().await;
+        inner
+            .sessions
+            .insert(active_session.session_id.clone(), active_session.clone());
+        upsert_known_session(&inner.known_sessions, active_session.clone()).await;
+        if let Some(wh) = write_half {
+            inner
+                .client_write_halves
+                .insert(active_session.session_id.clone(), wh);
+        }
         if let Some(key) = encryption_key {
-            let mut inner = self.inner.write().await;
-            inner.encryption_keys.insert(session_id.to_string(), key);
+            inner
+                .encryption_keys
+                .insert(active_session.session_id.clone(), key);
         }
         Ok(())
     }
@@ -329,10 +388,23 @@ impl P2PManager {
         // 服务端找不到则尝试从客户端连接发送
         let write_half = inner.client_write_halves.get(session_id).cloned();
         let encryption_key = inner.encryption_keys.get(session_id).cloned();
+        let session = inner.sessions.get(session_id).cloned();
         drop(inner);
 
         if let Some(wh) = write_half {
-            let engine = crate::transfer::TransferEngine::from_write_half(wh, encryption_key);
+            let session = session.ok_or_else(|| P2PError::SessionNotFound(session_id.to_string()))?;
+            let pair_code = session
+                .pair_code
+                .clone()
+                .ok_or_else(|| P2PError::PairingFailed("当前会话缺少配对码".to_string()))?;
+            let engine = crate::transfer::TransferEngine::new(
+                wh,
+                session.peer_ip.clone(),
+                session.peer_port,
+                session.session_id.clone(),
+                pair_code,
+                encryption_key,
+            );
             let transfer_id = uuid::Uuid::new_v4().to_string();
 
             // 获取 event_tx
@@ -368,10 +440,30 @@ impl P2PManager {
     /// 断开会话
     pub async fn disconnect(&self, session_id: &str) -> P2PResult<()> {
         let mut inner = self.inner.write().await;
+        let is_connected = inner
+            .sessions
+            .get(session_id)
+            .map(|session| session.is_connected)
+            .unwrap_or(false);
+
+        if !is_connected {
+            inner.sessions.remove(session_id);
+            remove_known_session(&inner.known_sessions, session_id).await;
+            inner.client_write_halves.remove(session_id);
+            inner.encryption_keys.remove(session_id);
+            return Ok(());
+        }
+
         if let Some(server) = &inner.server {
             let _ = server.disconnect(session_id).await;
         }
-        inner.sessions.remove(session_id);
+        let known_sessions = inner.known_sessions.clone();
+        if let Some(session) = inner.sessions.get_mut(session_id) {
+            session.is_connected = false;
+            let updated = session.clone();
+            let _ = session;
+            upsert_known_session(&known_sessions, updated).await;
+        }
         inner.client_write_halves.remove(session_id);
         // SecureKey 的 Drop 会在 remove 时自动清零密钥
         inner.encryption_keys.remove(session_id);
@@ -393,6 +485,9 @@ impl P2PManager {
     pub async fn register_session(&self, session: P2PSession) {
         let mut inner = self.inner.write().await;
         inner.sessions.insert(session.session_id.clone(), session);
+        if let Some(session) = inner.sessions.values().last().cloned() {
+            upsert_known_session(&inner.known_sessions, session).await;
+        }
     }
 
     /// 注册服务端会话的写半
@@ -409,14 +504,229 @@ impl P2PManager {
     pub async fn remove_session(&self, session_id: &str) {
         let mut inner = self.inner.write().await;
         inner.sessions.remove(session_id);
+        remove_known_session(&inner.known_sessions, session_id).await;
         inner.client_write_halves.remove(session_id);
         // SecureKey 的 Drop 会在 remove 时自动清零密钥
         inner.encryption_keys.remove(session_id);
     }
+
+    pub async fn reconnect(&self, session_id: &str) -> P2PResult<P2PSession> {
+        let existing = {
+            let inner = self.inner.read().await;
+            inner
+                .sessions
+                .get(session_id)
+                .cloned()
+                .ok_or_else(|| P2PError::SessionNotFound(session_id.to_string()))?
+        };
+
+        if existing.is_connected {
+            return Ok(existing);
+        }
+
+        let pair_code = existing
+            .pair_code
+            .clone()
+            .ok_or_else(|| P2PError::PairingFailed("当前会话缺少配对码".to_string()))?;
+
+        let (target_ip, target_port) = if existing.is_incoming {
+            let port = existing
+                .reconnect_port
+                .ok_or_else(|| P2PError::ConnectionFailed("当前会话缺少重连端口".to_string()))?;
+            let ip = select_reconnect_ip(&existing.reconnect_ips)
+                .ok_or_else(|| P2PError::ConnectionFailed("当前会话缺少重连地址".to_string()))?;
+            (ip, port)
+        } else {
+            (existing.peer_ip.clone(), existing.peer_port)
+        };
+
+        let inner = self.inner.read().await;
+        let event_tx = inner.event_tx.clone();
+        let disconnect_tx = inner.disconnect_tx.clone();
+        let device_name = inner.config.device_name.clone();
+        let listen_port = inner
+            .server
+            .as_ref()
+            .map(|server| server.info().port)
+            .unwrap_or(inner.config.port);
+        drop(inner);
+
+        let (fresh_session, write_half, encryption_key) = crate::client::P2PClient::connect(
+            target_ip.clone(),
+            target_port,
+            pair_code.clone(),
+            device_name,
+            event_tx,
+            disconnect_tx,
+            Some(listen_port),
+            crate::discovery::get_local_ips(),
+        )
+        .await?;
+
+        let updated = P2PSession {
+            session_id: session_id.to_string(),
+            peer_ip: target_ip,
+            peer_port: target_port,
+            peer_device_name: fresh_session.peer_device_name,
+            is_paired: true,
+            is_incoming: existing.is_incoming,
+            is_connected: true,
+            pair_code: Some(pair_code),
+            reconnect_ips: existing.reconnect_ips,
+            reconnect_port: existing.reconnect_port,
+        };
+
+        let mut inner = self.inner.write().await;
+        inner.sessions.insert(session_id.to_string(), updated.clone());
+        upsert_known_session(&inner.known_sessions, updated.clone()).await;
+        inner
+            .client_write_halves
+            .insert(session_id.to_string(), write_half);
+        if let Some(key) = encryption_key {
+            inner.encryption_keys.insert(session_id.to_string(), key);
+        }
+        Ok(updated)
+    }
+}
+
+fn select_reconnect_ip(ips: &[String]) -> Option<String> {
+    ips.iter()
+        .find(|ip| !ip.starts_with("127."))
+        .cloned()
+        .or_else(|| ips.first().cloned())
+}
+
+async fn handle_connection_closed(inner: Arc<RwLock<P2PManagerInner>>, session_id: String) {
+    let should_reconnect = {
+        let mut inner_guard = inner.write().await;
+        let auto_reconnect = inner_guard.config.auto_reconnect;
+        let known_sessions = inner_guard.known_sessions.clone();
+        inner_guard.client_write_halves.remove(&session_id);
+        inner_guard.encryption_keys.remove(&session_id);
+        if let Some(session) = inner_guard.sessions.get_mut(&session_id) {
+            session.is_connected = false;
+            let updated = session.clone();
+            let should_reconnect = auto_reconnect
+                && updated.is_paired
+                && updated.pair_code.is_some()
+                && (!updated.is_incoming || (updated.reconnect_port.is_some() && !updated.reconnect_ips.is_empty()));
+            upsert_known_session(&known_sessions, updated).await;
+            should_reconnect
+        } else {
+            false
+        }
+    };
+
+    if should_reconnect {
+        let inner_for_retry = inner.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+            let _ = reconnect_with_inner(inner_for_retry, &session_id).await;
+        });
+    }
+}
+
+async fn reconnect_with_inner(
+    inner: Arc<RwLock<P2PManagerInner>>,
+    session_id: &str,
+) -> P2PResult<P2PSession> {
+    let existing = {
+        let inner = inner.read().await;
+        inner
+            .sessions
+            .get(session_id)
+            .cloned()
+            .ok_or_else(|| P2PError::SessionNotFound(session_id.to_string()))?
+    };
+
+    if existing.is_connected {
+        return Ok(existing);
+    }
+
+    let pair_code = existing
+        .pair_code
+        .clone()
+        .ok_or_else(|| P2PError::PairingFailed("当前会话缺少配对码".to_string()))?;
+
+    let (target_ip, target_port) = if existing.is_incoming {
+        let port = existing
+            .reconnect_port
+            .ok_or_else(|| P2PError::ConnectionFailed("当前会话缺少重连端口".to_string()))?;
+        let ip = select_reconnect_ip(&existing.reconnect_ips)
+            .ok_or_else(|| P2PError::ConnectionFailed("当前会话缺少重连地址".to_string()))?;
+        (ip, port)
+    } else {
+        (existing.peer_ip.clone(), existing.peer_port)
+    };
+
+    let inner_guard = inner.read().await;
+    let event_tx = inner_guard.event_tx.clone();
+    let disconnect_tx = inner_guard.disconnect_tx.clone();
+    let device_name = inner_guard.config.device_name.clone();
+    let listen_port = inner_guard
+        .server
+        .as_ref()
+        .map(|server| server.info().port)
+        .unwrap_or(inner_guard.config.port);
+    drop(inner_guard);
+
+    let (fresh_session, write_half, encryption_key) = crate::client::P2PClient::connect(
+        target_ip.clone(),
+        target_port,
+        pair_code.clone(),
+        device_name,
+        event_tx,
+        disconnect_tx,
+        Some(listen_port),
+        crate::discovery::get_local_ips(),
+    )
+    .await?;
+
+    let updated = P2PSession {
+        session_id: session_id.to_string(),
+        peer_ip: target_ip,
+        peer_port: target_port,
+        peer_device_name: fresh_session.peer_device_name,
+        is_paired: true,
+        is_incoming: existing.is_incoming,
+        is_connected: true,
+        pair_code: Some(pair_code),
+        reconnect_ips: existing.reconnect_ips,
+        reconnect_port: existing.reconnect_port,
+    };
+
+    let mut inner_guard = inner.write().await;
+    inner_guard
+        .sessions
+        .insert(session_id.to_string(), updated.clone());
+    upsert_known_session(&inner_guard.known_sessions, updated.clone()).await;
+    inner_guard
+        .client_write_halves
+        .insert(session_id.to_string(), write_half);
+    if let Some(key) = encryption_key {
+        inner_guard
+            .encryption_keys
+            .insert(session_id.to_string(), key);
+    }
+    Ok(updated)
 }
 
 impl Default for P2PManager {
     fn default() -> Self {
         Self::new()
     }
+}
+
+async fn upsert_known_session(store: &Arc<RwLock<Vec<P2PSession>>>, session: P2PSession) {
+    let mut sessions = store.write().await;
+    if let Some(existing) = sessions.iter_mut().find(|item| item.session_id == session.session_id) {
+        *existing = session;
+    } else {
+        sessions.push(session);
+    }
+}
+
+async fn remove_known_session(store: &Arc<RwLock<Vec<P2PSession>>>, session_id: &str) {
+    let mut sessions = store.write().await;
+    sessions.retain(|session| session.session_id != session_id);
 }

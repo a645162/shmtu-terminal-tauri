@@ -23,6 +23,7 @@ import { ErrorDialog } from './ErrorDialog';
 import { SyncStatusPanel } from './SyncStatusPanel';
 import { GlobalContextMenuGuard } from './GlobalContextMenuGuard';
 import type { SyncProgress } from '../../types';
+import type { P2PPairingRequest } from '../../services/tauri';
 
 export const AppProvider: React.FC = () => {
   const theme = useAppStore((s) => s.theme);
@@ -76,6 +77,8 @@ export const AppProvider: React.FC = () => {
   const setSyncProgress = useAppStore((s) => s.setSyncProgress);
   const clearSyncProgress = useAppStore((s) => s.clearSyncProgress);
   const syncProgress = useAppStore((s) => s.syncProgress);
+  const setPendingPairRequest = useAppStore((s) => s.setPendingPairRequest);
+  const setShowP2PDialog = useAppStore((s) => s.setShowP2PDialog);
 
   useEffect(() => {
     if (config?.security?.enable_startup_protection && hasRequestedStartupDialog && !showStartupDialog) {
@@ -154,6 +157,31 @@ export const AppProvider: React.FC = () => {
       }
     };
   }, [setSyncProgress]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    listen<P2PPairingRequest>('p2p-pairing-request', (event) => {
+      if (disposed) {
+        return;
+      }
+
+      setPendingPairRequest(event.payload);
+      setShowP2PDialog(true);
+    })
+      .then((fn) => {
+        unlisten = fn;
+      })
+      .catch(console.error);
+
+    return () => {
+      disposed = true;
+      if (unlisten) {
+        void unlisten();
+      }
+    };
+  }, [setPendingPairRequest, setShowP2PDialog]);
 
   useEffect(() => {
     if (syncProgress?.status !== 'completed') {
