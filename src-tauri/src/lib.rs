@@ -15,7 +15,7 @@ pub mod sync;
 
 use commands::{
     account, bill, captcha, classify, config as cmd_config, data, error as error_cmd, identity,
-    statistics, sync as cmd_sync,
+    p2p, statistics, sync as cmd_sync,
 };
 use tauri::Manager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -138,6 +138,16 @@ pub fn run() {
             classify::reclassify_all_bills,
             classify::reclassify_bills_by_identity,
             error_cmd::log_error,
+            p2p::p2p_start_server,
+            p2p::p2p_stop_server,
+            p2p::p2p_get_qr_payload,
+            p2p::p2p_connect,
+            p2p::p2p_accept_pairing,
+            p2p::p2p_reject_pairing,
+            p2p::p2p_send_bills,
+            p2p::p2p_get_status,
+            p2p::p2p_disconnect,
+            p2p::p2p_manual_pair,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

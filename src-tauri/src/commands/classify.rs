@@ -259,11 +259,7 @@ async fn reclassify_bills_internal(
             Some(category_str.clone())
         };
 
-        let match_mode = if translator
-            .keywords
-            .keys()
-            .any(|k| target_user.trim() == k)
-        {
+        let match_mode = if translator.keywords.keys().any(|k| target_user.trim() == k) {
             "EXACT"
         } else if translator
             .keywords
@@ -317,9 +313,7 @@ async fn reclassify_bills_internal(
 
 /// 重算**所有**身份下的历史账单
 #[tauri::command]
-pub async fn reclassify_all_bills(
-    state: State<'_, AppState>,
-) -> Result<ReclassifyResult, String> {
+pub async fn reclassify_all_bills(state: State<'_, AppState>) -> Result<ReclassifyResult, String> {
     tracing::info!("[Reclassify] reclassify_all_bills called");
     reclassify_bills_internal(state.inner(), None).await
 }

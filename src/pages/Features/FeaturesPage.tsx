@@ -17,6 +17,7 @@ import {
   BookInformation24Regular,
   ArrowSync24Regular,
   Water24Regular,
+  PeopleSwap24Regular,
 } from '@fluentui/react-icons';
 import { useAppStore } from '../../stores/appStore';
 import * as tauri from '../../services/tauri';
@@ -37,6 +38,7 @@ interface FeatureItem {
 export const FeaturesPage: React.FC = () => {
   const setShowStatisticsDialog = useAppStore((s) => s.setShowStatisticsDialog);
   const setShowDataTransferDialog = useAppStore((s) => s.setShowDataTransferDialog);
+  const setShowP2PDialog = useAppStore((s) => s.setShowP2PDialog);
   const setShowCaptchaTestDialog = useAppStore((s) => s.setShowCaptchaTestDialog);
   const setShowIdentityManagerDialog = useAppStore((s) => s.setShowIdentityManagerDialog);
   const setShowSettingsDialog = useAppStore((s) => s.setShowSettingsDialog);
@@ -60,6 +62,12 @@ export const FeaturesPage: React.FC = () => {
       description: '从JSON文件导入数据',
       icon: <ArrowImport24Regular />,
       action: () => setShowDataTransferDialog(true),
+    },
+    {
+      title: 'P2P 互传',
+      description: '局域网设备间互传账单',
+      icon: <PeopleSwap24Regular />,
+      action: () => setShowP2PDialog(true),
     },
     {
       title: '验证码测试',

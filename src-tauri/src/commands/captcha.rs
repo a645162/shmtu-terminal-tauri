@@ -1,12 +1,12 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use shmtu_cas::captcha::CaptchaResolver;
 use shmtu_ocr::backend::CasOnnxBackend;
 use shmtu_ocr::const_value;
 use std::path::Path;
 use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, State};
-use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
 
 use crate::config::CaptchaMode;
@@ -203,8 +203,13 @@ async fn compute_file_sha256(path: &Path) -> Result<String, String> {
         .map_err(|e| format!("打开文件失败: {}", e))?;
     let mut buf = [0u8; 8192];
     loop {
-        let n = file.read(&mut buf).await.map_err(|e| format!("读取文件失败: {}", e))?;
-        if n == 0 { break; }
+        let n = file
+            .read(&mut buf)
+            .await
+            .map_err(|e| format!("读取文件失败: {}", e))?;
+        if n == 0 {
+            break;
+        }
         hasher.update(&buf[..n]);
     }
     Ok(format!("{:x}", hasher.finalize()))
@@ -215,7 +220,9 @@ fn parse_checksum_file(text: &str) -> std::collections::HashMap<String, String> 
     let mut map = std::collections::HashMap::new();
     for line in text.lines() {
         let line = line.trim();
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
         let parts: Vec<&str> = line.splitn(2, "  ").collect();
         if parts.len() == 2 {
             let hash = parts[0].trim();
@@ -375,7 +382,11 @@ async fn ensure_local_ocr_model_files(
                 let attempt_msg = if attempt > 1 {
                     format!(
                         "校验失败，第 {}/{} 次重试下载 {}/{}: {}",
-                        attempt, max_attempts, index + 1, total_files, file_name
+                        attempt,
+                        max_attempts,
+                        index + 1,
+                        total_files,
+                        file_name
                     )
                 } else {
                     format!("正在下载模型 {}/{}: {}", index + 1, total_files, file_name)
@@ -506,7 +517,9 @@ async fn ensure_local_ocr_model_files(
                         Ok(actual) => {
                             tracing::warn!(
                                 "{} 校验失败 (期望: {}，实际: {})",
-                                file_name, expected, actual
+                                file_name,
+                                expected,
+                                actual
                             );
                             let _ = tokio::fs::remove_file(&dest_path).await;
                             if attempt == max_attempts {
@@ -753,7 +766,9 @@ pub async fn cancel_local_ocr_model_download(state: State<'_, AppState>) -> Resu
 }
 
 #[tauri::command]
-pub async fn delete_local_ocr_models(state: State<'_, AppState>) -> Result<LocalOcrModelStatus, String> {
+pub async fn delete_local_ocr_models(
+    state: State<'_, AppState>,
+) -> Result<LocalOcrModelStatus, String> {
     tracing::info!("[Captcha] delete_local_ocr_models called");
 
     let _download_guard = state.local_ocr_download_lock.lock().await;

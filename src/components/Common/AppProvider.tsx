@@ -16,6 +16,7 @@ import { AboutDialog } from '../../pages/About/AboutDialog';
 import { CaptchaTestDialog } from '../../pages/CaptchaTest/CaptchaTestDialog';
 import { DataTransferDialog } from '../../pages/DataTransfer/DataTransferDialog';
 import { StatisticsDialog } from '../../pages/Statistics/StatisticsDialog';
+import { P2PTransferDialog } from '../../pages/P2PTransfer/P2PTransferDialog';
 import { ManualCaptchaDialog } from './ManualCaptchaDialog';
 import { SyncRangeDialog } from './SyncRangeDialog';
 import { ErrorDialog } from './ErrorDialog';
@@ -66,6 +67,7 @@ export const AppProvider: React.FC = () => {
   const showCaptchaTestDialog = useAppStore((s) => s.showCaptchaTestDialog);
   const showDataTransferDialog = useAppStore((s) => s.showDataTransferDialog);
   const showStatisticsDialog = useAppStore((s) => s.showStatisticsDialog);
+  const showP2PDialog = useAppStore((s) => s.showP2PDialog);
   const showSyncRangeDialog = useAppStore((s) => s.showSyncRangeDialog);
   const showManualCaptchaDialog = useAppStore((s) => s.showManualCaptchaDialog);
   const captchaImage = useAppStore((s) => s.captchaImage);
@@ -184,6 +186,7 @@ export const AppProvider: React.FC = () => {
       {showCaptchaTestDialog && <CaptchaTestDialog />}
       {showDataTransferDialog && <DataTransferDialog />}
       {showStatisticsDialog && <StatisticsDialog />}
+      {showP2PDialog && <P2PTransferDialog />}
       {showSyncRangeDialog && <SyncRangeDialog />}
       {showManualCaptchaDialog && captchaImage && captchaExecution && (
         <ManualCaptchaDialog

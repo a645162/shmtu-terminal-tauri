@@ -24,6 +24,8 @@ pub struct AppConfig {
     pub ui: UiConfig,
     #[serde(default)]
     pub session: SessionConfig,
+    #[serde(default)]
+    pub p2p: shmtu_p2p::P2PConfig,
 }
 
 /// 安全配置（启动密码保护）

@@ -33,6 +33,7 @@ import {
   Tag24Regular,
   ArrowDownload24Regular,
   Bug24Regular,
+  PeopleSwap24Regular,
 } from '@fluentui/react-icons';
 import type { AppSettingsTab, CaptchaMode, AppTheme } from '../../types';
 import * as tauri from '../../services/tauri';
@@ -129,6 +130,11 @@ export const SettingsDialog: React.FC = () => {
   const [autoCheckUpdate, setAutoCheckUpdate] = useState(config?.update.auto_check ?? true);
   const [checkIntervalHours, setCheckIntervalHours] = useState(config?.update.check_interval_hours ?? 24);
 
+  // P2P settings
+  const [p2pAutoStart, setP2PAutoStart] = useState(config?.p2p?.auto_start ?? false);
+  const [p2pDeviceName, setP2PDeviceName] = useState(config?.p2p?.device_name ?? '');
+  const [p2pPort, setP2PPort] = useState(String(config?.p2p?.port ?? 19827));
+
   useEffect(() => {
     if (!config) return;
     setStartupProtection(config.security.enable_startup_protection);
@@ -155,6 +161,9 @@ export const SettingsDialog: React.FC = () => {
     setHomeCategoryRange(config.ui.home_category_range ?? 'month');
     setAutoCheckUpdate(config.update.auto_check ?? true);
     setCheckIntervalHours(config.update.check_interval_hours ?? 24);
+    setP2PAutoStart(config.p2p?.auto_start ?? false);
+    setP2PDeviceName(config.p2p?.device_name ?? '');
+    setP2PPort(String(config.p2p?.port ?? 19827));
   }, [config]);
 
   useEffect(() => {
@@ -265,6 +274,11 @@ export const SettingsDialog: React.FC = () => {
         classification: {
           rules_path: rulesPath,
           rules_update_url: rulesUpdateUrl,
+        },
+        p2p: {
+          auto_start: p2pAutoStart,
+          device_name: p2pDeviceName,
+          port: parseInt(p2pPort) || 19827,
         },
         update: {
           ...config.update,
@@ -704,6 +718,44 @@ export const SettingsDialog: React.FC = () => {
           </div>
         );
 
+      case 'p2p':
+        return (
+          <div style={{ display: 'grid', gap: 16 }}>
+            <Text weight="semibold" size={400}>点对点互传设置</Text>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <InfoLabel info="启用后，应用启动时会自动运行点对点服务，其他设备可直接发现并连接。">
+                  自动启动点对点服务
+                </InfoLabel>
+              </div>
+              <Switch checked={p2pAutoStart} onChange={(_, data) => setP2PAutoStart(data.checked)} />
+            </div>
+            <div>
+              <InfoLabel info="本机在点对点网络中显示的设备名称，方便其他设备识别。留空则使用系统默认名称。">
+                设备名称
+              </InfoLabel>
+              <Input
+                value={p2pDeviceName}
+                onChange={(e) => setP2PDeviceName(e.currentTarget.value)}
+                placeholder="如: 我的笔记本"
+                style={{ width: '100%' }}
+              />
+            </div>
+            <div>
+              <InfoLabel info="点对点服务监听的端口号。局域网内其他设备需要通过此端口连接。默认 19827。">
+                端口号
+              </InfoLabel>
+              <Input
+                type="number"
+                value={p2pPort}
+                onChange={(e) => setP2PPort(e.currentTarget.value)}
+                placeholder="19827"
+                style={{ width: '100%' }}
+              />
+            </div>
+          </div>
+        );
+
       case 'ui':
         return (
           <div style={{ display: 'grid', gap: 16 }}>
@@ -999,6 +1051,7 @@ export const SettingsDialog: React.FC = () => {
                     <Tab icon={<ArrowSync24Regular />} value="sync">同步</Tab>
                     <Tab icon={<PuzzlePiece24Regular />} value="captcha">验证码</Tab>
                     <Tab icon={<Database24Regular />} value="data">数据</Tab>
+                    <Tab icon={<PeopleSwap24Regular />} value="p2p">点对点互传</Tab>
                     <Tab icon={<Tag24Regular />} value="classification">分类规则</Tab>
                     <Tab icon={<ArrowDownload24Regular />} value="update">更新</Tab>
                     <Tab icon={<Bug24Regular />} value="debug">调试</Tab>

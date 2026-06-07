@@ -77,10 +77,7 @@ impl AutoSyncService {
             return;
         }
 
-        tracing::info!(
-            "[AutoSync] 启动成功 | Interval={}分钟",
-            interval_minutes
-        );
+        tracing::info!("[AutoSync] 启动成功 | Interval={}分钟", interval_minutes);
 
         let config = self.config.clone();
         let sync_service = self.sync_service.clone();
@@ -138,7 +135,9 @@ impl AutoSyncService {
         AutoSyncStatus {
             is_running: state.is_running,
             last_run_seconds_ago: state.last_run.map(|i| i.elapsed().as_secs()),
-            next_run_in_seconds: state.next_run.map(|i| i.saturating_duration_since(Instant::now()).as_secs()),
+            next_run_in_seconds: state
+                .next_run
+                .map(|i| i.saturating_duration_since(Instant::now()).as_secs()),
             total_runs: state.total_runs,
             success_runs: state.success_runs,
             failed_runs: state.failed_runs,

@@ -98,6 +98,7 @@ export type AppSettingsTab =
   | 'captcha'
   | 'sync'
   | 'data'
+  | 'p2p'
   | 'ui'
   | 'home'
   | 'classification'

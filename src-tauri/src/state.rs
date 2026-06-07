@@ -2,8 +2,10 @@ use std::sync::{atomic::AtomicBool, Arc};
 
 use shmtu_cas::cas::epay::EpayAuth;
 use shmtu_ocr::backend::CasOnnxBackend;
+use shmtu_p2p::P2PManager;
 use tokio::sync::{Mutex, RwLock};
 
+use crate::auto_sync::AutoSyncService;
 use crate::classification::BillClassifier;
 use crate::config::TomlConfig;
 use crate::crypto::CryptoService;
@@ -11,7 +13,6 @@ use crate::database::DatabaseFileManager;
 use crate::db::DatabaseManager;
 use crate::error::AppResult;
 use crate::export::ExportService;
-use crate::auto_sync::AutoSyncService;
 use crate::session_refresh::SessionExpirationService;
 use crate::sync::BillSyncService;
 
@@ -44,6 +45,8 @@ pub struct AppState {
     pub local_ocr_download_lock: Arc<Mutex<()>>,
     /// 验证码测试使用的待提交 challenge，会话需与展示的验证码保持一致。
     pub captcha_test_session: Arc<Mutex<Option<CaptchaTestSession>>>,
+    /// P2P 数据传输管理器
+    pub p2p_manager: Arc<RwLock<P2PManager>>,
 }
 
 impl AppState {
@@ -133,6 +136,7 @@ impl AppState {
             local_ocr_download_active: Arc::new(AtomicBool::new(false)),
             local_ocr_download_lock: Arc::new(Mutex::new(())),
             captcha_test_session: Arc::new(Mutex::new(None)),
+            p2p_manager: Arc::new(RwLock::new(P2PManager::new())),
         })
     }
 

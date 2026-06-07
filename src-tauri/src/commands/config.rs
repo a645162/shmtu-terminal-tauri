@@ -1,7 +1,7 @@
 use tauri::State;
 
-use crate::config::AppConfig;
 use crate::auto_sync::AutoSyncStatus;
+use crate::config::AppConfig;
 use crate::session_refresh::{SessionExpirationResult, SessionExpirationStatus};
 use crate::state::AppState;
 
