@@ -95,6 +95,9 @@ interface AppState {
   showManualCaptchaDialog: boolean;
   captchaImage: string | null;
   captchaExecution: string | null;
+  // Remote Access state
+  showRemoteDialog: boolean;
+  remoteSessions: Array<{ session_id: string; base_url: string; device_name: string; has_token: boolean }>;
   pendingSyncAction: PendingSyncAction | null;
   // Error dialog state
   showErrorDialog: boolean;
@@ -128,6 +131,8 @@ interface AppState {
   setShowAboutDialog: (show: boolean) => void;
   setShowCaptchaTestDialog: (show: boolean) => void;
   setShowDataTransferDialog: (show: boolean) => void;
+  setShowRemoteDialog: (show: boolean) => void;
+  setRemoteSessions: (sessions: Array<{ session_id: string; base_url: string; device_name: string; has_token: boolean }>) => void;
   setShowStatisticsDialog: (show: boolean) => void;
   setShowManualCaptchaDialog: (show: boolean) => void;
   setCaptchaForManualLogin: (image: string | null, execution: string | null) => void;
@@ -135,6 +140,7 @@ interface AppState {
   setSyncProgress: (progress: SyncProgress | null) => void;
   clearSyncProgress: () => void;
   showError: (message: string) => void;
+  setMessage: (message: string) => void;
   setShowErrorDialog: (show: boolean) => void;
   loadStatisticsSummary: (params: tauri.StatisticsParams) => Promise<void>;
   loadTodaySummary: (params: tauri.StatisticsParams) => Promise<void>;
@@ -188,6 +194,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   showAboutDialog: false,
   showCaptchaTestDialog: false,
   showDataTransferDialog: false,
+  showRemoteDialog: false,
+  remoteSessions: [],
   showStatisticsDialog: false,
   showSyncRangeDialog: false,
   showManualCaptchaDialog: false,
@@ -546,6 +554,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   setShowAboutDialog: (show) => set({ showAboutDialog: show }),
   setShowCaptchaTestDialog: (show) => set({ showCaptchaTestDialog: show }),
   setShowDataTransferDialog: (show) => set({ showDataTransferDialog: show }),
+  setShowRemoteDialog: (show) => set({ showRemoteDialog: show }),
+  setRemoteSessions: (sessions) => set({ remoteSessions: sessions }),
   setShowStatisticsDialog: (show) => set({ showStatisticsDialog: show }),
   setShowManualCaptchaDialog: (show) =>
     set(
@@ -628,6 +638,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setShowErrorDialog: (show) => set({ showErrorDialog: show }),
+  setMessage: (message) => {
+    console.log('[App Message]', message);
+  },
 
   loadStatisticsSummary: async (params) => {
     set({ isLoadingStatistics: true });

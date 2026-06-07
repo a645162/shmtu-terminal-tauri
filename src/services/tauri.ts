@@ -458,3 +458,36 @@ export async function sync_with_captcha(
 export async function log_error(message: string): Promise<void> {
   return invoke('log_error', { message });
 }
+
+// ========== Remote Access (RESTful) ==========
+
+export interface RemoteSessionFrontend {
+  session_id: string;
+  base_url: string;
+  device_name: string;
+  has_token: boolean;
+}
+
+export async function remote_connect(base_url: string, device_name: string): Promise<RemoteSessionFrontend> {
+  return invoke<RemoteSessionFrontend>('remote_connect', { baseUrl: base_url, deviceName: device_name });
+}
+
+export async function remote_disconnect(session_id: string): Promise<void> {
+  return invoke('remote_disconnect', { sessionId: session_id });
+}
+
+export async function remote_list_sessions(): Promise<RemoteSessionFrontend[]> {
+  return invoke<RemoteSessionFrontend[]>('remote_list_sessions');
+}
+
+export async function remote_list_identities(session_id: string): Promise<unknown[]> {
+  return invoke<unknown[]>('remote_list_identities', { sessionId: session_id });
+}
+
+export async function remote_list_bills(session_id: string, query: Record<string, string> = {}): Promise<unknown[]> {
+  return invoke<unknown[]>('remote_list_bills', { sessionId: session_id, query });
+}
+
+export async function remote_export(session_id: string): Promise<string> {
+  return invoke<string>('remote_export', { sessionId: session_id });
+}
