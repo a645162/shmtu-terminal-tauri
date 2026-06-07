@@ -9,13 +9,14 @@ pub mod entity;
 pub mod error;
 pub mod export;
 pub mod models;
+pub mod remote;
 pub mod session_refresh;
 pub mod state;
 pub mod sync;
 
 use commands::{
     account, bill, captcha, classify, config as cmd_config, data, error as error_cmd, identity,
-    statistics, sync as cmd_sync,
+    remote as cmd_remote, statistics, sync as cmd_sync,
 };
 use tauri::Manager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -68,6 +69,7 @@ pub fn run() {
 
             tracing::info!("应用状态初始化完成");
             app.manage(app_state);
+            app.manage(remote::RemoteManager::new());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -140,6 +142,12 @@ pub fn run() {
             classify::reclassify_all_bills,
             classify::reclassify_bills_by_identity,
             error_cmd::log_error,
+            cmd_remote::remote_connect,
+            cmd_remote::remote_disconnect,
+            cmd_remote::remote_list_sessions,
+            cmd_remote::remote_list_identities,
+            cmd_remote::remote_list_bills,
+            cmd_remote::remote_export,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
