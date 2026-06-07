@@ -16,14 +16,12 @@ import { AboutDialog } from '../../pages/About/AboutDialog';
 import { CaptchaTestDialog } from '../../pages/CaptchaTest/CaptchaTestDialog';
 import { DataTransferDialog } from '../../pages/DataTransfer/DataTransferDialog';
 import { StatisticsDialog } from '../../pages/Statistics/StatisticsDialog';
-import { P2PTransferDialog } from '../../pages/P2PTransfer/P2PTransferDialog';
 import { ManualCaptchaDialog } from './ManualCaptchaDialog';
 import { SyncRangeDialog } from './SyncRangeDialog';
 import { ErrorDialog } from './ErrorDialog';
 import { SyncStatusPanel } from './SyncStatusPanel';
 import { GlobalContextMenuGuard } from './GlobalContextMenuGuard';
 import type { SyncProgress } from '../../types';
-import type { P2PPairingRequest } from '../../services/tauri';
 
 export const AppProvider: React.FC = () => {
   const theme = useAppStore((s) => s.theme);
@@ -68,7 +66,6 @@ export const AppProvider: React.FC = () => {
   const showCaptchaTestDialog = useAppStore((s) => s.showCaptchaTestDialog);
   const showDataTransferDialog = useAppStore((s) => s.showDataTransferDialog);
   const showStatisticsDialog = useAppStore((s) => s.showStatisticsDialog);
-  const showP2PDialog = useAppStore((s) => s.showP2PDialog);
   const showSyncRangeDialog = useAppStore((s) => s.showSyncRangeDialog);
   const showManualCaptchaDialog = useAppStore((s) => s.showManualCaptchaDialog);
   const captchaImage = useAppStore((s) => s.captchaImage);
@@ -77,8 +74,6 @@ export const AppProvider: React.FC = () => {
   const setSyncProgress = useAppStore((s) => s.setSyncProgress);
   const clearSyncProgress = useAppStore((s) => s.clearSyncProgress);
   const syncProgress = useAppStore((s) => s.syncProgress);
-  const setPendingPairRequest = useAppStore((s) => s.setPendingPairRequest);
-  const setShowP2PDialog = useAppStore((s) => s.setShowP2PDialog);
 
   useEffect(() => {
     if (config?.security?.enable_startup_protection && hasRequestedStartupDialog && !showStartupDialog) {
@@ -159,31 +154,6 @@ export const AppProvider: React.FC = () => {
   }, [setSyncProgress]);
 
   useEffect(() => {
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-
-    listen<P2PPairingRequest>('p2p-pairing-request', (event) => {
-      if (disposed) {
-        return;
-      }
-
-      setPendingPairRequest(event.payload);
-      setShowP2PDialog(true);
-    })
-      .then((fn) => {
-        unlisten = fn;
-      })
-      .catch(console.error);
-
-    return () => {
-      disposed = true;
-      if (unlisten) {
-        void unlisten();
-      }
-    };
-  }, [setPendingPairRequest, setShowP2PDialog]);
-
-  useEffect(() => {
     if (syncProgress?.status !== 'completed') {
       return;
     }
@@ -214,7 +184,6 @@ export const AppProvider: React.FC = () => {
       {showCaptchaTestDialog && <CaptchaTestDialog />}
       {showDataTransferDialog && <DataTransferDialog />}
       {showStatisticsDialog && <StatisticsDialog />}
-      {showP2PDialog && <P2PTransferDialog />}
       {showSyncRangeDialog && <SyncRangeDialog />}
       {showManualCaptchaDialog && captchaImage && captchaExecution && (
         <ManualCaptchaDialog

@@ -445,134 +445,6 @@ export async function get_card_balance(identityId: number): Promise<import('../t
   return invoke<import('../types').CardBalance>('get_card_balance', { identityId });
 }
 
-// ========== P2P Transfer ==========
-
-export interface P2PInfo {
-  port: number;
-  pair_code: string;
-  local_ips: string[];
-  qr_payload: string;
-  is_running: boolean;
-  encryption_method?: string;
-}
-
-export interface P2PSession {
-  session_id: string;
-  peer_ip: string;
-  peer_port: number;
-  peer_device_name: string;
-  is_paired: boolean;
-  is_incoming: boolean;
-  is_connected: boolean;
-}
-
-export interface P2PStatus {
-  server_running: boolean;
-  port: number;
-  pair_code: string;
-  local_ips: string[];
-  sessions: P2PSession[];
-  encryption_method?: string;
-}
-
-export interface P2PTransferProgress {
-  session_id: string;
-  transfer_id: string;
-  bytes_transferred: number;
-  total_size: number;
-  percentage: number;
-}
-
-export interface P2PPairingRequest {
-  session_id: string;
-  peer_ip: string;
-  peer_port: number;
-  peer_device_name: string;
-  pair_code: string;
-  reconnect_ips?: string[];
-  reconnect_port?: number;
-}
-
-export interface P2PTransferComplete {
-  session_id: string;
-  direction: 'send' | 'receive';
-  bill_count: number;
-  bytes_transferred: number;
-}
-
-export interface P2PTransferError {
-  session_id: string;
-  direction: 'send' | 'receive';
-  error: string;
-}
-
-export interface P2PEncryptionStatus {
-  session_id: string;
-  method?: string;
-}
-
-export interface P2PDataReceived {
-  session_id: string;
-  data_base64: string;
-}
-
-export async function p2p_start_server(): Promise<P2PInfo> {
-  return invoke<P2PInfo>('p2p_start_server');
-}
-
-export async function p2p_stop_server(): Promise<void> {
-  return invoke('p2p_stop_server');
-}
-
-export async function p2p_get_qr_payload(): Promise<string> {
-  return invoke<string>('p2p_get_qr_payload');
-}
-
-export async function p2p_connect(addr: string, port: number, pairCode: string, deviceName: string): Promise<P2PSession> {
-  return invoke<P2PSession>('p2p_connect', { addr, port, pairCode, deviceName });
-}
-
-export async function p2p_accept_pairing(sessionId: string): Promise<void> {
-  return invoke('p2p_accept_pairing', { sessionId });
-}
-
-export async function p2p_reject_pairing(sessionId: string): Promise<void> {
-  return invoke('p2p_reject_pairing', { sessionId });
-}
-
-export async function p2p_send_bills(sessionId: string, identityId?: number, syncRange?: SyncRangePreset): Promise<void> {
-  return invoke('p2p_send_bills', { sessionId, identityId, syncRange });
-}
-
-export async function p2p_get_status(): Promise<P2PStatus> {
-  return invoke<P2PStatus>('p2p_get_status');
-}
-
-export async function p2p_disconnect(sessionId: string): Promise<void> {
-  return invoke('p2p_disconnect', { sessionId });
-}
-
-export async function p2p_reconnect(sessionId: string): Promise<P2PSession> {
-  return invoke<P2PSession>('p2p_reconnect', { sessionId });
-}
-
-export async function p2p_manual_pair(ip: string, port: number, pairCode: string): Promise<P2PSession> {
-  return invoke<P2PSession>('p2p_manual_pair', { ip, port, pairCode });
-}
-
-export async function p2p_import_received_data(
-  sessionId: string,
-  identityId: number
-): Promise<number> {
-  return invoke<number>('p2p_import_received_data', { sessionId, identityId });
-}
-
-// ========== Error Logging ==========
-
-export async function log_error(message: string): Promise<void> {
-  return invoke('log_error', { message });
-}
-
 // ========== Manual Captcha Sync ==========
 
 export async function sync_with_captcha(
@@ -581,4 +453,8 @@ export async function sync_with_captcha(
   execution: string
 ): Promise<SyncProgress> {
   return invoke<SyncProgress>('sync_with_captcha', { identityId, captchaCode, execution });
+}
+
+export async function log_error(message: string): Promise<void> {
+  return invoke('log_error', { message });
 }

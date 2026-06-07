@@ -15,7 +15,7 @@ import type {
   ConsumptionBucketItem,
   MerchantRankingItem,
 } from '../types';
-import type { AppConfig, P2PStatus, P2PTransferProgress, P2PPairingRequest } from '../services/tauri';
+import type { AppConfig } from '../services/tauri';
 import * as tauri from '../services/tauri';
 import { formatLocalDate } from '../utils/date';
 import { initTranslationData } from '../utils/translation';
@@ -100,12 +100,6 @@ interface AppState {
   showErrorDialog: boolean;
   errorMessage: string;
 
-  // P2P Transfer state
-  showP2PDialog: boolean;
-  p2pStatus: P2PStatus | null;
-  p2pTransferProgress: P2PTransferProgress | null;
-  pendingPairRequest: P2PPairingRequest | null;
-
   // Actions
   setCurrentIdentity: (identity: Identity | null) => void;
   activateIdentity: (identity: Identity) => Promise<void>;
@@ -142,10 +136,6 @@ interface AppState {
   clearSyncProgress: () => void;
   showError: (message: string) => void;
   setShowErrorDialog: (show: boolean) => void;
-  setShowP2PDialog: (show: boolean) => void;
-  loadP2PStatus: () => Promise<void>;
-  setP2PTransferProgress: (progress: P2PTransferProgress | null) => void;
-  setPendingPairRequest: (request: P2PPairingRequest | null) => void;
   loadStatisticsSummary: (params: tauri.StatisticsParams) => Promise<void>;
   loadTodaySummary: (params: tauri.StatisticsParams) => Promise<void>;
   loadMonthSummary: (params: tauri.StatisticsParams) => Promise<void>;
@@ -638,21 +628,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setShowErrorDialog: (show) => set({ showErrorDialog: show }),
-
-  setShowP2PDialog: (show) => set({ showP2PDialog: show }),
-
-  loadP2PStatus: async () => {
-    try {
-      const status = await tauri.p2p_get_status();
-      set({ p2pStatus: status });
-    } catch (e) {
-      console.error('Failed to load P2P status:', e);
-    }
-  },
-
-  setP2PTransferProgress: (progress) => set({ p2pTransferProgress: progress }),
-
-  setPendingPairRequest: (request) => set({ pendingPairRequest: request }),
 
   loadStatisticsSummary: async (params) => {
     set({ isLoadingStatistics: true });
