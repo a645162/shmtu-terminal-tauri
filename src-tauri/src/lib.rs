@@ -15,7 +15,7 @@ pub mod sync;
 
 use commands::{
     account, bill, captcha, classify, config as cmd_config, data, error as error_cmd, identity,
-    p2p, statistics, sync as cmd_sync,
+    statistics, sync as cmd_sync,
 };
 use tauri::Manager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -64,20 +64,7 @@ pub fn run() {
                 .block_on(state::AppState::init(data_dir.to_str().unwrap_or("Data")))
                 .expect("Failed to initialize app state");
 
-            let p2p_auto_start = {
-                let config = runtime.block_on(app_state.config.read());
-                config.get().p2p.auto_start
-            };
-            if p2p_auto_start {
-                let p2p_manager = app_state.p2p_manager.clone();
-                let config_handle = app_state.config.clone();
-                runtime.block_on(async {
-                    let config = config_handle.read().await;
-                    if let Err(e) = p2p_manager.read().await.start_server(&config.get().p2p).await {
-                        tracing::error!("[P2P] Auto start failed: {}", e);
-                    }
-                });
-            }
+            // P2P auto-start removed: now uses RESTful WebServer
 
             tracing::info!("应用状态初始化完成");
             app.manage(app_state);
@@ -153,17 +140,6 @@ pub fn run() {
             classify::reclassify_all_bills,
             classify::reclassify_bills_by_identity,
             error_cmd::log_error,
-            p2p::p2p_start_server,
-            p2p::p2p_stop_server,
-            p2p::p2p_get_qr_payload,
-            p2p::p2p_connect,
-            p2p::p2p_accept_pairing,
-            p2p::p2p_reject_pairing,
-            p2p::p2p_send_bills,
-            p2p::p2p_get_status,
-            p2p::p2p_disconnect,
-            p2p::p2p_reconnect,
-            p2p::p2p_manual_pair,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

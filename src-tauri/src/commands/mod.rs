@@ -6,6 +6,5 @@ pub mod config;
 pub mod data;
 pub mod error;
 pub mod identity;
-pub mod p2p;
 pub mod statistics;
 pub mod sync;
