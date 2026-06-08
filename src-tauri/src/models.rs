@@ -175,6 +175,7 @@ pub struct PersonAccountInfo {
     pub gender: String,
     pub class_name: String,
     pub phone_num: String,
+    pub gender_from_id: String,
     pub id_type: String,
     pub id_number: String,
     pub remark: String,

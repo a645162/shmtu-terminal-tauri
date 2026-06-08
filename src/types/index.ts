@@ -253,6 +253,7 @@ export interface PersonAccountInfo {
   gender: string;
   class_name: string;
   phone_num: string;
+  gender_from_id: string;
   id_type: string;
   id_number: string;
   remark: string;
