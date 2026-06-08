@@ -87,6 +87,7 @@ impl RemoteManager {
         }
         #[derive(Deserialize)]
         struct AuthResp {
+            #[allow(dead_code)]
             success: bool,
             data: Option<AuthData>,
         }
