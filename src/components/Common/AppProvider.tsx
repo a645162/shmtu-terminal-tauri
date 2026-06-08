@@ -112,8 +112,10 @@ export const AppProvider: React.FC = () => {
   }, [
     activateIdentity,
     config,
-    currentIdentity,
-    identities,
+    currentIdentity?.id,
+    // 使用 identidade ids 的拼接作为稳定依赖, 避免 identities 数组引用变化导致 effect 反复触发
+    identities.map((i) => i.id).join(','),
+    identities.map((i) => i.enable).join(','),
     isBootstrapped,
     isStartupUnlocked,
     setShowIdentitySelectDialog,

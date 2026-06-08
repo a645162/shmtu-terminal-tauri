@@ -115,7 +115,7 @@ export const IdentitySelectDialog: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [currentIdentity, loadIdentities]);
+  }, [currentIdentity?.id, loadIdentities]);
 
   const handleEnter = async () => {
     const identity = identities.find((item) => item.id.toString() === selectedId);
