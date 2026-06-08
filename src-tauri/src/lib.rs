@@ -16,7 +16,7 @@ pub mod sync;
 
 use commands::{
     account, bill, captcha, classify, config as cmd_config, data, error as error_cmd, identity,
-    remote as cmd_remote, statistics, sync as cmd_sync,
+    person_account as cmd_person_account, remote as cmd_remote, statistics, sync as cmd_sync,
 };
 use tauri::Manager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -148,6 +148,9 @@ pub fn run() {
             cmd_remote::remote_list_identities,
             cmd_remote::remote_list_bills,
             cmd_remote::remote_export,
+            cmd_person_account::fetch_person_account,
+            cmd_person_account::get_cached_person_account,
+            cmd_person_account::list_cached_person_accounts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

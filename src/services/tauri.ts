@@ -445,6 +445,20 @@ export async function get_card_balance(identityId: number): Promise<import('../t
   return invoke<import('../types').CardBalance>('get_card_balance', { identityId });
 }
 
+// ========== Person Account (一卡通个人账户) ==========
+
+export async function fetch_person_account(accountDbId: number): Promise<import('../types').PersonAccountInfo> {
+  return invoke<import('../types').PersonAccountInfo>('fetch_person_account', { accountDbId });
+}
+
+export async function get_cached_person_account(accountDbId: number): Promise<import('../types').PersonAccountInfo | null> {
+  return invoke<import('../types').PersonAccountInfo | null>('get_cached_person_account', { accountDbId });
+}
+
+export async function list_cached_person_accounts(accountDbIds: number[]): Promise<import('../types').PersonAccountInfo[]> {
+  return invoke<import('../types').PersonAccountInfo[]>('list_cached_person_accounts', { accountDbIds });
+}
+
 // ========== Manual Captcha Sync ==========
 
 export async function sync_with_captcha(

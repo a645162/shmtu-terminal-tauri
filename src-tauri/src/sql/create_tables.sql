@@ -108,3 +108,26 @@ CREATE TABLE IF NOT EXISTS session_info (
 );
 
 CREATE INDEX IF NOT EXISTS idx_session_info_account_id ON session_info(account_id);
+
+CREATE TABLE IF NOT EXISTS person_account_cache (
+    account_id                  TEXT PRIMARY KEY,
+    real_name                   TEXT NOT NULL DEFAULT '',
+    real_name_auth_status       TEXT NOT NULL DEFAULT '',
+    cash_balance                REAL NOT NULL DEFAULT 0,
+    cash_balance_raw            TEXT NOT NULL DEFAULT '',
+    security_question_status    TEXT NOT NULL DEFAULT '',
+    register_date               TEXT NOT NULL DEFAULT '',
+    student_id                  TEXT NOT NULL DEFAULT '',
+    email                       TEXT NOT NULL DEFAULT '',
+    nickname                    TEXT NOT NULL DEFAULT '',
+    gender                      TEXT NOT NULL DEFAULT '',
+    class_name                  TEXT NOT NULL DEFAULT '',
+    phone_num                   TEXT NOT NULL DEFAULT '',
+    id_type                     TEXT NOT NULL DEFAULT '',
+    id_number                   TEXT NOT NULL DEFAULT '',
+    remark                      TEXT NOT NULL DEFAULT '',
+    user_type                   TEXT NOT NULL DEFAULT '',
+    csrf_token                  TEXT NOT NULL DEFAULT '',
+    csrf_header                 TEXT NOT NULL DEFAULT '',
+    fetched_at                  TEXT NOT NULL DEFAULT ''
+);

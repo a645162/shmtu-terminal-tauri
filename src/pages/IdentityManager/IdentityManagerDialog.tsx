@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Dialog,
   DialogSurface,
@@ -15,10 +15,12 @@ import {
   Label,
   Divider,
   Spinner,
+  Card,
+  CardHeader,
 } from '@fluentui/react-components';
-import { PersonAdd24Regular, Delete24Regular, Edit24Regular } from '@fluentui/react-icons';
+import { PersonAdd24Regular, Delete24Regular, Edit24Regular, ArrowSync24Regular, Money24Regular } from '@fluentui/react-icons';
 import { useAppStore } from '../../stores/appStore';
-import type { Identity, Account } from '../../types';
+import type { Identity, Account, PersonAccountInfo } from '../../types';
 import * as tauri from '../../services/tauri';
 import {
   PageEnterMotion,
@@ -52,6 +54,60 @@ export const IdentityManagerDialog: React.FC = () => {
     graduation_date: '',
     graduation_to_present: true,
   });
+
+  // 一卡通个人账户详情：按 account_db_id 缓存
+  const [personAccounts, setPersonAccounts] = useState<Record<number, PersonAccountInfo | null>>({});
+  const [personAccountLoading, setPersonAccountLoading] = useState<Record<number, boolean>>({});
+  const [personAccountError, setPersonAccountError] = useState<Record<number, string | null>>({});
+
+  // 选中身份变化时，按账号列表批量加载缓存
+  useEffect(() => {
+    if (!selectedIdentity || accounts.length === 0) {
+      setPersonAccounts({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const ids = accounts.map((a) => a.id);
+        const cached = await tauri.list_cached_person_accounts(ids);
+        if (cancelled) return;
+        const map: Record<number, PersonAccountInfo> = {};
+        const studentToId: Record<string, number> = {};
+        accounts.forEach((a) => {
+          studentToId[a.account_id] = a.id;
+        });
+        cached.forEach((info) => {
+          const dbId = studentToId[info.account_id];
+          if (typeof dbId === 'number') {
+            map[dbId] = info;
+          }
+        });
+        setPersonAccounts(map);
+      } catch {
+        if (!cancelled) setPersonAccounts({});
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedIdentity, accounts]);
+
+  const handleRefreshPersonAccount = async (accountDbId: number) => {
+    setPersonAccountLoading((s) => ({ ...s, [accountDbId]: true }));
+    setPersonAccountError((s) => ({ ...s, [accountDbId]: null }));
+    try {
+      const info = await tauri.fetch_person_account(accountDbId);
+      setPersonAccounts((s) => ({ ...s, [accountDbId]: info }));
+    } catch (e) {
+      setPersonAccountError((s) => ({
+        ...s,
+        [accountDbId]: typeof e === 'string' ? e : (e instanceof Error ? e.message : '拉取失败'),
+      }));
+    } finally {
+      setPersonAccountLoading((s) => ({ ...s, [accountDbId]: false }));
+    }
+  };
 
   const handleSelectIdentity = async (identity: Identity) => {
     setSelectedIdentity(identity);
@@ -321,15 +377,28 @@ export const IdentityManagerDialog: React.FC = () => {
                                 <Text size={200} weight="semibold">
                                   {account.account_name}
                                 </Text>
-                                <Button
-                                  appearance="subtle"
-                                  icon={<Delete24Regular />}
-                                  size="small"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDeleteAccount(account.id);
-                                  }}
-                                />
+                                <div style={{ display: 'flex', gap: 2 }}>
+                                  <Button
+                                    appearance="subtle"
+                                    icon={<ArrowSync24Regular />}
+                                    size="small"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      void handleRefreshPersonAccount(account.id);
+                                    }}
+                                    disabled={!!personAccountLoading[account.id]}
+                                    title="刷新一卡通个人账户"
+                                  />
+                                  <Button
+                                    appearance="subtle"
+                                    icon={<Delete24Regular />}
+                                    size="small"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteAccount(account.id);
+                                    }}
+                                  />
+                                </div>
                               </div>
                               <Text size={100} style={{ color: 'var(--colorNeutralForeground3)' }}>
                                 学号: {account.account_id} | {account.enable ? '已启用' : '已禁用'}
@@ -337,6 +406,13 @@ export const IdentityManagerDialog: React.FC = () => {
                               <Text size={100} style={{ color: 'var(--colorNeutralForeground3)' }}>
                                 学籍: {account.admission_date || '未设置'} 至 {account.graduation_date || '至今'}
                               </Text>
+                              <PersonAccountSection
+                                accountId={account.id}
+                                info={personAccounts[account.id] ?? null}
+                                loading={!!personAccountLoading[account.id]}
+                                error={personAccountError[account.id] ?? null}
+                                onRefresh={() => void handleRefreshPersonAccount(account.id)}
+                              />
                             </div>
                           ))
                         )}
@@ -546,3 +622,113 @@ export const IdentityManagerDialog: React.FC = () => {
     </>
   );
 };
+
+interface PersonAccountSectionProps {
+  accountId: number;
+  info: PersonAccountInfo | null;
+  loading: boolean;
+  error: string | null;
+  onRefresh: () => void;
+}
+
+function PersonAccountSection({
+  accountId,
+  info,
+  loading,
+  error,
+  onRefresh,
+}: PersonAccountSectionProps) {
+  return (
+    <div
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        marginTop: 8,
+        padding: 10,
+        borderRadius: 4,
+        backgroundColor: 'var(--colorNeutralBackground2)',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: 6,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Money24Regular style={{ color: 'var(--colorBrandForeground1)' }} />
+          <Text size={200} weight="semibold">
+            一卡通个人账户
+          </Text>
+        </div>
+        {loading && <Spinner size="tiny" />}
+      </div>
+      {error ? (
+        <MessageBar intent="error" style={{ marginBottom: 6 }}>
+          <MessageBarBody>
+            <Text size={200}>{error}</Text>
+            <Button size="small" appearance="subtle" onClick={onRefresh}>
+              点击重试
+            </Button>
+          </MessageBarBody>
+        </MessageBar>
+      ) : info ? (
+        <PersonAccountFields info={info} />
+      ) : (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Text size={100} style={{ color: 'var(--colorNeutralForeground3)' }}>
+            暂无数据
+          </Text>
+          <Button size="small" appearance="subtle" onClick={onRefresh} disabled={loading}>
+            点击刷新
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PersonAccountFields({ info }: { info: PersonAccountInfo }) {
+  const fieldRows: { label: string; value: string }[] = [
+    { label: '姓名', value: info.real_name },
+    { label: '实名认证', value: info.real_name_auth_status },
+    { label: '现金资金', value: info.cash_balance_raw ? `${info.cash_balance_raw} 元` : '' },
+    { label: '安全保护问题', value: info.security_question_status },
+    { label: '注册时间', value: info.register_date },
+    { label: '学工号', value: info.student_id },
+    { label: '电子邮箱', value: info.email },
+    { label: '昵称', value: info.nickname },
+    { label: '性别', value: info.gender },
+    { label: '班级', value: info.class_name },
+    { label: '手机/固话', value: info.phone_num },
+    { label: '证件类型', value: info.id_type },
+    { label: '证件号码', value: info.id_number },
+    { label: '用户类型', value: info.user_type },
+    { label: '备注', value: info.remark },
+  ];
+  return (
+    <div style={{ display: 'grid', gap: 4 }}>
+      {fieldRows
+        .filter((r) => r.value && r.value.trim() !== '')
+        .map((r) => (
+          <div
+            key={r.label}
+            style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}
+          >
+            <Text
+              size={100}
+              style={{
+                color: 'var(--colorNeutralForeground3)',
+                minWidth: 80,
+                flexShrink: 0,
+              }}
+            >
+              {r.label}:
+            </Text>
+            <Text size={100}>{r.value}</Text>
+          </div>
+        ))}
+    </div>
+  );
+}

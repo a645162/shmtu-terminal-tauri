@@ -10,7 +10,7 @@ use crate::entity::*;
 use crate::error::{AppError, AppResult};
 use crate::models::{
     Account, BillMerged, BillOriginal, CreateAccountParams, CreateIdentityParams, Identity,
-    OperationLog, SessionInfo,
+    OperationLog, PersonAccountInfo, SessionInfo,
 };
 
 /// 数据库管理器，负责 SQLite 连接、表初始化/迁移以及全部 CRUD 操作。
@@ -145,6 +145,37 @@ impl DatabaseManager {
             .execute(Statement::from_string(
                 sea_orm::DatabaseBackend::Sqlite,
                 "UPDATE accounts SET graduation_date = expire_date WHERE graduation_date IS NULL AND expire_date IS NOT NULL AND expire_date != '' AND expire_date != '2099-12-31';".to_string(),
+            ))
+            .await;
+
+        // Migration: create person_account_cache table (CREATE TABLE IF NOT EXISTS 已在 create_tables.sql 包含;
+        // 这里再次执行确保旧版本用户也能建立)
+        let _ = self
+            .db
+            .execute(Statement::from_string(
+                sea_orm::DatabaseBackend::Sqlite,
+                "CREATE TABLE IF NOT EXISTS person_account_cache (
+                    account_id TEXT PRIMARY KEY,
+                    real_name TEXT NOT NULL DEFAULT '',
+                    real_name_auth_status TEXT NOT NULL DEFAULT '',
+                    cash_balance REAL NOT NULL DEFAULT 0,
+                    cash_balance_raw TEXT NOT NULL DEFAULT '',
+                    security_question_status TEXT NOT NULL DEFAULT '',
+                    register_date TEXT NOT NULL DEFAULT '',
+                    student_id TEXT NOT NULL DEFAULT '',
+                    email TEXT NOT NULL DEFAULT '',
+                    nickname TEXT NOT NULL DEFAULT '',
+                    gender TEXT NOT NULL DEFAULT '',
+                    class_name TEXT NOT NULL DEFAULT '',
+                    phone_num TEXT NOT NULL DEFAULT '',
+                    id_type TEXT NOT NULL DEFAULT '',
+                    id_number TEXT NOT NULL DEFAULT '',
+                    remark TEXT NOT NULL DEFAULT '',
+                    user_type TEXT NOT NULL DEFAULT '',
+                    csrf_token TEXT NOT NULL DEFAULT '',
+                    csrf_header TEXT NOT NULL DEFAULT '',
+                    fetched_at TEXT NOT NULL DEFAULT ''
+                );".to_string(),
             ))
             .await;
 
@@ -617,6 +648,104 @@ impl DatabaseManager {
         Ok(())
     }
 
+    // === 一卡通个人账户缓存 ===
+
+    /// 写入或更新（按 account_id 主键）一卡通个人账户缓存。
+    pub async fn upsert_person_account_cache(&self, info: &PersonAccountInfo) -> AppResult<()> {
+        tracing::info!("[DB] upsert_person_account_cache: account_id={}", info.account_id);
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let model = person_account::ActiveModel {
+            account_id: Set(info.account_id.clone()),
+            real_name: Set(info.real_name.clone()),
+            real_name_auth_status: Set(info.real_name_auth_status.clone()),
+            cash_balance: Set(info.cash_balance),
+            cash_balance_raw: Set(info.cash_balance_raw.clone()),
+            security_question_status: Set(info.security_question_status.clone()),
+            register_date: Set(info.register_date.clone()),
+            student_id: Set(info.student_id.clone()),
+            email: Set(info.email.clone()),
+            nickname: Set(info.nickname.clone()),
+            gender: Set(info.gender.clone()),
+            class_name: Set(info.class_name.clone()),
+            phone_num: Set(info.phone_num.clone()),
+            id_type: Set(info.id_type.clone()),
+            id_number: Set(info.id_number.clone()),
+            remark: Set(info.remark.clone()),
+            user_type: Set(info.user_type.clone()),
+            csrf_token: Set(info.csrf_token.clone()),
+            csrf_header: Set(info.csrf_header.clone()),
+            fetched_at: Set(now),
+        };
+        person_account::Entity::insert(model)
+            .on_conflict(
+                sea_orm::sea_query::OnConflict::column(person_account::Column::AccountId)
+                    .update_columns([
+                        person_account::Column::RealName,
+                        person_account::Column::RealNameAuthStatus,
+                        person_account::Column::CashBalance,
+                        person_account::Column::CashBalanceRaw,
+                        person_account::Column::SecurityQuestionStatus,
+                        person_account::Column::RegisterDate,
+                        person_account::Column::StudentId,
+                        person_account::Column::Email,
+                        person_account::Column::Nickname,
+                        person_account::Column::Gender,
+                        person_account::Column::ClassName,
+                        person_account::Column::PhoneNum,
+                        person_account::Column::IdType,
+                        person_account::Column::IdNumber,
+                        person_account::Column::Remark,
+                        person_account::Column::UserType,
+                        person_account::Column::CsrfToken,
+                        person_account::Column::CsrfHeader,
+                        person_account::Column::FetchedAt,
+                    ])
+                    .to_owned(),
+            )
+            .exec(&self.db)
+            .await?;
+        Ok(())
+    }
+
+    /// 查询指定账号的缓存。
+    pub async fn get_person_account_cache(
+        &self,
+        account_id: &str,
+    ) -> AppResult<Option<PersonAccountInfo>> {
+        let model = person_account::Entity::find_by_id(account_id)
+            .one(&self.db)
+            .await?;
+        Ok(model.map(person_account_model_to_app))
+    }
+
+    /// 查询多个账号的缓存（顺序与传入一致；缺失的条目不会出现在结果中）。
+    pub async fn list_person_account_caches_by_ids(
+        &self,
+        account_ids: &[String],
+    ) -> AppResult<Vec<PersonAccountInfo>> {
+        if account_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let models = person_account::Entity::find()
+            .filter(person_account::Column::AccountId.is_in(account_ids.to_vec()))
+            .all(&self.db)
+            .await?;
+        Ok(models
+            .into_iter()
+            .map(person_account_model_to_app)
+            .collect())
+    }
+
+    /// 删除指定账号的缓存。
+    pub async fn delete_person_account_cache(&self, account_id: &str) -> AppResult<()> {
+        tracing::info!("[DB] delete_person_account_cache: account_id={}", account_id);
+        person_account::Entity::delete_by_id(account_id)
+            .exec(&self.db)
+            .await?;
+        Ok(())
+    }
+
     // === 数据清理操作 ===
 
     /// 清除指定账号的所有原始账单。
@@ -786,5 +915,31 @@ pub fn operation_log_model_to_app(m: operation_log::Model) -> OperationLog {
         operation_time: m.operation_time,
         description: m.description,
         account_id: m.account_id,
+    }
+}
+
+/// 将数据库 person_account_cache 模型转换为应用层 PersonAccountInfo 模型。
+fn person_account_model_to_app(m: person_account::Model) -> PersonAccountInfo {
+    PersonAccountInfo {
+        account_id: m.account_id,
+        real_name: m.real_name,
+        real_name_auth_status: m.real_name_auth_status,
+        cash_balance: m.cash_balance,
+        cash_balance_raw: m.cash_balance_raw,
+        security_question_status: m.security_question_status,
+        register_date: m.register_date,
+        student_id: m.student_id,
+        email: m.email,
+        nickname: m.nickname,
+        gender: m.gender,
+        class_name: m.class_name,
+        phone_num: m.phone_num,
+        id_type: m.id_type,
+        id_number: m.id_number,
+        remark: m.remark,
+        user_type: m.user_type,
+        csrf_token: m.csrf_token,
+        csrf_header: m.csrf_header,
+        fetched_at: m.fetched_at,
     }
 }

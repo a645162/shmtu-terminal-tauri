@@ -238,6 +238,30 @@ export interface CardBalance {
   last_updated: string;
 }
 
+// 一卡通个人账户详情（CAS /epay/personaccount/index）
+export interface PersonAccountInfo {
+  account_id: string;
+  real_name: string;
+  real_name_auth_status: string;
+  cash_balance: number;
+  cash_balance_raw: string;
+  security_question_status: string;
+  register_date: string;
+  student_id: string;
+  email: string;
+  nickname: string;
+  gender: string;
+  class_name: string;
+  phone_num: string;
+  id_type: string;
+  id_number: string;
+  remark: string;
+  user_type: string;
+  csrf_token: string;
+  csrf_header: string;
+  fetched_at: string;
+}
+
 // Classification rules (loaded from backend / database/bill/)
 // 数据来源：rules.toml → Rust TOML 解析 → JSON → 前端
 export interface ClassificationRules {

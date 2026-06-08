@@ -84,6 +84,7 @@ function rangeLabel(key: string): string {
 
 export const HomePage: React.FC = () => {
   const currentIdentity = useAppStore((s) => s.currentIdentity);
+  const accounts = useAppStore((s) => s.accounts);
   const config = useAppStore((s) => s.config);
   const bills = useAppStore((s) => s.bills);
   const isLoadingBills = useAppStore((s) => s.isLoading);
@@ -106,6 +107,40 @@ export const HomePage: React.FC = () => {
 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [detailBill, setDetailBill] = useState<BillItem | null>(null);
+  const [cardBalance, setCardBalance] = useState<string | null>(null);
+  const [cardBalanceLoaded, setCardBalanceLoaded] = useState(false);
+  const [cardBalanceLoading, setCardBalanceLoading] = useState(false);
+
+  // 当前身份下首选可用账号
+  const currentAccount = accounts.find((a) => a.enable) ?? accounts[0] ?? null;
+
+  const loadCardBalance = useCallback(async () => {
+    if (!currentAccount) {
+      setCardBalance(null);
+      setCardBalanceLoaded(true);
+      return;
+    }
+    setCardBalanceLoading(true);
+    try {
+      const cached = await tauri.get_cached_person_account(currentAccount.id);
+      if (cached && cached.cash_balance_raw) {
+        setCardBalance(`${cached.cash_balance_raw} 元`);
+      } else {
+        setCardBalance(null);
+      }
+    } catch {
+      setCardBalance(null);
+    } finally {
+      setCardBalanceLoaded(true);
+      setCardBalanceLoading(false);
+    }
+  }, [currentAccount]);
+
+  useEffect(() => {
+    setCardBalance(null);
+    setCardBalanceLoaded(false);
+    void loadCardBalance();
+  }, [loadCardBalance]);
 
   useEffect(() => {
     if (!currentIdentity) return;
@@ -124,10 +159,24 @@ export const HomePage: React.FC = () => {
     setIsRefreshing(true);
     try {
       await refreshStatistics();
+      await loadCardBalance();
     } finally {
       setIsRefreshing(false);
     }
   };
+
+  const handleFetchBalance = useCallback(async () => {
+    if (!currentAccount) return;
+    setCardBalanceLoading(true);
+    try {
+      const info = await tauri.fetch_person_account(currentAccount.id);
+      setCardBalance(info.cash_balance_raw ? `${info.cash_balance_raw} 元` : '0.00 元');
+    } catch {
+      setCardBalance(null);
+    } finally {
+      setCardBalanceLoading(false);
+    }
+  }, [currentAccount]);
 
   const handleOpenBillDetail = useCallback(async (billId: number) => {
     if (!currentIdentity) return;
@@ -165,10 +214,21 @@ export const HomePage: React.FC = () => {
     },
     {
       title: '卡片余额',
-      value: '暂不可用',
+      value: cardBalanceLoading
+        ? '加载中...'
+        : cardBalance
+          ? `¥ ${cardBalance.replace(' 元', '')}`
+          : cardBalanceLoaded
+            ? '点击刷新'
+            : '加载中...',
       icon: <Money24Regular />,
       color: 'var(--colorBrandForeground1)',
       tone: 'brand' as const,
+      onClick: cardBalance
+        ? undefined
+        : currentAccount
+          ? () => void handleFetchBalance()
+          : undefined,
     },
   ];
 
@@ -222,7 +282,7 @@ export const HomePage: React.FC = () => {
       <div className="home-page__summary-grid">
         {summaryCards.map((card, index) => (
           <CardEnterMotion key={card.title} delay={getStaggerDelay(index, 70, 90)}>
-            <div>
+            <div onClick={card.onClick} style={card.onClick ? { cursor: 'pointer' } : undefined}>
               <StatCard
                 title={card.title}
                 value={card.value}
