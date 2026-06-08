@@ -8,6 +8,10 @@ use shmtu_cas::datatype::bill::BillType;
 use shmtu_cas::sync::SyncOptions;
 use tokio::sync::Mutex;
 
+// 账单合并服务
+pub mod bill_merge;
+use crate::sync::bill_merge::BillMergeService;
+
 use crate::crypto::CryptoService;
 use crate::db::{BillStoreImpl, DatabaseManager};
 use crate::error::{AppError, AppResult};
