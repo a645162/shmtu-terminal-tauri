@@ -5,6 +5,11 @@
 //!
 //! 这里只负责 **用已有 cookies 拉取 + 解析 + 缓存**。
 //! cookies 过期时返回 SESSION_EXPIRED 错误, 前端 UI 提示用户"请先同步账单/重新登录"。
+//!
+//! 注意事项:
+//! - 登录 cookies 由账单同步流程产生。因此在拉取余额之前, 用户需要先完成一次同步以建立有效 session。
+//! - 本地 ONNX OCR (LocalOnnx) 无法直接用于 CLI/Command 中, 需要前端调用 LocalOcrPlugin 下载模型后才可用。
+//! - Manual 模式下, sync 抛出 MANUAL_CAPTCHA_REQUIRED, 前端弹出验证码输入框供用户手动填写。同一个 session 可被后续 fetch_person_account 复用。
 
 use shmtu_cas::cas::epay::{EpayAuth, LoginProbe};
 use shmtu_cas::parser::person_account::parse_person_account;
