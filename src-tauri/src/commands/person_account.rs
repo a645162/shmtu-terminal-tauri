@@ -195,7 +195,7 @@ async fn login_auto(account: &Account, password: &str, cfg: &ConfigAccess) -> Re
 }
 
 /// 手动验证码模式: 获取 challenge, 将图片+execution 返回给前端弹窗。
-async fn login_manual_challenge(account: &Account) -> Result<EpayAuth, String> {
+async fn login_manual_challenge(_account: &Account) -> Result<EpayAuth, String> {
     let mut epay = EpayAuth::new().map_err(|e| format!("创建EpayAuth失败: {}", e))?;
     epay.probe_login().await.map_err(|e| format!("探测登录态失败: {}", e))?;
     let challenge = epay.prepare_challenge().await.map_err(|e| format!("获取验证码失败: {}", e))?;

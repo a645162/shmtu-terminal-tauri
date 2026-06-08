@@ -10,7 +10,6 @@ use tokio::sync::Mutex;
 
 // 账单合并服务
 pub mod bill_merge;
-use crate::sync::bill_merge::BillMergeService;
 
 use crate::crypto::CryptoService;
 use crate::db::{BillStoreImpl, DatabaseManager};
