@@ -8,6 +8,12 @@ import {
   Button,
   InfoLabel,
   Badge,
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogSurface,
+  DialogTitle,
+  DialogActions,
 } from '@fluentui/react-components';
 import {
   Money24Regular,
@@ -110,6 +116,8 @@ export const HomePage: React.FC = () => {
   const [cardBalance, setCardBalance] = useState<string | null>(null);
   const [cardBalanceLoaded, setCardBalanceLoaded] = useState(false);
   const [cardBalanceLoading, setCardBalanceLoading] = useState(false);
+  const [showRefreshBalanceDialog, setShowRefreshBalanceDialog] = useState(false);
+  const [balanceDialogAccountId, setBalanceDialogAccountId] = useState<number | null>(null);
 
   // 当前身份下首选可用账号
   const currentAccount = accounts.find((a) => a.enable) ?? accounts[0] ?? null;
@@ -167,9 +175,13 @@ export const HomePage: React.FC = () => {
 
   const handleFetchBalance = useCallback(async () => {
     if (!currentAccount) return;
+    await fetchBalanceFor(currentAccount.id);
+  }, [currentAccount]);
+
+  const fetchBalanceFor = useCallback(async (accountId: number) => {
     setCardBalanceLoading(true);
     try {
-      const info = await tauri.fetch_person_account(currentAccount.id);
+      const info = await tauri.fetch_person_account(accountId);
       setCardBalance(info.cash_balance_raw ? `${info.cash_balance_raw} 元` : '0.00 元');
     } catch {
       setCardBalance(null);
@@ -224,11 +236,12 @@ export const HomePage: React.FC = () => {
       icon: <Money24Regular />,
       color: 'var(--colorBrandForeground1)',
       tone: 'brand' as const,
-      onClick: cardBalance
-        ? undefined
-        : currentAccount
-          ? () => void handleFetchBalance()
-          : undefined,
+      onClick: currentAccount
+        ? () => {
+            setBalanceDialogAccountId(currentAccount.id);
+            setShowRefreshBalanceDialog(true);
+          }
+        : undefined,
     },
   ];
 
@@ -465,6 +478,46 @@ export const HomePage: React.FC = () => {
       {detailBill && (
         <BillDetailDialog bill={detailBill} onClose={() => setDetailBill(null)} />
       )}
+
+      <Dialog
+        open={showRefreshBalanceDialog}
+        onOpenChange={(_, data) => setShowRefreshBalanceDialog(data.open)}
+      >
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>刷新一卡通余额</DialogTitle>
+            <DialogContent>
+              即将从校园卡服务器拉取最新余额与个人信息, 可能需要输入验证码 (取决于配置)。
+              确定继续吗?
+            </DialogContent>
+            <DialogActions>
+              <Button
+                appearance="subtle"
+                onClick={() => {
+                  setShowRefreshBalanceDialog(false);
+                  setBalanceDialogAccountId(null);
+                }}
+              >
+                取消
+              </Button>
+              <Button
+                appearance="primary"
+                disabled={cardBalanceLoading || !balanceDialogAccountId}
+                onClick={() => {
+                  const id = balanceDialogAccountId;
+                  setShowRefreshBalanceDialog(false);
+                  setBalanceDialogAccountId(null);
+                  if (id) {
+                    void fetchBalanceFor(id);
+                  }
+                }}
+              >
+                {cardBalanceLoading ? '刷新中...' : '确定刷新'}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
     </div>
   );
 };
