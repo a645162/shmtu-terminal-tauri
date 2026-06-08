@@ -115,18 +115,18 @@ impl AccountProgressContext {
     }
 }
 
-struct ConfigAccess {
+pub(crate) struct ConfigAccess {
     data_dir: std::path::PathBuf,
 }
 
 impl ConfigAccess {
-    fn new(db_manager: &DatabaseManager) -> Self {
+    pub(crate) fn new(db_manager: &DatabaseManager) -> Self {
         Self {
             data_dir: db_manager.data_dir().to_path_buf(),
         }
     }
 
-    fn captcha_mode(&self) -> crate::config::CaptchaMode {
+    pub(crate) fn captcha_mode(&self) -> crate::config::CaptchaMode {
         let config_path = self.data_dir.join("app_config.toml");
         let content = std::fs::read_to_string(&config_path).ok();
         let config = content.and_then(|c| toml::from_str::<crate::config::AppConfig>(&c).ok());
@@ -135,7 +135,7 @@ impl ConfigAccess {
             .unwrap_or(crate::config::CaptchaMode::Manual)
     }
 
-    fn remote_ocr_host(&self) -> String {
+    pub(crate) fn remote_ocr_host(&self) -> String {
         let config_path = self.data_dir.join("app_config.toml");
         let content = std::fs::read_to_string(&config_path).ok();
         let config = content.and_then(|c| toml::from_str::<crate::config::AppConfig>(&c).ok());
@@ -144,14 +144,14 @@ impl ConfigAccess {
             .unwrap_or_default()
     }
 
-    fn remote_ocr_port(&self) -> u16 {
+    pub(crate) fn remote_ocr_port(&self) -> u16 {
         let config_path = self.data_dir.join("app_config.toml");
         let content = std::fs::read_to_string(&config_path).ok();
         let config = content.and_then(|c| toml::from_str::<crate::config::AppConfig>(&c).ok());
         config.map(|c| c.captcha.remote_ocr_port).unwrap_or(0)
     }
 
-    fn remote_ocr_http_url(&self) -> String {
+    pub(crate) fn remote_ocr_http_url(&self) -> String {
         let config_path = self.data_dir.join("app_config.toml");
         let content = std::fs::read_to_string(&config_path).ok();
         let config = content.and_then(|c| toml::from_str::<crate::config::AppConfig>(&c).ok());
@@ -160,7 +160,7 @@ impl ConfigAccess {
             .unwrap_or_else(|| "http://127.0.0.1:5000".to_string())
     }
 
-    fn ocr_retry_count(&self) -> usize {
+    pub(crate) fn ocr_retry_count(&self) -> usize {
         let config_path = self.data_dir.join("app_config.toml");
         let content = std::fs::read_to_string(&config_path).ok();
         let config = content.and_then(|c| toml::from_str::<crate::config::AppConfig>(&c).ok());
