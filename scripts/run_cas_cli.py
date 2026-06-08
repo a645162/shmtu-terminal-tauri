@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""Run shmtu-cas-cli (上海海事大学CAS登录与账单查询命令行工具)."""
+"""Run shmtu-cas-cli (上海海事大学CAS登录与账单查询命令行工具).
+
+支持子命令:
+  bill / hot-water / person-account / captcha-test / parse / parse-person-account / sync / help
+
+用法:
+  python scripts/run_cas_cli.py bill -u <学号> -p <密码>
+  python scripts/run_cas_cli.py person-account -u <学号> -p <密码>
+  python scripts/run_cas_cli.py parse-person-account -i <personaccount.html>
+"""
 
 import subprocess
 import sys
