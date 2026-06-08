@@ -151,6 +151,7 @@ pub fn run() {
             cmd_person_account::fetch_person_account,
             cmd_person_account::get_cached_person_account,
             cmd_person_account::list_cached_person_accounts,
+            cmd_person_account::submit_person_account_captcha,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
