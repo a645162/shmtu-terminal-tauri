@@ -43,6 +43,18 @@ export const IdentityManagerDialog: React.FC = () => {
   const [editingIdentityId, setEditingIdentityId] = useState<number | null>(null);
   const [editingIdentityName, setEditingIdentityName] = useState('');
 
+  // 打开 dialog 或 currentIdentity 变化时, 如果尚未选中身份, 自动选中 currentIdentity
+  useEffect(() => {
+    if (!showIdentityManagerDialog) return;
+    if (selectedIdentity) return;
+    if (currentIdentity) {
+      setSelectedIdentity(currentIdentity);
+    } else if (identidades.length > 0) {
+      setSelectedIdentity(identidades[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showIdentityManagerDialog, currentIdentity, selectedIdentity?.id]);
+
   // Account form state
   const [accountForm, setAccountForm] = useState({
     account_name: '',
