@@ -85,12 +85,21 @@ impl DatabaseManager {
 
         tracing::info!("[DB] Initializing tables");
 
-        self.db
-            .execute(Statement::from_string(
-                sea_orm::DatabaseBackend::Sqlite,
-                include_str!("../sql/create_tables.sql").to_string(),
-            ))
-            .await?;
+        // 注意: sea_orm 的 `execute(Statement::from_string(...))` 默认只执行单条 SQL.
+        // create_tables.sql 含 20+ 条语句, 必须按 `;` 分割逐条执行.
+        let sql = include_str!("../sql/create_tables.sql");
+        for stmt in sql.split(';') {
+            let trimmed = stmt.trim();
+            if trimmed.is_empty() || trimmed.starts_with("--") {
+                continue;
+            }
+            self.db
+                .execute(Statement::from_string(
+                    sea_orm::DatabaseBackend::Sqlite,
+                    trimmed.to_string(),
+                ))
+                .await?;
+        }
 
         // Migration: add position/room columns to bill_merged (ignore if already exist)
         let _ = self
