@@ -116,6 +116,22 @@ export const IdentityManagerDialog: React.FC = () => {
           }
         });
         setPersonAccounts(map);
+        // 如果有缓存为空或已过期的账号, 且至少有一个账号有缓存 → 对所有缺少缓存的账号自动刷新
+        const idsNeedingRefresh = accounts
+          .filter((a) => !map[a.id])
+          .map((a) => a.id);
+        if (idsNeedingRefresh.length > 0) {
+          for (const dbId of idsNeedingRefresh) {
+            // 静默刷新, 不阻塞 UI (不更新 loading/error 状态给每个账号)
+            tauri.fetch_person_account(dbId).then((info) => {
+              if (!cancelled) {
+                setPersonAccounts((s) => ({ ...s, [dbId]: info }));
+              }
+            }).catch(() => {
+              // 静默失败; 用户可手动点刷新
+            });
+          }
+        }
       } catch {
         if (!cancelled) setPersonAccounts({});
       }
