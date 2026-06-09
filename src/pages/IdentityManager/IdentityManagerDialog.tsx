@@ -49,8 +49,8 @@ export const IdentityManagerDialog: React.FC = () => {
     if (selectedIdentity) return;
     if (currentIdentity) {
       setSelectedIdentity(currentIdentity);
-    } else if (identidades.length > 0) {
-      setSelectedIdentity(identidades[0]);
+    } else if (identities.length > 0) {
+      setSelectedIdentity(identities[0]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showIdentityManagerDialog, currentIdentity, selectedIdentity?.id]);
