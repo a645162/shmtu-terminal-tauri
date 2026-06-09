@@ -52,7 +52,7 @@ export const IdentityManagerDialog: React.FC = () => {
       return;
     }
     if (selectedIdentity) return;
-    const identity = currentIdentity ?? identities[0] ?? null;
+    const identity = currentIdentity ?? (identities.length > 0 ? identities[0] : null);
     if (identity && !initialSelected.current) {
       // 只在打开 dialog 时执行一次, 避免 currentIdentity.id 变化时(引用相同对象)也触发
       initialSelected.current = true;
@@ -62,6 +62,17 @@ export const IdentityManagerDialog: React.FC = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showIdentityManagerDialog, selectedIdentity?.id]);
+
+  // 将 identities 按是否为当前身份排序: 当前身份置顶
+  const sortedIdentities = useMemo(() => {
+    if (!currentIdentity) return identities;
+    const idx = identities.findIndex((i) => i.id === currentIdentity.id);
+    if (idx <= 0) return identities;
+    const list = [...identities];
+    const [head] = list.splice(idx, 1);
+    list.unshift(head);
+    return list;
+  }, [identities, currentIdentity]);
 
   // Account form state
   const [accountForm, setAccountForm] = useState({
@@ -282,7 +293,7 @@ export const IdentityManagerDialog: React.FC = () => {
                 <Text weight="semibold" block style={{ marginBottom: 8 }}>
                   身份列表
                 </Text>
-                {identities.map((identity) => (
+                {sortedIdentities.map((identity) => (
                   <div
                     key={identity.id}
                     onClick={() => handleSelectIdentity(identity)}
