@@ -10,6 +10,7 @@ import {
   Input,
   Switch,
   Text,
+  Badge,
   MessageBar,
   MessageBarBody,
   Label,
@@ -320,9 +321,9 @@ export const IdentityManagerDialog: React.FC = () => {
                     >
                       {identity.name}
                       {currentIdentity?.id === identity.id && (
-                        <Text size={100} style={{ color: 'var(--colorBrandForeground1)', marginLeft: 6 }}>
+                        <Badge appearance="filled" color="brand" size="extra-small" style={{ marginLeft: 6 }}>
                           当前
-                        </Text>
+                        </Badge>
                       )}
                     </Text>
                     <div style={{ display: 'flex', gap: 2 }}>
