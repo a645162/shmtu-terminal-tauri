@@ -319,6 +319,9 @@ export const IdentityManagerDialog: React.FC = () => {
                       size={200}
                       weight={selectedIdentity?.id === identity.id || currentIdentity?.id === identity.id ? 'semibold' : 'regular'}
                     >
+                      {currentIdentity?.id === identity.id && (
+                        <span style={{ marginRight: 4, color: 'var(--colorBrandForeground1)', fontWeight: 'bold' }}>● </span>
+                      )}
                       {identity.name}
                       {currentIdentity?.id === identity.id && (
                         <Badge appearance="filled" color="brand" size="extra-small" style={{ marginLeft: 6 }}>
