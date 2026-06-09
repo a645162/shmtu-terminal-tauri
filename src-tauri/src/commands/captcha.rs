@@ -1347,13 +1347,18 @@ pub async fn refresh_ocr_v2_tag_catalog(
     app: AppHandle,
 ) -> Result<Vec<V2TagCatalogEntry>, String> {
     use shmtu_ocr::tag_catalog::list_candidate_v2_tags;
+    tracing::info!("[Captcha] refresh_ocr_v2_tag_catalog: 开始刷新候选 tag 列表");
     let tag_infos =
         list_candidate_v2_tags(
             shmtu_ocr::const_value::v2::MAX_SUPPORTED_MAJOR,
             shmtu_ocr::const_value::v2::MAX_SUPPORTED_MINOR,
         )
         .await
-        .map_err(|e| format!("拉取 v2 tag 失败: {}", e))?;
+        .map_err(|e| {
+            let msg = format!("拉取 v2 tag 失败: {}", e);
+            tracing::error!("[Captcha] {}", msg);
+            msg
+        })?;
     let entries: Vec<V2TagCatalogEntry> = tag_infos
         .into_iter()
         .map(|e| V2TagCatalogEntry {
