@@ -121,6 +121,7 @@ CREATE TABLE IF NOT EXISTS person_account_cache (
     email                       TEXT NOT NULL DEFAULT '',
     nickname                    TEXT NOT NULL DEFAULT '',
     gender                      TEXT NOT NULL DEFAULT '',
+    gender_from_id              TEXT NOT NULL DEFAULT '',
     class_name                  TEXT NOT NULL DEFAULT '',
     phone_num                   TEXT NOT NULL DEFAULT '',
     id_type                     TEXT NOT NULL DEFAULT '',

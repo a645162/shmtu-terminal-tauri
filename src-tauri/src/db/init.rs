@@ -175,6 +175,7 @@ impl DatabaseManager {
                     email TEXT NOT NULL DEFAULT '',
                     nickname TEXT NOT NULL DEFAULT '',
                     gender TEXT NOT NULL DEFAULT '',
+                    gender_from_id TEXT NOT NULL DEFAULT '',
                     class_name TEXT NOT NULL DEFAULT '',
                     phone_num TEXT NOT NULL DEFAULT '',
                     id_type TEXT NOT NULL DEFAULT '',
@@ -185,6 +186,14 @@ impl DatabaseManager {
                     csrf_header TEXT NOT NULL DEFAULT '',
                     fetched_at TEXT NOT NULL DEFAULT ''
                 );".to_string(),
+            ))
+            .await;
+        let _ = self
+            .db
+            .execute(Statement::from_string(
+                sea_orm::DatabaseBackend::Sqlite,
+                "ALTER TABLE person_account_cache ADD COLUMN gender_from_id TEXT NOT NULL DEFAULT '';"
+                    .to_string(),
             ))
             .await;
 
