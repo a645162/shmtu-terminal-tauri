@@ -4,6 +4,7 @@ pub mod captcha;
 pub mod classify;
 pub mod config;
 pub mod data;
+pub mod debug;
 pub mod error;
 pub mod identity;
 pub mod person_account;

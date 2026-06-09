@@ -15,8 +15,9 @@ pub mod state;
 pub mod sync;
 
 use commands::{
-    account, bill, captcha, classify, config as cmd_config, data, error as error_cmd, identity,
-    person_account as cmd_person_account, remote as cmd_remote, statistics, sync as cmd_sync,
+    account, bill, captcha, classify, config as cmd_config, data, debug as cmd_debug,
+    error as error_cmd, identity, person_account as cmd_person_account, remote as cmd_remote,
+    statistics, sync as cmd_sync,
 };
 use tauri::Manager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -152,6 +153,8 @@ pub fn run() {
             cmd_person_account::get_cached_person_account,
             cmd_person_account::list_cached_person_accounts,
             cmd_person_account::submit_person_account_captcha,
+            cmd_debug::clear_all_cookies,
+            cmd_debug::clear_all_cookies,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

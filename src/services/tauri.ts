@@ -473,6 +473,18 @@ export async function log_error(message: string): Promise<void> {
   return invoke('log_error', { message });
 }
 
+// ========== Debug (清除 cookies / 缓存) ==========
+
+export interface ClearCookiesSummary {
+  accounts_visited: number;
+  sessions_cleared: number;
+  캐ches_cleared: number;
+}
+
+export async function clear_all_cookies(): Promise<ClearCookiesSummary> {
+  return invoke<ClearCookiesSummary>('clear_all_cookies');
+}
+
 // ========== Remote Access (RESTful) ==========
 
 export interface RemoteSessionFrontend {

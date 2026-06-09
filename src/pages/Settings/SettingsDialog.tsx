@@ -116,6 +116,9 @@ export const SettingsDialog: React.FC = () => {
   const [debugMessage, setDebugMessage] = useState('');
   const [debugResponse, setDebugResponse] = useState('');
   const [debugTesting, setDebugTesting] = useState(false);
+  const [showClearCookiesDialog, setShowClearCookiesDialog] = useState(false);
+  const [clearingCookies, setClearingCookies] = useState(false);
+  const [clearCookiesResponse, setClearCookiesResponse] = useState('');
   const [selectedAccountId, setSelectedAccountId] = useState('');
   const [repairingIdentity, setRepairingIdentity] = useState(false);
   const [repairingAccount, setRepairingAccount] = useState(false);
@@ -1034,6 +1037,31 @@ export const SettingsDialog: React.FC = () => {
                 <MessageBarBody>{debugResponse}</MessageBarBody>
               </MessageBar>
             )}
+
+            <div
+              style={{
+                marginTop: 24,
+                paddingTop: 16,
+                borderTop: '1px solid var(--colorNeutralStroke2)',
+              }}
+            >
+              <Text weight="semibold" size={400}>会话 / 缓存 调试</Text>
+              <Text
+                size={200}
+                style={{ color: 'var(--colorNeutralForeground3)', marginTop: 4 }}
+              >
+                清除所有账号存储的 epay session cookies 和 person_account 缓存。
+                下次访问任何 epay 资源都会触发重新登录 (Manual 弹验证码 / OCR / LocalOnnx)。
+              </Text>
+              <div style={{ marginTop: 12 }}>
+                <Button
+                  appearance="subtle"
+                  onClick={() => setShowClearCookiesDialog(true)}
+                >
+                  清除存储的 cookies
+                </Button>
+              </div>
+            </div>
             <div
               style={{
                 marginTop: 16,
@@ -1052,6 +1080,7 @@ export const SettingsDialog: React.FC = () => {
   };
 
   return (
+    <>
     <Dialog open={showSettingsDialog} onOpenChange={(_, data) => !data.open && setShowSettingsDialog(false)}>
       <DialogSurface style={{ maxWidth: 700 }}>
         <DialogBody>
@@ -1108,5 +1137,60 @@ export const SettingsDialog: React.FC = () => {
         </DialogBody>
       </DialogSurface>
     </Dialog>
+
+    <Dialog
+      open={showClearCookiesDialog}
+      onOpenChange={(_, data) => {
+        if (clearingCookies) return;
+        setShowClearCookiesDialog(data.open);
+        if (!data.open) setClearCookiesResponse('');
+      }}
+    >
+      <DialogSurface style={{ maxWidth: 480 }}>
+        <DialogBody>
+          <DialogTitle>清除存储的 cookies</DialogTitle>
+          <DialogContent>
+            <p>
+              将删除所有账号的 epay session cookies 和 person_account 缓存。
+              <strong>下次访问任何 epay 资源会强制重新登录</strong> (Manual 弹验证码 / OCR / LocalOnnx)。
+            </p>
+            <p style={{ marginTop: 8 }}>此操作不可撤销, 仅用于调试。继续吗?</p>
+          </DialogContent>
+          <DialogActions>
+            <Button
+              appearance="subtle"
+              onClick={() => {
+                setShowClearCookiesDialog(false);
+                setClearCookiesResponse('');
+              }}
+              disabled={clearingCookies}
+            >
+              取消
+            </Button>
+            <Button
+              appearance="primary"
+              disabled={clearingCookies}
+              onClick={async () => {
+                setClearingCookies(true);
+                setClearCookiesResponse('');
+                try {
+                  const summary = await tauri.clear_all_cookies();
+                  setClearCookiesResponse(
+                    `✓ 已清理 ${summary.sessions_cleared} 个 session, ${summary.캐ches_cleared} 个缓存 (涉及 ${summary.accounts_visited} 个账号)`,
+                  );
+                } catch (e) {
+                  setClearCookiesResponse(`✗ 清理失败: ${e}`);
+                } finally {
+                  setClearingCookies(false);
+                }
+              }}
+            >
+              {clearingCookies ? '清理中...' : '确定清除'}
+            </Button>
+          </DialogActions>
+        </DialogBody>
+      </DialogSurface>
+    </Dialog>
+    </>
   );
 };
