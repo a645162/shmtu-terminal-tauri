@@ -40,8 +40,9 @@ export const IdentityManagerDialog: React.FC = () => {
   const [selectedIdentity, setSelectedIdentity] = useState<Identity | null>(null);
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [newIdentityName, setNewIdentityName] = useState('');
   const [isAddingIdentity, setIsAddingIdentity] = useState(false);
+  const [addingIdentityName, setAddingIdentityName] = useState('');
+  const [addingIdentityLoading, setAddingIdentityLoading] = useState(false);
   const [editingIdentityId, setEditingIdentityId] = useState<number | null>(null);
   const [editingIdentityName, setEditingIdentityName] = useState('');
 
@@ -169,14 +170,21 @@ export const IdentityManagerDialog: React.FC = () => {
   };
 
   const handleAddIdentity = async () => {
-    if (!newIdentityName.trim()) return;
+    if (!addingIdentityName.trim()) return;
+    setAddingIdentityLoading(true);
     try {
-      await tauri.create_identity(newIdentityName.trim());
-      setNewIdentityName('');
+      const created = await tauri.create_identity(addingIdentityName.trim());
+      setAddingIdentityName('');
       setIsAddingIdentity(false);
-      loadIdentities();
+      await loadIdentities();
+      // 自动选中新创建的身份并拉取其账号列表
+      setSelectedIdentity(created);
+      const accList = await tauri.list_accounts(created.id);
+      setAccounts(accList);
     } catch (e) {
       console.error('Failed to create identity:', e);
+    } finally {
+      setAddingIdentityLoading(false);
     }
   };
 
@@ -374,15 +382,28 @@ export const IdentityManagerDialog: React.FC = () => {
                     <Input
                       size="small"
                       placeholder="输入身份名称"
-                      value={newIdentityName}
-                      onChange={(e) => setNewIdentityName(e.currentTarget.value)}
+                      value={addingIdentityName}
+                      onChange={(e) => setAddingIdentityName(e.currentTarget.value)}
                       onKeyDown={(e) => e.key === 'Enter' && handleAddIdentity()}
+                      disabled={addingIdentityLoading}
                     />
                     <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-                      <Button size="small" appearance="primary" onClick={handleAddIdentity}>
-                        确定
+                      <Button
+                        size="small"
+                        appearance="primary"
+                        onClick={handleAddIdentity}
+                        disabled={addingIdentityLoading || !addingIdentityName.trim()}
+                      >
+                        {addingIdentityLoading ? '创建中...' : '确定'}
                       </Button>
-                      <Button size="small" onClick={() => setIsAddingIdentity(false)}>
+                      <Button
+                        size="small"
+                        disabled={addingIdentityLoading}
+                        onClick={() => {
+                          setIsAddingIdentity(false);
+                          setAddingIdentityName('');
+                        }}
+                      >
                         取消
                       </Button>
                     </div>
