@@ -297,7 +297,9 @@ export const IdentityManagerDialog: React.FC = () => {
       <Dialog open={showIdentityManagerDialog} onOpenChange={(_, data) => !data.open && setShowIdentityManagerDialog(false)}>
         <DialogSurface style={{ maxWidth: 800 }}>
           <DialogBody>
-            <DialogTitle>身份与账号管理</DialogTitle>
+            <DialogTitle>
+              {selectedIdentity ? `${selectedIdentity.name} 的账号列表` : '身份与账号管理'}
+            </DialogTitle>
             <DialogContent>
             <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: 16, minHeight: 400 }}>
               {/* Left: Identity List */}
