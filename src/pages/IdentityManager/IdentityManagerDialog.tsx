@@ -590,6 +590,36 @@ export const IdentityManagerDialog: React.FC = () => {
                 )}
               </div>
             </div>
+            <div
+              style={{
+                marginTop: 16,
+                paddingTop: 12,
+                borderTop: '1px solid var(--colorNeutralStroke2)',
+                display: 'flex',
+                gap: 8,
+                justifyContent: 'flex-end',
+              }}
+            >
+              <Button
+                appearance="primary"
+                disabled={
+                  !selectedIdentity ||
+                  (selectedIdentity != null &&
+                    currentIdentity != null &&
+                    selectedIdentity.id === currentIdentity.id)
+                }
+                onClick={() => {
+                  if (selectedIdentity) {
+                    activateIdentity(selectedIdentity).catch(console.error);
+                    setShowIdentityManagerDialog(false);
+                  }
+                }}
+              >
+                {selectedIdentity && currentIdentity?.id === selectedIdentity.id
+                  ? '✓ 当前身份'
+                  : '设为当前身份'}
+              </Button>
+            </div>
             </DialogContent>
             <DialogActions>
               <Button appearance="secondary" onClick={() => setShowIdentityManagerDialog(false)}>
