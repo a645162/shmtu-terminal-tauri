@@ -219,8 +219,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (e) {
       console.error('Failed to persist last identity:', e);
     }
-    await get().loadAccounts(identity.id);
-    await get().loadBills();
+    const { loadAccounts, loadBills, loadIdentities } = get();
+    await loadIdentities();
+    await loadAccounts(identity.id);
+    await loadBills();
   },
 
   loadIdentities: async () => {
