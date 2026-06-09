@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Dialog,
   DialogSurface,
@@ -44,17 +44,23 @@ export const IdentityManagerDialog: React.FC = () => {
   const [editingIdentityName, setEditingIdentityName] = useState('');
 
   // 打开 dialog 或 currentIdentity 变化时, 如果尚未选中身份, 自动选中 currentIdentity
+  const initialSelected = useRef(false);
   useEffect(() => {
-    if (!showIdentityManagerDialog) return;
+    if (!showIdentityManagerDialog) {
+      initialSelected.current = false;
+      return;
+    }
     if (selectedIdentity) return;
     const identity = currentIdentity ?? identities[0] ?? null;
-    if (identity) {
+    if (identity && !initialSelected.current) {
+      // 只在打开 dialog 时执行一次, 避免 currentIdentity.id 变化时(引用相同对象)也触发
+      initialSelected.current = true;
       setSelectedIdentity(identity);
       // 同时拉取该身份的账号列表, 否则右边区会显示"暂无账号"
       tauri.list_accounts(identity.id).then(setAccounts).catch(() => setAccounts([]));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showIdentityManagerDialog, currentIdentity?.id, selectedIdentity?.id]);
+  }, [showIdentityManagerDialog, selectedIdentity?.id]);
 
   // Account form state
   const [accountForm, setAccountForm] = useState({
