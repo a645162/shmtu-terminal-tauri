@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Run the main Tauri application (shmtu-terminal-tauri)."""
+"""Run the main Tauri application via bun tauri dev (Vite + Tauri dev server)."""
 
 import subprocess
 import sys
 from pathlib import Path
 
-script_dir = Path(__file__).parent
-tauri_dir = script_dir.parent / "src-tauri"
+tauri_root = Path(__file__).resolve().parent.parent
 
-if not tauri_dir.exists():
-    print(f"Error: Tauri project not found at {tauri_dir}", file=sys.stderr)
-    sys.exit(1)
+# 安装前端依赖 (如果需要)
+if not (tauri_root / "node_modules").exists():
+    print("[run_tauri] Installing npm dependencies...", file=sys.stderr)
+    subprocess.check_call(["npm", "install"], cwd=tauri_root)
 
-sys.exit(subprocess.call(["cargo", "run"] + sys.argv[1:], cwd=tauri_dir))
+print("[run_tauri] Starting Tauri dev server...")
+sys.exit(subprocess.call(["bun", "run", "tauri", "dev"], cwd=tauri_root))

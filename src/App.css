@@ -257,6 +257,211 @@ body,
   background: linear-gradient(180deg, color-mix(in srgb, #0f6cbd 10%, var(--colorNeutralBackground1)) 0%, color-mix(in srgb, #38bdf8 8%, var(--colorNeutralBackground1)) 100%);
 }
 
+.identity-manager {
+  display: grid;
+  gap: 18px;
+}
+
+.identity-manager__layout {
+  display: grid;
+  grid-template-columns: minmax(290px, 340px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.identity-manager__sidebar,
+.identity-manager__summary-card,
+.identity-manager__accounts-pane,
+.identity-manager__editor-pane,
+.identity-manager__empty {
+  border-radius: 24px !important;
+  border: 1px solid color-mix(in srgb, var(--colorNeutralStroke2) 82%, transparent) !important;
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.08);
+}
+
+.identity-manager__sidebar {
+  padding: 18px !important;
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--colorBrandBackground2) 50%, transparent) 0%, transparent 38%),
+    linear-gradient(180deg, color-mix(in srgb, var(--colorBrandBackground2) 36%, var(--colorNeutralBackground1)) 0%, var(--colorNeutralBackground1) 100%);
+}
+
+.identity-manager__hero {
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid color-mix(in srgb, var(--colorBrandStroke1) 18%, transparent);
+  background:
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.55) 0%, transparent 34%),
+    linear-gradient(155deg, color-mix(in srgb, var(--colorBrandBackground2) 74%, white) 0%, color-mix(in srgb, var(--colorPaletteLightBlueBackground2) 58%, var(--colorNeutralBackground1)) 100%);
+}
+
+.identity-manager__eyebrow {
+  color: var(--colorNeutralForeground3);
+  letter-spacing: 0.04em;
+}
+
+.identity-manager__hero-subtitle {
+  color: var(--colorNeutralForeground3);
+  margin-top: 8px;
+  line-height: 1.6;
+}
+
+.identity-manager__metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.identity-manager__metrics--wide {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 0;
+}
+
+.identity-manager__metric-tile {
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--colorNeutralBackground1) 90%, white);
+  border: 1px solid color-mix(in srgb, var(--colorNeutralStroke2) 70%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.identity-manager__metric-label {
+  color: var(--colorNeutralForeground3);
+}
+
+.identity-manager__metric-value {
+  margin-top: 4px;
+}
+
+.identity-manager__sidebar-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.identity-manager__action-button {
+  min-height: 42px;
+  justify-content: center;
+}
+
+.identity-manager__identity-list-shell {
+  display: grid;
+  gap: 10px;
+}
+
+.identity-manager__identity-list {
+  display: grid;
+  gap: 10px;
+}
+
+.identity-manager__identity-card,
+.identity-manager__account-card {
+  cursor: pointer;
+  border-radius: 18px !important;
+  border: 1px solid color-mix(in srgb, var(--colorNeutralStroke2) 82%, transparent) !important;
+  background: color-mix(in srgb, var(--colorNeutralBackground1) 92%, white) !important;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+}
+
+.identity-manager__identity-card.is-current {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--colorPaletteLightGreenBackground2) 44%, var(--colorNeutralBackground1)) 0%, var(--colorNeutralBackground1) 100%) !important;
+}
+
+.identity-manager__identity-card.is-selected,
+.identity-manager__account-card.is-selected {
+  border-color: var(--colorBrandStroke1) !important;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--colorBrandStroke1) 14%, transparent),
+    0 12px 28px rgba(15, 23, 42, 0.08);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--colorBrandBackground2) 36%, var(--colorNeutralBackground1)) 0%, var(--colorNeutralBackground1) 100%) !important;
+}
+
+.identity-manager__identity-avatar,
+.identity-manager__account-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: var(--colorBrandForeground1);
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--colorBrandBackground2) 74%, white) 0%, color-mix(in srgb, var(--colorPaletteLightBlueBackground2) 50%, white) 100%);
+  border: 1px solid color-mix(in srgb, var(--colorBrandStroke1) 18%, transparent);
+  flex-shrink: 0;
+}
+
+.identity-manager__account-avatar {
+  width: 46px;
+  height: 46px;
+  border-radius: 16px;
+}
+
+.identity-manager__content {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
+.identity-manager__summary-card {
+  padding: 20px !important;
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--colorBrandBackground2) 30%, transparent) 0%, transparent 34%),
+    linear-gradient(180deg, color-mix(in srgb, var(--colorBrandBackground2) 18%, var(--colorNeutralBackground1)) 0%, var(--colorNeutralBackground1) 100%);
+}
+
+.identity-manager__panes {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.82fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.identity-manager__accounts-pane,
+.identity-manager__editor-pane {
+  padding: 20px !important;
+  background: color-mix(in srgb, var(--colorNeutralBackground1) 96%, white);
+}
+
+.identity-manager__accounts-list {
+  display: grid;
+  gap: 12px;
+  max-height: 560px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.identity-manager__detail-block {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--colorNeutralBackground2) 90%, white);
+  border: 1px solid color-mix(in srgb, var(--colorNeutralStroke2) 56%, transparent);
+}
+
+.identity-manager__empty {
+  padding: 36px !important;
+  min-height: 620px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  background:
+    radial-gradient(circle at top, color-mix(in srgb, var(--colorBrandBackground2) 20%, transparent) 0%, transparent 34%),
+    var(--colorNeutralBackground2) !important;
+  border-style: dashed !important;
+}
+
+@media (max-width: 1100px) {
+  .identity-manager__layout,
+  .identity-manager__panes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .home-page__content-grid {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);

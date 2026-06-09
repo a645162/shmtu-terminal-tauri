@@ -442,11 +442,21 @@ export const IdentityManagerDialog: React.FC = () => {
         open={showIdentityManagerDialog}
         onOpenChange={(_, data) => !data.open && setShowIdentityManagerDialog(false)}
       >
-        <DialogSurface style={{ maxWidth: 1180, width: 'min(1180px, calc(100vw - 48px))' }}>
+        <DialogSurface
+          style={{
+            maxWidth: 1220,
+            width: 'min(1220px, calc(100vw - 40px))',
+            borderRadius: 28,
+            overflow: 'hidden',
+            background:
+              'linear-gradient(180deg, color-mix(in srgb, var(--colorNeutralBackground1) 92%, white) 0%, color-mix(in srgb, var(--colorNeutralBackground2) 84%, white) 100%)',
+            boxShadow: '0 28px 80px rgba(15, 23, 42, 0.18)',
+          }}
+        >
           <DialogBody>
             <DialogTitle>{selectedIdentity ? `${selectedIdentity.name} 的身份管理` : '身份与账号管理'}</DialogTitle>
             <DialogContent>
-              <div style={{ display: 'grid', gap: 16 }}>
+              <div className="identity-manager">
                 {(notice || error) && (
                   <div style={{ display: 'grid', gap: 8 }}>
                     {notice && (
@@ -463,50 +473,23 @@ export const IdentityManagerDialog: React.FC = () => {
                 )}
 
                 <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'minmax(280px, 320px) minmax(0, 1fr)',
-                    gap: 18,
-                    alignItems: 'start',
-                  }}
+                  className="identity-manager__layout"
                 >
                   <Card
-                    style={{
-                      padding: 18,
-                      borderRadius: 18,
-                      alignSelf: 'start',
-                      background:
-                        'linear-gradient(180deg, color-mix(in srgb, var(--colorBrandBackground2) 56%, var(--colorNeutralBackground1)) 0%, var(--colorNeutralBackground1) 100%)',
-                      border: '1px solid color-mix(in srgb, var(--colorBrandStroke1) 18%, var(--colorNeutralStroke2))',
-                    }}
+                    className="identity-manager__sidebar"
                   >
                     <div style={{ display: 'grid', gap: 16 }}>
-                      <div
-                        style={{
-                          padding: 16,
-                          borderRadius: 16,
-                          background:
-                            'linear-gradient(160deg, color-mix(in srgb, var(--colorBrandBackground2) 72%, white) 0%, color-mix(in srgb, var(--colorPaletteLightBlueBackground2) 62%, var(--colorNeutralBackground1)) 100%)',
-                          border: '1px solid color-mix(in srgb, var(--colorBrandStroke1) 22%, transparent)',
-                        }}
-                      >
-                        <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                      <div className="identity-manager__hero">
+                        <Text size={200} className="identity-manager__eyebrow">
                           身份中心
                         </Text>
-                        <Text weight="semibold" size={500} block style={{ marginTop: 6 }}>
+                        <Text weight="semibold" size={600} block style={{ marginTop: 8, lineHeight: 1.2 }}>
                           当前共管理 {identities.length} 个身份
                         </Text>
-                        <Text size={200} style={{ color: 'var(--colorNeutralForeground3)', marginTop: 6 }}>
-                          统一查看账号数量、余额档案状态，并直接处理身份切换、编辑和刷新。
+                        <Text size={200} className="identity-manager__hero-subtitle">
+                          统一切换身份、维护账号，并集中查看一卡通余额与个人账户信息。
                         </Text>
-                        <div
-                          style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                            gap: 10,
-                            marginTop: 16,
-                          }}
-                        >
+                        <div className="identity-manager__metrics">
                           <MetricTile label="身份数" value={identities.length.toString()} />
                           <MetricTile
                             label="账号数"
@@ -515,18 +498,12 @@ export const IdentityManagerDialog: React.FC = () => {
                         </div>
                       </div>
 
-                      <div
-                        style={{
-                          display: 'grid',
-                          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                          gap: 8,
-                        }}
-                      >
+                      <div className="identity-manager__sidebar-actions">
                         <Button
                           appearance="primary"
                           icon={<PersonAdd24Regular />}
                           onClick={() => setIsAddingIdentity(true)}
-                          style={{ minHeight: 40, justifyContent: 'center' }}
+                          className="identity-manager__action-button"
                         >
                           添加身份
                         </Button>
@@ -535,7 +512,7 @@ export const IdentityManagerDialog: React.FC = () => {
                           icon={<ArrowSync24Regular />}
                           onClick={() => void handleRefreshAccountCounts()}
                           disabled={isLoadingCounts}
-                          style={{ minHeight: 40, justifyContent: 'center' }}
+                          className="identity-manager__action-button"
                         >
                           刷新统计
                         </Button>
@@ -587,12 +564,12 @@ export const IdentityManagerDialog: React.FC = () => {
                         </Card>
                       )}
 
-                      <div style={{ display: 'grid', gap: 10 }}>
+                      <div className="identity-manager__identity-list-shell">
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <Text weight="semibold">身份列表</Text>
                           {isLoadingCounts && <Spinner size="tiny" />}
                         </div>
-                        <div style={{ display: 'grid', gap: 10, paddingRight: 4 }}>
+                        <div className="identity-manager__identity-list">
                           {sortedIdentities.map((identity) => {
                             const isSelected = selectedIdentity?.id === identity.id;
                             const isCurrent = currentIdentity?.id === identity.id;
@@ -600,32 +577,25 @@ export const IdentityManagerDialog: React.FC = () => {
                             return (
                               <Card
                                 key={identity.id}
-                                className="motion-hover-lift motion-sheen"
+                                className={`motion-hover-lift motion-sheen identity-manager__identity-card${
+                                  isSelected ? ' is-selected' : ''
+                                }${isCurrent ? ' is-current' : ''}`}
                                 onClick={() => void handleSelectIdentity(identity)}
-                                style={{
-                                  cursor: 'pointer',
-                                  padding: 14,
-                                  borderRadius: 16,
-                                  border: isSelected
-                                    ? '1px solid var(--colorBrandStroke1)'
-                                    : '1px solid var(--colorNeutralStroke2)',
-                                  boxShadow: isSelected
-                                    ? '0 0 0 3px color-mix(in srgb, var(--colorBrandStroke1) 16%, transparent)'
-                                    : 'none',
-                                  background: isSelected
-                                    ? 'color-mix(in srgb, var(--colorBrandBackground2) 54%, var(--colorNeutralBackground1))'
-                                    : 'var(--colorNeutralBackground1)',
-                                }}
                               >
                                 <div style={{ display: 'grid', gap: 10 }}>
                                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
-                                    <div style={{ minWidth: 0 }}>
-                                      <Text weight="semibold" size={400} block>
-                                        {identity.name}
-                                      </Text>
-                                      <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
-                                        身份 ID #{identity.id}
-                                      </Text>
+                                    <div style={{ display: 'flex', gap: 12, minWidth: 0 }}>
+                                      <div className="identity-manager__identity-avatar">
+                                        {identity.name.slice(0, 1).toUpperCase()}
+                                      </div>
+                                      <div style={{ minWidth: 0 }}>
+                                        <Text weight="semibold" size={400} block>
+                                          {identity.name}
+                                        </Text>
+                                        <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                                          身份 ID #{identity.id}
+                                        </Text>
+                                      </div>
                                     </div>
                                     <div style={{ display: 'flex', gap: 4 }}>
                                       <Button
@@ -670,17 +640,11 @@ export const IdentityManagerDialog: React.FC = () => {
                     </div>
                   </Card>
 
-                  <div style={{ display: 'grid', gap: 16, minWidth: 0 }}>
+                  <div className="identity-manager__content">
                     {selectedIdentity ? (
                       <>
                         <Card
-                          style={{
-                            padding: 18,
-                            borderRadius: 18,
-                            border: '1px solid var(--colorNeutralStroke2)',
-                            background:
-                              'linear-gradient(180deg, color-mix(in srgb, var(--colorBrandBackground2) 20%, var(--colorNeutralBackground1)) 0%, var(--colorNeutralBackground1) 100%)',
-                          }}
+                          className="identity-manager__summary-card"
                         >
                           <div style={{ display: 'grid', gap: 14 }}>
                             <div
@@ -723,13 +687,7 @@ export const IdentityManagerDialog: React.FC = () => {
                               </div>
                             </div>
 
-                            <div
-                              style={{
-                                display: 'grid',
-                                gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-                                gap: 12,
-                              }}
-                            >
+                            <div className="identity-manager__metrics identity-manager__metrics--wide">
                               <MetricTile label="账号总数" value={selectedIdentityAccountCount.toString()} />
                               <MetricTile
                                 label="余额合计"
@@ -743,21 +701,9 @@ export const IdentityManagerDialog: React.FC = () => {
                           </div>
                         </Card>
 
-                        <div
-                          style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'minmax(0, 1.25fr) minmax(320px, 0.75fr)',
-                            gap: 16,
-                            alignItems: 'start',
-                          }}
-                        >
+                        <div className="identity-manager__panes">
                           <Card
-                            style={{
-                              padding: 18,
-                              borderRadius: 18,
-                              border: '1px solid var(--colorNeutralStroke2)',
-                              minHeight: 400,
-                            }}
+                            className="identity-manager__accounts-pane"
                           >
                             <div style={{ display: 'grid', gap: 14 }}>
                               <SectionEnterMotion>
@@ -793,7 +739,7 @@ export const IdentityManagerDialog: React.FC = () => {
                               </SectionEnterMotion>
 
                               <PageEnterMotion key={selectedIdentity.id}>
-                                <div style={{ display: 'grid', gap: 12, maxHeight: 560, overflowY: 'auto', paddingRight: 4 }}>
+                                <div className="identity-manager__accounts-list">
                                   {accounts.length === 0 ? (
                                     <div
                                       style={{
@@ -832,12 +778,7 @@ export const IdentityManagerDialog: React.FC = () => {
                           </Card>
 
                           <Card
-                            style={{
-                              padding: 18,
-                              borderRadius: 18,
-                              border: '1px solid var(--colorNeutralStroke2)',
-                              minHeight: 400,
-                            }}
+                            className="identity-manager__editor-pane"
                           >
                             <div style={{ display: 'grid', gap: 14 }}>
                               <div>
@@ -973,17 +914,7 @@ export const IdentityManagerDialog: React.FC = () => {
                       </>
                     ) : (
                       <Card
-                        style={{
-                          padding: 28,
-                          borderRadius: 18,
-                          border: '1px dashed var(--colorNeutralStroke2)',
-                          background: 'var(--colorNeutralBackground2)',
-                          minHeight: 620,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          textAlign: 'center',
-                        }}
+                        className="identity-manager__empty"
                       >
                         <div style={{ maxWidth: 420 }}>
                           <Text weight="semibold" size={500} block style={{ marginBottom: 8 }}>
@@ -1122,17 +1053,12 @@ export const IdentityManagerDialog: React.FC = () => {
 function MetricTile({ label, value }: { label: string; value: string }) {
   return (
     <div
-      style={{
-        padding: '14px 16px',
-        borderRadius: 14,
-        background: 'color-mix(in srgb, var(--colorNeutralBackground1) 88%, white)',
-        border: '1px solid color-mix(in srgb, var(--colorNeutralStroke2) 78%, transparent)',
-      }}
+      className="identity-manager__metric-tile"
     >
-      <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+      <Text size={200} className="identity-manager__metric-label">
         {label}
       </Text>
-      <Text weight="semibold" size={500} block style={{ marginTop: 4 }}>
+      <Text weight="semibold" size={500} block className="identity-manager__metric-value">
         {value}
       </Text>
     </div>
@@ -1162,32 +1088,25 @@ function AccountManagementCard({
 }: AccountManagementCardProps) {
   return (
     <Card
-      className="motion-hover-lift motion-sheen"
+      className={`motion-hover-lift motion-sheen identity-manager__account-card${
+        isSelected ? ' is-selected' : ''
+      }`}
       onClick={onSelect}
-      style={{
-        cursor: 'pointer',
-        padding: 16,
-        borderRadius: 16,
-        border: isSelected
-          ? '1px solid var(--colorBrandStroke1)'
-          : '1px solid var(--colorNeutralStroke2)',
-        boxShadow: isSelected
-          ? '0 0 0 3px color-mix(in srgb, var(--colorBrandStroke1) 14%, transparent)'
-          : 'none',
-        background: isSelected
-          ? 'color-mix(in srgb, var(--colorBrandBackground2) 38%, var(--colorNeutralBackground1))'
-          : 'var(--colorNeutralBackground1)',
-      }}
     >
       <div style={{ display: 'grid', gap: 12 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
-          <div style={{ minWidth: 0 }}>
-            <Text weight="semibold" size={400} block>
-              {account.account_name}
-            </Text>
-            <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
-              学号 {account.account_id}
-            </Text>
+          <div style={{ display: 'flex', gap: 12, minWidth: 0 }}>
+            <div className="identity-manager__account-avatar">
+              {account.account_name.slice(0, 1).toUpperCase()}
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <Text weight="semibold" size={400} block>
+                {account.account_name}
+              </Text>
+              <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                学号 {account.account_id}
+              </Text>
+            </div>
           </div>
           <div style={{ display: 'flex', gap: 4 }}>
             <Button
@@ -1241,13 +1160,7 @@ function AccountManagementCard({
 
         {info && (
           <div
-            style={{
-              display: 'grid',
-              gap: 6,
-              padding: '12px 14px',
-              borderRadius: 12,
-              background: 'var(--colorNeutralBackground2)',
-            }}
+            className="identity-manager__detail-block"
           >
             {buildPersonAccountRows(info).map((row) => (
               <div key={row.label} style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
