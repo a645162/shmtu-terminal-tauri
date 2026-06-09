@@ -135,7 +135,7 @@ export const CaptchaTestDialog: React.FC = () => {
       completed_files: status.existing_files,
       current_file_progress: 0,
       overall_progress: status.existing_files / Math.max(status.total_files, 1),
-      message: `检测到缺少 ${status.missing_files.length} 个模型文件，准备下载...`,
+      message: `检测到缺少 ${status.missing_files.length} 个 ${status.model_version || ''} 模型文件，准备下载...`,
     });
 
     try {
@@ -377,6 +377,15 @@ export const CaptchaTestDialog: React.FC = () => {
                   {mode === 'local_onnx' && localModelMessage && (
                     <MessageBar>
                       <MessageBarBody>{localModelMessage}</MessageBarBody>
+                    </MessageBar>
+                  )}
+
+                  {mode === 'local_onnx' && config?.captcha?.model_version && (
+                    <MessageBar intent="info">
+                      <MessageBarBody>
+                        当前本地 ONNX 模型版本: <strong>{config.captcha.model_version}</strong>
+                        （v1 = 3 模型 ResNet，v2 = 单模型 MobileNetV3）
+                      </MessageBarBody>
                     </MessageBar>
                   )}
 

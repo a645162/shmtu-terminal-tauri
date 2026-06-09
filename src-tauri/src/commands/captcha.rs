@@ -2,8 +2,9 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use shmtu_cas::captcha::CaptchaResolver;
-use shmtu_ocr::backend::CasOnnxBackend;
+use shmtu_ocr::backend::OcrBackend;
 use shmtu_ocr::const_value;
+use shmtu_ocr::ModelVersion;
 use std::path::Path;
 use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, State};
@@ -17,6 +18,7 @@ const LOCAL_OCR_MODEL_DOWNLOAD_EVENT: &str = "local-ocr-model-download";
 #[derive(Debug, Clone, Serialize)]
 pub struct LocalOcrModelStatus {
     pub model_dir: String,
+    pub model_version: String,
     pub ready: bool,
     pub total_files: u32,
     pub existing_files: u32,
@@ -38,15 +40,16 @@ pub struct LocalOcrModelDownloadProgress {
     pub message: String,
 }
 
-fn local_ocr_model_status(model_path: &Path) -> LocalOcrModelStatus {
-    let total_files = 3_u32;
-    let missing_files = CasOnnxBackend::missing_model_files(model_path)
-        .into_iter()
-        .map(str::to_string)
-        .collect::<Vec<_>>();
+fn local_ocr_model_status(model_path: &Path, version: ModelVersion) -> LocalOcrModelStatus {
+    let missing_files = OcrBackend::missing_model_files(version, model_path);
+    let total_files = match version {
+        ModelVersion::V1 => 3,
+        ModelVersion::V2 => 1,
+    };
     let existing_files = total_files.saturating_sub(missing_files.len() as u32);
     LocalOcrModelStatus {
         model_dir: model_path.display().to_string(),
+        model_version: version.as_str().to_string(),
         ready: missing_files.is_empty(),
         total_files,
         existing_files,
@@ -242,9 +245,13 @@ async fn ensure_local_ocr_model_files(
     let _download_guard = state.local_ocr_download_lock.lock().await;
     let config = state.config.read().await;
     let model_path = config.onnx_model_path();
+    let version = config.get().captcha.model_version;
+    let model_tag = config.get().captcha.model_tag.clone();
+    let model_backbone = config.get().captcha.model_backbone.clone();
+    let model_precision = config.get().captcha.model_precision.clone();
     drop(config);
 
-    let status = local_ocr_model_status(&model_path);
+    let status = local_ocr_model_status(&model_path, version);
     if status.ready {
         emit_local_ocr_download_progress(
             app,
@@ -277,316 +284,20 @@ async fn ensure_local_ocr_model_files(
             .await
             .map_err(|e| format!("创建模型目录失败: {}", e))?;
 
-        let files = [
-            const_value::MODEL_ONNX_EQUAL_FP32,
-            const_value::MODEL_ONNX_OPERATOR_FP32,
-            const_value::MODEL_ONNX_DIGIT_FP32,
-        ];
-        let total_files = files.len() as u32;
-        let client = reqwest::Client::new();
-
-        // 获取校验文件
-        let checksums = match client
-            .get(const_value::MODEL_ONNX_CHECKSUM_URL)
-            .send()
-            .await
-        {
-            Ok(resp) if resp.status().is_success() => {
-                let text = resp.text().await.unwrap_or_default();
-                parse_checksum_file(&text)
-            }
-            Ok(resp) => {
-                tracing::warn!("获取校验文件失败 (HTTP {})，跳过完整性验证", resp.status());
-                std::collections::HashMap::new()
-            }
-            Err(e) => {
-                tracing::warn!("获取校验文件失败 ({})，跳过完整性验证", e);
-                std::collections::HashMap::new()
-            }
-        };
-
-        let mut completed_files = 0_u32;
-
-        emit_local_ocr_download_progress(
-            app,
-            &LocalOcrModelDownloadProgress {
-                phase: "checking".to_string(),
-                model_dir: model_path.display().to_string(),
-                total_files,
-                completed_files: 0,
-                current_file_index: None,
-                current_file_name: None,
-                current_file_progress: 0.0,
-                overall_progress: status.existing_files as f32 / total_files as f32,
-                downloaded_bytes: None,
-                total_bytes: None,
-                message: "正在检查本地 OCR 模型...".to_string(),
-            },
-        );
-
-        for (index, file_name) in files.iter().enumerate() {
-            if state.local_ocr_download_cancel.load(Ordering::SeqCst) {
-                return Err("本地 OCR 模型下载已取消".to_string());
-            }
-
-            let dest_path = model_path.join(file_name);
-            if dest_path.exists() {
-                // 已存在的文件也校验完整性
-                let existing_ok = if let Some(expected) = checksums.get(*file_name) {
-                    match compute_file_sha256(&dest_path).await {
-                        Ok(actual) => actual == *expected,
-                        Err(_) => false,
-                    }
-                } else {
-                    true
-                };
-                if existing_ok {
-                    completed_files += 1;
-                    emit_local_ocr_download_progress(
-                        app,
-                        &LocalOcrModelDownloadProgress {
-                            phase: "downloading".to_string(),
-                            model_dir: model_path.display().to_string(),
-                            total_files,
-                            completed_files,
-                            current_file_index: Some(index as u32 + 1),
-                            current_file_name: Some((*file_name).to_string()),
-                            current_file_progress: 1.0,
-                            overall_progress: completed_files as f32 / total_files as f32,
-                            downloaded_bytes: None,
-                            total_bytes: None,
-                            message: format!("模型已存在，跳过 {}", file_name),
-                        },
-                    );
-                    continue;
-                }
-                // 校验失败，删除损坏文件后重新下载
-                tracing::warn!("{} 已存在但校验失败，删除后重新下载", file_name);
-                let _ = tokio::fs::remove_file(&dest_path).await;
-            }
-
-            let max_attempts = 3_u32;
-            let mut file_download_ok = false;
-
-            for attempt in 1..=max_attempts {
-                if state.local_ocr_download_cancel.load(Ordering::SeqCst) {
-                    return Err("本地 OCR 模型下载已取消".to_string());
-                }
-
-                let url = format!("{}/{}", const_value::MODEL_ONNX_BASE_URL, file_name);
-                let tmp_path = model_path.join(format!("{}.download", file_name));
-                if tmp_path.exists() {
-                    let _ = tokio::fs::remove_file(&tmp_path).await;
-                }
-
-                let attempt_msg = if attempt > 1 {
-                    format!(
-                        "校验失败，第 {}/{} 次重试下载 {}/{}: {}",
-                        attempt,
-                        max_attempts,
-                        index + 1,
-                        total_files,
-                        file_name
-                    )
-                } else {
-                    format!("正在下载模型 {}/{}: {}", index + 1, total_files, file_name)
-                };
-
-                emit_local_ocr_download_progress(
+        match version {
+            ModelVersion::V1 => download_v1_files(app, state, &model_path).await,
+            ModelVersion::V2 => {
+                download_v2_file(
                     app,
-                    &LocalOcrModelDownloadProgress {
-                        phase: "downloading".to_string(),
-                        model_dir: model_path.display().to_string(),
-                        total_files,
-                        completed_files,
-                        current_file_index: Some(index as u32 + 1),
-                        current_file_name: Some((*file_name).to_string()),
-                        current_file_progress: 0.0,
-                        overall_progress: completed_files as f32 / total_files as f32,
-                        downloaded_bytes: Some(0),
-                        total_bytes: None,
-                        message: attempt_msg,
-                    },
-                );
-
-                let mut response = client
-                    .get(&url)
-                    .send()
-                    .await
-                    .map_err(|e| format!("下载模型失败: {}", e))?
-                    .error_for_status()
-                    .map_err(|e| format!("模型接口返回异常状态: {}", e))?;
-                let total_bytes = response.content_length();
-                let mut output = tokio::fs::File::create(&tmp_path)
-                    .await
-                    .map_err(|e| format!("创建模型文件失败: {}", e))?;
-                let mut downloaded = 0_u64;
-
-                while let Some(chunk) = response
-                    .chunk()
-                    .await
-                    .map_err(|e| format!("读取模型下载流失败: {}", e))?
-                {
-                    if state.local_ocr_download_cancel.load(Ordering::SeqCst) {
-                        let _ = output.flush().await;
-                        drop(output);
-                        let _ = tokio::fs::remove_file(&tmp_path).await;
-                        emit_local_ocr_download_progress(
-                            app,
-                            &LocalOcrModelDownloadProgress {
-                                phase: "cancelled".to_string(),
-                                model_dir: model_path.display().to_string(),
-                                total_files,
-                                completed_files,
-                                current_file_index: Some(index as u32 + 1),
-                                current_file_name: Some((*file_name).to_string()),
-                                current_file_progress: if let Some(total) = total_bytes {
-                                    if total > 0 {
-                                        downloaded as f32 / total as f32
-                                    } else {
-                                        0.0
-                                    }
-                                } else {
-                                    0.0
-                                },
-                                overall_progress: completed_files as f32 / total_files as f32,
-                                downloaded_bytes: Some(downloaded),
-                                total_bytes,
-                                message: format!("已取消下载，未完成文件已删除: {}", file_name),
-                            },
-                        );
-                        return Err("本地 OCR 模型下载已取消".to_string());
-                    }
-
-                    output
-                        .write_all(&chunk)
-                        .await
-                        .map_err(|e| format!("写入模型文件失败: {}", e))?;
-                    downloaded += chunk.len() as u64;
-
-                    let current_file_progress = if let Some(total) = total_bytes {
-                        if total > 0 {
-                            downloaded as f32 / total as f32
-                        } else {
-                            0.0
-                        }
-                    } else {
-                        0.0
-                    };
-                    let overall_progress =
-                        (completed_files as f32 + current_file_progress) / total_files as f32;
-
-                    emit_local_ocr_download_progress(
-                        app,
-                        &LocalOcrModelDownloadProgress {
-                            phase: "downloading".to_string(),
-                            model_dir: model_path.display().to_string(),
-                            total_files,
-                            completed_files,
-                            current_file_index: Some(index as u32 + 1),
-                            current_file_name: Some((*file_name).to_string()),
-                            current_file_progress,
-                            overall_progress,
-                            downloaded_bytes: Some(downloaded),
-                            total_bytes,
-                            message: format!(
-                                "正在下载模型 {}/{}: {}",
-                                index + 1,
-                                total_files,
-                                file_name
-                            ),
-                        },
-                    );
-                }
-
-                output
-                    .flush()
-                    .await
-                    .map_err(|e| format!("刷新模型文件失败: {}", e))?;
-                drop(output);
-                tokio::fs::rename(&tmp_path, &dest_path)
-                    .await
-                    .map_err(|e| format!("保存模型文件失败: {}", e))?;
-
-                // 校验 SHA256
-                if let Some(expected) = checksums.get(*file_name) {
-                    match compute_file_sha256(&dest_path).await {
-                        Ok(actual) if actual == *expected => {
-                            file_download_ok = true;
-                        }
-                        Ok(actual) => {
-                            tracing::warn!(
-                                "{} 校验失败 (期望: {}，实际: {})",
-                                file_name,
-                                expected,
-                                actual
-                            );
-                            let _ = tokio::fs::remove_file(&dest_path).await;
-                            if attempt == max_attempts {
-                                return Err(format!(
-                                    "{} 校验失败，已重试 {} 次仍不通过",
-                                    file_name, max_attempts
-                                ));
-                            }
-                            continue; // 重试
-                        }
-                        Err(e) => {
-                            tracing::warn!("{} 校验读取失败: {}", file_name, e);
-                            let _ = tokio::fs::remove_file(&dest_path).await;
-                            if attempt == max_attempts {
-                                return Err(e);
-                            }
-                            continue; // 重试
-                        }
-                    }
-                } else {
-                    file_download_ok = true;
-                }
-
-                break; // 下载成功
+                    state,
+                    &model_path,
+                    &model_tag,
+                    &model_backbone,
+                    &model_precision,
+                )
+                .await
             }
-
-            if !file_download_ok {
-                return Err(format!("{} 下载失败", file_name));
-            }
-
-            completed_files += 1;
-            emit_local_ocr_download_progress(
-                app,
-                &LocalOcrModelDownloadProgress {
-                    phase: "downloading".to_string(),
-                    model_dir: model_path.display().to_string(),
-                    total_files,
-                    completed_files,
-                    current_file_index: Some(index as u32 + 1),
-                    current_file_name: Some((*file_name).to_string()),
-                    current_file_progress: 1.0,
-                    overall_progress: completed_files as f32 / total_files as f32,
-                    downloaded_bytes: None,
-                    total_bytes: None,
-                    message: format!("模型下载完成: {}", file_name),
-                },
-            );
         }
-
-        let final_status = local_ocr_model_status(&model_path);
-        emit_local_ocr_download_progress(
-            app,
-            &LocalOcrModelDownloadProgress {
-                phase: "completed".to_string(),
-                model_dir: final_status.model_dir.clone(),
-                total_files: final_status.total_files,
-                completed_files: final_status.total_files,
-                current_file_index: None,
-                current_file_name: None,
-                current_file_progress: 1.0,
-                overall_progress: 1.0,
-                downloaded_bytes: None,
-                total_bytes: None,
-                message: "本地 OCR 模型下载完成".to_string(),
-            },
-        );
-        Ok(final_status)
     }
     .await;
 
@@ -619,6 +330,384 @@ async fn ensure_local_ocr_model_files(
     }
 
     result
+}
+
+async fn download_v1_files(
+    app: &AppHandle,
+    state: &AppState,
+    model_path: &Path,
+) -> Result<LocalOcrModelStatus, String> {
+    let files = [
+        const_value::v1::MODEL_ONNX_EQUAL,
+        const_value::v1::MODEL_ONNX_OPERATOR,
+        const_value::v1::MODEL_ONNX_DIGIT,
+    ];
+    let total_files = files.len() as u32;
+    let client = reqwest::Client::new();
+
+    let checksums = match client
+        .get(const_value::v1::CHECKSUM_URL)
+        .send()
+        .await
+    {
+        Ok(resp) if resp.status().is_success() => {
+            let text = resp.text().await.unwrap_or_default();
+            parse_checksum_file(&text)
+        }
+        Ok(resp) => {
+            tracing::warn!("获取校验文件失败 (HTTP {})，跳过完整性验证", resp.status());
+            std::collections::HashMap::new()
+        }
+        Err(e) => {
+            tracing::warn!("获取校验文件失败 ({})，跳过完整性验证", e);
+            std::collections::HashMap::new()
+        }
+    };
+
+    let mut completed_files = 0_u32;
+
+    emit_local_ocr_download_progress(
+        app,
+        &LocalOcrModelDownloadProgress {
+            phase: "checking".to_string(),
+            model_dir: model_path.display().to_string(),
+            total_files,
+            completed_files: 0,
+            current_file_index: None,
+            current_file_name: None,
+            current_file_progress: 0.0,
+            overall_progress: 0.0,
+            downloaded_bytes: None,
+            total_bytes: None,
+            message: "正在检查本地 OCR 模型...".to_string(),
+        },
+    );
+
+    for (index, file_name) in files.iter().enumerate() {
+        if state.local_ocr_download_cancel.load(Ordering::SeqCst) {
+            return Err("本地 OCR 模型下载已取消".to_string());
+        }
+
+        let dest_path = model_path.join(file_name);
+        if dest_path.exists() {
+            let existing_ok = if let Some(expected) = checksums.get(*file_name) {
+                match compute_file_sha256(&dest_path).await {
+                    Ok(actual) => actual == *expected,
+                    Err(_) => false,
+                }
+            } else {
+                true
+            };
+            if existing_ok {
+                completed_files += 1;
+                emit_local_ocr_download_progress(
+                    app,
+                    &LocalOcrModelDownloadProgress {
+                        phase: "downloading".to_string(),
+                        model_dir: model_path.display().to_string(),
+                        total_files,
+                        completed_files,
+                        current_file_index: Some(index as u32 + 1),
+                        current_file_name: Some((*file_name).to_string()),
+                        current_file_progress: 1.0,
+                        overall_progress: completed_files as f32 / total_files as f32,
+                        downloaded_bytes: None,
+                        total_bytes: None,
+                        message: format!("模型已存在，跳过 {}", file_name),
+                    },
+                );
+                continue;
+            }
+            tracing::warn!("{} 已存在但校验失败，删除后重新下载", file_name);
+            let _ = tokio::fs::remove_file(&dest_path).await;
+        }
+
+        let max_attempts = 3_u32;
+        let mut file_download_ok = false;
+
+        for attempt in 1..=max_attempts {
+            if state.local_ocr_download_cancel.load(Ordering::SeqCst) {
+                return Err("本地 OCR 模型下载已取消".to_string());
+            }
+
+            let url = format!("{}/{}", const_value::v1::BASE_URL_GITEE, file_name);
+            let tmp_path = model_path.join(format!("{}.download", file_name));
+            if tmp_path.exists() {
+                let _ = tokio::fs::remove_file(&tmp_path).await;
+            }
+
+            let attempt_msg = if attempt > 1 {
+                format!(
+                    "校验失败，第 {}/{} 次重试下载 {}/{}: {}",
+                    attempt,
+                    max_attempts,
+                    index + 1,
+                    total_files,
+                    file_name
+                )
+            } else {
+                format!("正在下载模型 {}/{}: {}", index + 1, total_files, file_name)
+            };
+
+            emit_local_ocr_download_progress(
+                app,
+                &LocalOcrModelDownloadProgress {
+                    phase: "downloading".to_string(),
+                    model_dir: model_path.display().to_string(),
+                    total_files,
+                    completed_files,
+                    current_file_index: Some(index as u32 + 1),
+                    current_file_name: Some((*file_name).to_string()),
+                    current_file_progress: 0.0,
+                    overall_progress: completed_files as f32 / total_files as f32,
+                    downloaded_bytes: Some(0),
+                    total_bytes: None,
+                    message: attempt_msg,
+                },
+            );
+
+            let mut response = client
+                .get(&url)
+                .send()
+                .await
+                .map_err(|e| format!("下载模型失败: {}", e))?
+                .error_for_status()
+                .map_err(|e| format!("模型接口返回异常状态: {}", e))?;
+            let total_bytes = response.content_length();
+            let mut output = tokio::fs::File::create(&tmp_path)
+                .await
+                .map_err(|e| format!("创建模型文件失败: {}", e))?;
+            let mut downloaded = 0_u64;
+
+            while let Some(chunk) = response
+                .chunk()
+                .await
+                .map_err(|e| format!("读取模型下载流失败: {}", e))?
+            {
+                if state.local_ocr_download_cancel.load(Ordering::SeqCst) {
+                    let _ = output.flush().await;
+                    drop(output);
+                    let _ = tokio::fs::remove_file(&tmp_path).await;
+                    return Err("本地 OCR 模型下载已取消".to_string());
+                }
+
+                output
+                    .write_all(&chunk)
+                    .await
+                    .map_err(|e| format!("写入模型文件失败: {}", e))?;
+                downloaded += chunk.len() as u64;
+
+                let current_file_progress = if let Some(total) = total_bytes {
+                    if total > 0 {
+                        downloaded as f32 / total as f32
+                    } else {
+                        0.0
+                    }
+                } else {
+                    0.0
+                };
+                let overall_progress =
+                    (completed_files as f32 + current_file_progress) / total_files as f32;
+
+                emit_local_ocr_download_progress(
+                    app,
+                    &LocalOcrModelDownloadProgress {
+                        phase: "downloading".to_string(),
+                        model_dir: model_path.display().to_string(),
+                        total_files,
+                        completed_files,
+                        current_file_index: Some(index as u32 + 1),
+                        current_file_name: Some((*file_name).to_string()),
+                        current_file_progress,
+                        overall_progress,
+                        downloaded_bytes: Some(downloaded),
+                        total_bytes,
+                        message: format!(
+                            "正在下载模型 {}/{}: {}",
+                            index + 1,
+                            total_files,
+                            file_name
+                        ),
+                    },
+                );
+            }
+
+            output
+                .flush()
+                .await
+                .map_err(|e| format!("刷新模型文件失败: {}", e))?;
+            drop(output);
+            tokio::fs::rename(&tmp_path, &dest_path)
+                .await
+                .map_err(|e| format!("保存模型文件失败: {}", e))?;
+
+            if let Some(expected) = checksums.get(*file_name) {
+                match compute_file_sha256(&dest_path).await {
+                    Ok(actual) if actual == *expected => {
+                        file_download_ok = true;
+                    }
+                    Ok(actual) => {
+                        tracing::warn!(
+                            "{} 校验失败 (期望: {}，实际: {})",
+                            file_name,
+                            expected,
+                            actual
+                        );
+                        let _ = tokio::fs::remove_file(&dest_path).await;
+                        if attempt == max_attempts {
+                            return Err(format!(
+                                "{} 校验失败，已重试 {} 次仍不通过",
+                                file_name, max_attempts
+                            ));
+                        }
+                        continue;
+                    }
+                    Err(e) => {
+                        tracing::warn!("{} 校验读取失败: {}", file_name, e);
+                        let _ = tokio::fs::remove_file(&dest_path).await;
+                        if attempt == max_attempts {
+                            return Err(e);
+                        }
+                        continue;
+                    }
+                }
+            } else {
+                file_download_ok = true;
+            }
+
+            break;
+        }
+
+        if !file_download_ok {
+            return Err(format!("{} 下载失败", file_name));
+        }
+
+        completed_files += 1;
+        emit_local_ocr_download_progress(
+            app,
+            &LocalOcrModelDownloadProgress {
+                phase: "downloading".to_string(),
+                model_dir: model_path.display().to_string(),
+                total_files,
+                completed_files,
+                current_file_index: Some(index as u32 + 1),
+                current_file_name: Some((*file_name).to_string()),
+                current_file_progress: 1.0,
+                overall_progress: completed_files as f32 / total_files as f32,
+                downloaded_bytes: None,
+                total_bytes: None,
+                message: format!("模型下载完成: {}", file_name),
+            },
+        );
+    }
+
+    let final_status = local_ocr_model_status(model_path, ModelVersion::V1);
+    emit_local_ocr_download_progress(
+        app,
+        &LocalOcrModelDownloadProgress {
+            phase: "completed".to_string(),
+            model_dir: final_status.model_dir.clone(),
+            total_files: final_status.total_files,
+            completed_files: final_status.total_files,
+            current_file_index: None,
+            current_file_name: None,
+            current_file_progress: 1.0,
+            overall_progress: 1.0,
+            downloaded_bytes: None,
+            total_bytes: None,
+            message: "本地 OCR 模型下载完成".to_string(),
+        },
+    );
+    Ok(final_status)
+}
+
+async fn download_v2_file(
+    app: &AppHandle,
+    state: &AppState,
+    model_path: &Path,
+    model_tag: &str,
+    model_backbone: &str,
+    model_precision: &str,
+) -> Result<LocalOcrModelStatus, String> {
+    let total_files = 1_u32;
+    let file_name = const_value::v2::build_model_name(model_backbone, model_precision);
+
+    emit_local_ocr_download_progress(
+        app,
+        &LocalOcrModelDownloadProgress {
+            phase: "checking".to_string(),
+            model_dir: model_path.display().to_string(),
+            total_files,
+            completed_files: 0,
+            current_file_index: None,
+            current_file_name: None,
+            current_file_progress: 0.0,
+            overall_progress: 0.0,
+            downloaded_bytes: None,
+            total_bytes: None,
+            message: format!("准备下载 v2 模型: {}", file_name),
+        },
+    );
+
+    if state.local_ocr_download_cancel.load(Ordering::SeqCst) {
+        return Err("本地 OCR 模型下载已取消".to_string());
+    }
+
+    let opts = shmtu_ocr::downloader::V2DownloadOptions {
+        tag: model_tag.to_string(),
+        backbone: model_backbone.to_string(),
+        precision: model_precision.to_string(),
+        mirror: shmtu_ocr::downloader::Mirror::Github,
+        dest: model_path.to_path_buf(),
+        expected_sha256: None,
+    };
+
+    // 简单的进度回调封装: 单文件下载期间发 2 次 (开始 + 完成)
+    emit_local_ocr_download_progress(
+        app,
+        &LocalOcrModelDownloadProgress {
+            phase: "downloading".to_string(),
+            model_dir: model_path.display().to_string(),
+            total_files,
+            completed_files: 0,
+            current_file_index: Some(1),
+            current_file_name: Some(file_name.clone()),
+            current_file_progress: 0.0,
+            overall_progress: 0.0,
+            downloaded_bytes: None,
+            total_bytes: None,
+            message: format!("正在下载 v2 模型: {}", file_name),
+        },
+    );
+
+    let dest = shmtu_ocr::downloader::download_v2(&opts)
+        .await
+        .map_err(|e| format!("v2 模型下载失败: {}", e))?;
+
+    if state.local_ocr_download_cancel.load(Ordering::SeqCst) {
+        return Err("本地 OCR 模型下载已取消".to_string());
+    }
+
+    tracing::info!("v2 模型下载成功: {}", dest.display());
+
+    let final_status = local_ocr_model_status(model_path, ModelVersion::V2);
+    emit_local_ocr_download_progress(
+        app,
+        &LocalOcrModelDownloadProgress {
+            phase: "completed".to_string(),
+            model_dir: final_status.model_dir.clone(),
+            total_files: final_status.total_files,
+            completed_files: final_status.total_files,
+            current_file_index: None,
+            current_file_name: None,
+            current_file_progress: 1.0,
+            overall_progress: 1.0,
+            downloaded_bytes: None,
+            total_bytes: None,
+            message: "本地 OCR 模型下载完成".to_string(),
+        },
+    );
+    Ok(final_status)
 }
 
 /// 获取验证码图片（base64 编码）。
@@ -741,7 +830,8 @@ pub async fn get_local_ocr_model_status(
     state: State<'_, AppState>,
 ) -> Result<LocalOcrModelStatus, String> {
     let config = state.config.read().await;
-    Ok(local_ocr_model_status(&config.onnx_model_path()))
+    let version = config.get().captcha.model_version;
+    Ok(local_ocr_model_status(&config.onnx_model_path(), version))
 }
 
 #[tauri::command]
@@ -789,16 +879,23 @@ pub async fn delete_local_ocr_models(
 
     let config = state.config.read().await;
     let model_path = config.onnx_model_path();
+    let version = config.get().captcha.model_version;
     drop(config);
 
-    let files = [
-        const_value::MODEL_ONNX_EQUAL_FP32,
-        const_value::MODEL_ONNX_OPERATOR_FP32,
-        const_value::MODEL_ONNX_DIGIT_FP32,
-    ];
+    let files: Vec<String> = match version {
+        ModelVersion::V1 => vec![
+            const_value::v1::MODEL_ONNX_EQUAL.to_string(),
+            const_value::v1::MODEL_ONNX_OPERATOR.to_string(),
+            const_value::v1::MODEL_ONNX_DIGIT.to_string(),
+        ],
+        ModelVersion::V2 => vec![const_value::v2::build_model_name(
+            &shmtu_ocr::const_value::v2::DEFAULT_BACKBONE,
+            &shmtu_ocr::const_value::v2::DEFAULT_PRECISION,
+        )],
+    };
 
     for file_name in files {
-        let file_path = model_path.join(file_name);
+        let file_path = model_path.join(&file_name);
         if file_path.exists() {
             tokio::fs::remove_file(&file_path)
                 .await
@@ -813,7 +910,7 @@ pub async fn delete_local_ocr_models(
         }
     }
 
-    Ok(local_ocr_model_status(&model_path))
+    Ok(local_ocr_model_status(&model_path, version))
 }
 
 /// 内部实现：获取验证码并尝试识别。
@@ -970,7 +1067,9 @@ async fn do_test_captcha(
             if needs_load {
                 let config = state_ref.config.read().await;
                 let model_path = config.onnx_model_path();
-                let missing = CasOnnxBackend::missing_model_files(&model_path);
+                let version = config.get().captcha.model_version;
+                drop(config);
+                let missing = OcrBackend::missing_model_files(version, &model_path);
                 if !missing.is_empty() {
                     let missing_str = missing.join(", ");
                     tracing::error!(
@@ -980,10 +1079,12 @@ async fn do_test_captcha(
                     return Err(format!("ONNX模型文件不完整，缺少: {}", missing_str));
                 }
                 tracing::info!(
-                    "[Captcha] do_test_captcha: loading ONNX models from {:?}",
-                    model_path
+                    "[Captcha] do_test_captcha: loading ONNX models from {:?} (version={})",
+                    model_path,
+                    version.as_str()
                 );
-                let backend = CasOnnxBackend::load(&model_path).map_err(|e| {
+                let version_for_load = version;
+                let backend = OcrBackend::load(version_for_load, &model_path).map_err(|e| {
                     tracing::error!("[Captcha] do_test_captcha: 加载ONNX模型失败: {}", e);
                     format!("加载ONNX模型失败: {}", e)
                 })?;
@@ -1137,7 +1238,9 @@ pub async fn init_local_ocr(state: State<'_, AppState>) -> Result<(), String> {
 
     let config = state.config.read().await;
     let model_path = config.onnx_model_path();
-    let missing = CasOnnxBackend::missing_model_files(&model_path);
+    let version = config.get().captcha.model_version;
+    drop(config);
+    let missing = OcrBackend::missing_model_files(version, &model_path);
     if !missing.is_empty() {
         let missing_str = missing.join(", ");
         tracing::error!(
@@ -1148,11 +1251,13 @@ pub async fn init_local_ocr(state: State<'_, AppState>) -> Result<(), String> {
     }
 
     tracing::info!(
-        "[Captcha] init_local_ocr: loading models from {:?}",
-        model_path
+        "[Captcha] init_local_ocr: loading models from {:?} (version={})",
+        model_path,
+        version.as_str()
     );
+    let version_for_load = version;
     let backend = tokio::task::spawn_blocking(move || {
-        CasOnnxBackend::load(&model_path).map_err(|e| format!("加载ONNX模型失败: {}", e))
+        OcrBackend::load(version_for_load, &model_path).map_err(|e| format!("加载ONNX模型失败: {}", e))
     })
     .await
     .map_err(|e| format!("ONNX加载任务执行失败: {}", e))??;
@@ -1181,4 +1286,40 @@ pub async fn unload_local_ocr(state: State<'_, AppState>) -> Result<(), String> 
         tracing::info!("[Captcha] unload_local_ocr: ONNX not loaded, nothing to unload");
     }
     Ok(())
+}
+
+/// 获取当前 ONNX 模型版本（v1 / v2）。
+#[tauri::command]
+pub async fn get_ocr_model_version(state: State<'_, AppState>) -> Result<String, String> {
+    let config = state.config.read().await;
+    Ok(config.get().captcha.model_version.as_str().to_string())
+}
+
+/// 切换 ONNX 模型版本（同时卸载已加载的模型，调用方需提示用户重新下载对应版本的模型）。
+#[tauri::command]
+pub async fn set_ocr_model_version(
+    state: State<'_, AppState>,
+    version: String,
+) -> Result<String, String> {
+    let new_version = ModelVersion::parse_or_default(&version);
+    tracing::info!(
+        "[Captcha] set_ocr_model_version: {} -> {}",
+        version,
+        new_version.as_str()
+    );
+
+    {
+        let mut guard = state
+            .local_ocr
+            .lock()
+            .map_err(|e| format!("获取ONNX锁失败: {}", e))?;
+        *guard = None;
+    }
+
+    let mut config = state.config.write().await;
+    config.get_mut().captcha.model_version = new_version;
+    config
+        .save()
+        .map_err(|e| format!("保存配置失败: {}", e))?;
+    Ok(new_version.as_str().to_string())
 }

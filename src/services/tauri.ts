@@ -37,6 +37,10 @@ export interface AppConfig {
     remote_ocr_http_url: string;
     onnx_model_path: string;
     ocr_retry_count: number;
+    model_version: 'v1' | 'v2';
+    model_tag: string;
+    model_backbone: string;
+    model_precision: string;
   };
   sync: {
     max_pages: number;
@@ -265,6 +269,14 @@ export async function init_local_ocr(): Promise<void> {
 
 export async function unload_local_ocr(): Promise<void> {
   return invoke('unload_local_ocr');
+}
+
+export async function get_ocr_model_version(): Promise<'v1' | 'v2'> {
+  return invoke<'v1' | 'v2'>('get_ocr_model_version');
+}
+
+export async function set_ocr_model_version(version: 'v1' | 'v2'): Promise<'v1' | 'v2'> {
+  return invoke<'v1' | 'v2'>('set_ocr_model_version', { version });
 }
 
 // ========== Data Transfer ==========

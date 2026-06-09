@@ -86,6 +86,9 @@ export type BillItemStatus = 'all' | 'wait_for' | 'success' | 'failure';
 // Captcha mode
 export type CaptchaMode = 'manual' | 'remote_ocr' | 'remote_ocr_http' | 'local_onnx';
 
+// OCR model version
+export type OcrModelVersion = 'v1' | 'v2';
+
 // Captcha answer kind
 export type CaptchaAnswerKind = 'answer' | 'expression';
 export type SyncRangePreset = 'week' | 'half_month' | 'month' | 'half_year' | 'year' | 'all';
@@ -129,6 +132,7 @@ export interface CaptchaTestResult {
 
 export interface LocalOcrModelStatus {
   model_dir: string;
+  model_version: string;
   ready: boolean;
   total_files: number;
   existing_files: number;

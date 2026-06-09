@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use shmtu_ocr::ModelVersion;
 use std::path::{Path, PathBuf};
 
 use crate::error::AppResult;
@@ -78,6 +79,28 @@ pub struct CaptchaConfig {
     pub onnx_model_path: String,
     #[serde(default = "default_ocr_retry_count")]
     pub ocr_retry_count: usize,
+    /// 本地 ONNX 模型版本。默认 v2。
+    #[serde(default)]
+    pub model_version: ModelVersion,
+    /// v2 模型的 release tag（默认 v2.0.2）。
+    #[serde(default = "default_model_tag")]
+    pub model_tag: String,
+    /// v2 模型 backbone（默认 mobilenet_v3_small）。
+    #[serde(default = "default_model_backbone")]
+    pub model_backbone: String,
+    /// v2 模型精度（默认 fp16）。
+    #[serde(default = "default_model_precision")]
+    pub model_precision: String,
+}
+
+fn default_model_tag() -> String {
+    shmtu_ocr::const_value::v2::DEFAULT_TAG.to_string()
+}
+fn default_model_backbone() -> String {
+    shmtu_ocr::const_value::v2::DEFAULT_BACKBONE.to_string()
+}
+fn default_model_precision() -> String {
+    shmtu_ocr::const_value::v2::DEFAULT_PRECISION.to_string()
 }
 
 fn default_remote_ocr_http_url() -> String {

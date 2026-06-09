@@ -93,6 +93,9 @@ export const SettingsDialog: React.FC = () => {
   );
   const [ocrHttpUrl, setOcrHttpUrl] = useState(config?.captcha.remote_ocr_http_url || 'http://127.0.0.1:5000');
   const [ocrRetry, setOcrRetry] = useState(config?.captcha.ocr_retry_count ?? 5);
+  const [ocrModelVersion, setOcrModelVersion] = useState<'v1' | 'v2'>(
+    config?.captcha.model_version ?? 'v2'
+  );
 
   // Sync settings
   const [maxPages, setMaxPages] = useState(normalizeSyncMaxPages(config?.sync.max_pages));
@@ -264,6 +267,10 @@ export const SettingsDialog: React.FC = () => {
           remote_ocr_http_url: ocrHttpUrl,
           onnx_model_path: config.captcha.onnx_model_path,
           ocr_retry_count: ocrRetry,
+          model_version: ocrModelVersion,
+          model_tag: config.captcha.model_tag,
+          model_backbone: config.captcha.model_backbone,
+          model_precision: config.captcha.model_precision,
         },
         sync: {
           max_pages: normalizeSyncMaxPages(maxPages),
@@ -469,6 +476,35 @@ export const SettingsDialog: React.FC = () => {
                   style={{ width: '100%' }}
                 />
               </div>
+            )}
+            {captchaMode === 'local_onnx' && (
+              <>
+                <div>
+                  <InfoLabel info="v1 是 3 个独立 ResNet 模型（兼容老用户），v2 是单个 MobileNetV3 模型（推荐，更快更准）。切换后需要重新下载对应版本的模型。">
+                    本地 ONNX 模型版本
+                  </InfoLabel>
+                  <Dropdown
+                    value={ocrModelVersion === 'v1' ? 'v1 (旧版, 3 模型 ResNet)' : 'v2 (新版, 单模型 MobileNetV3)'}
+                    selectedOptions={[ocrModelVersion]}
+                    onOptionSelect={async (_, data) => {
+                      const newVersion = data.optionValue as 'v1' | 'v2';
+                      if (newVersion === ocrModelVersion) return;
+                      try {
+                        setMessage(`正在切换模型版本到 ${newVersion}...`);
+                        const ret = await tauri.set_ocr_model_version(newVersion);
+                        setOcrModelVersion(ret);
+                        setMessage(`模型版本已切换到 ${ret}，请重新下载对应版本的模型`);
+                      } catch (e) {
+                        setMessage(`切换失败: ${e}`);
+                      }
+                    }}
+                    style={{ width: '100%' }}
+                  >
+                    <Option value="v2">v2 (新版, 单模型 MobileNetV3)</Option>
+                    <Option value="v1">v1 (旧版, 3 模型 ResNet)</Option>
+                  </Dropdown>
+                </div>
+              </>
             )}
             {captchaMode !== 'manual' && (
               <div>

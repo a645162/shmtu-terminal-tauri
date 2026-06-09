@@ -1,7 +1,7 @@
 use std::sync::{atomic::AtomicBool, Arc};
 
 use shmtu_cas::cas::epay::EpayAuth;
-use shmtu_ocr::backend::CasOnnxBackend;
+use shmtu_ocr::backend::OcrBackend;
 // P2P removed
 use tokio::sync::{Mutex, RwLock};
 
@@ -36,7 +36,7 @@ pub struct AppState {
     /// 账单自动同步服务
     pub auto_sync_service: Arc<AutoSyncService>,
     /// 本地 ONNX 推理后端（CPU 密集同步操作，使用 std::sync::Mutex）
-    pub local_ocr: Arc<std::sync::Mutex<Option<CasOnnxBackend>>>,
+    pub local_ocr: Arc<std::sync::Mutex<Option<OcrBackend>>>,
     /// 本地 ONNX 模型下载取消标记
     pub local_ocr_download_cancel: Arc<AtomicBool>,
     /// 本地 ONNX 模型下载运行标记

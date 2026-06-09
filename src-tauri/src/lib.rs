@@ -112,6 +112,8 @@ pub fn run() {
             captcha::batch_test_captcha,
             captcha::init_local_ocr,
             captcha::unload_local_ocr,
+            captcha::get_ocr_model_version,
+            captcha::set_ocr_model_version,
             data::export_data,
             data::import_data,
             data::list_snapshots,
