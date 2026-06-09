@@ -33,6 +33,7 @@ export const IdentityManagerDialog: React.FC = () => {
   const identities = useAppStore((s) => s.identities);
   const loadIdentities = useAppStore((s) => s.loadIdentities);
   const currentIdentity = useAppStore((s) => s.currentIdentity);
+  const activateIdentity = useAppStore((s) => s.activateIdentity);
   const setCurrentIdentity = useAppStore((s) => s.setCurrentIdentity);
 
   const [selectedIdentity, setSelectedIdentity] = useState<Identity | null>(null);
