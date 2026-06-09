@@ -131,8 +131,11 @@ export const HomePage: React.FC = () => {
     setCardBalanceLoading(true);
     try {
       const cached = await tauri.get_cached_person_account(currentAccount.id);
-      if (cached && cached.cash_balance_raw) {
-        setCardBalance(`${cached.cash_balance_raw} 元`);
+      // 优先用 raw 字符串, 但即便 raw 为空, 只要 cash_balance > 0 也显示 (避免老缓存一直是 "点击刷新")
+      if (cached && (cached.cash_balance_raw || (cached.cash_balance ?? 0) > 0)) {
+        const raw = cached.cash_balance_raw?.trim();
+        const display = raw && raw.length > 0 ? raw : cached.cash_balance.toFixed(2);
+        setCardBalance(`${display} 元`);
       } else {
         setCardBalance(null);
       }
