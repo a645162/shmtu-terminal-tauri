@@ -82,7 +82,9 @@ pub struct CaptchaConfig {
     /// 本地 ONNX 模型版本。默认 v2。
     #[serde(default)]
     pub model_version: ModelVersion,
-    /// v2 模型的 release tag（默认 v2.0.2）。
+    /// v2 模型的 release tag。**空字符串 = 自动从 GitHub releases 解析最新可用 tag**（按
+    /// `MAX_SUPPORTED_MAJOR` / `MAX_SUPPORTED_MINOR` 过滤，失败 fallback 到
+    /// `const_value::v2::DEFAULT_TAG`）。填具体 tag（如 `"v2.0.2"`）则锁定。
     #[serde(default = "default_model_tag")]
     pub model_tag: String,
     /// v2 模型 backbone（默认 mobilenet_v3_small）。
@@ -93,8 +95,10 @@ pub struct CaptchaConfig {
     pub model_precision: String,
 }
 
+/// 空字符串 → 触发 `V2DownloadOptions` 自动解析最新 tag。
+/// 旧配置/旧默认值（具体 tag）也能继续工作（非空 = 锁定）。
 fn default_model_tag() -> String {
-    shmtu_ocr::const_value::v2::DEFAULT_TAG.to_string()
+    String::new()
 }
 fn default_model_backbone() -> String {
     shmtu_ocr::const_value::v2::DEFAULT_BACKBONE.to_string()

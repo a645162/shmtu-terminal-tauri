@@ -8,6 +8,9 @@ import {
   DialogActions,
   Button,
   Switch,
+  Spinner,
+  Radio,
+  RadioGroup,
   Input,
   Text,
   Label,
@@ -96,6 +99,9 @@ export const SettingsDialog: React.FC = () => {
   const [ocrModelVersion, setOcrModelVersion] = useState<'v1' | 'v2'>(
     config?.captcha.model_version ?? 'v2'
   );
+  const [ocrV2ModelTag, setOcrV2ModelTag] = useState(config?.captcha.model_tag ?? '');
+  const [ocrV2Catalog, setOcrV2Catalog] = useState<tauri.OcrV2TagCatalogEntry[]>([]);
+  const [isRefreshingCatalog, setIsRefreshingCatalog] = useState(false);
 
   // Sync settings
   const [maxPages, setMaxPages] = useState(normalizeSyncMaxPages(config?.sync.max_pages));
@@ -180,6 +186,16 @@ export const SettingsDialog: React.FC = () => {
     if (!showSettingsDialog) {
       return;
     }
+    void (async () => {
+      try {
+        const [catalog, currentTag] = await Promise.all([
+          tauri.get_ocr_v2_tag_catalog(),
+          tauri.get_ocr_v2_model_tag(),
+        ]);
+        setOcrV2Catalog(catalog);
+        setOcrV2ModelTag(currentTag);
+      } catch {}
+    })();
     setSelectedTab(settingsDialogTab);
   }, [settingsDialogTab, showSettingsDialog]);
 
@@ -504,6 +520,75 @@ export const SettingsDialog: React.FC = () => {
                     <Option value="v1">v1 (旧版, 3 模型 ResNet)</Option>
                   </Dropdown>
                 </div>
+                {ocrModelVersion === 'v2' && (
+                  <div>
+                    <InfoLabel info="支持 2.x 系列 (主版本号 < 3)。选择具体 tag 或留空让程序自动取最新兼容版本。列表仅在首次打开时读缓存，不会自动刷新。" >
+                      v2 模型 tag:
+                      {ocrV2ModelTag ? ` 当前: ${ocrV2ModelTag}` : ' 当前: 自动解析（推荐）'}
+                    </InfoLabel>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 4, marginBottom: 8 }}>
+                      <Button
+                        size="small"
+                        appearance="outline"
+                        icon={isRefreshingCatalog ? <Spinner size="extra-tiny" /> : undefined}
+                        disabled={isRefreshingCatalog}
+                        onClick={async () => {
+                          setIsRefreshingCatalog(true);
+                          try {
+                            const entries = await tauri.refresh_ocr_v2_tag_catalog();
+                            setOcrV2Catalog(entries);
+                          } catch (e) {
+                            setMessage(`刷新失败: ${e}`);
+                          } finally {
+                            setIsRefreshingCatalog(false);
+                          }
+                        }}
+                      >
+                        刷新候选列表
+                      </Button>
+                      {ocrV2ModelTag && (
+                        <Button
+                          size="small"
+                          appearance="subtle"
+                          onClick={async () => {
+                            try {
+                              await tauri.set_ocr_v2_model_tag('');
+                              setOcrV2ModelTag('');
+                              setMessage('已切回自动解析最新兼容 tag');
+                            } catch (e) {
+                              setMessage(`清除失败: ${e}`);
+                            }
+                          }}
+                        >
+                          清除选择
+                        </Button>
+                      )}
+                    </div>
+                    {ocrV2Catalog.length > 0 ? (
+                      <RadioGroup
+                        value={ocrV2ModelTag}
+                        onChange={async (_, data) => {
+                          const picked = data.value;
+                          try {
+                            await tauri.set_ocr_v2_model_tag(picked);
+                            setOcrV2ModelTag(picked);
+                            setMessage(`已选择 tag: ${picked}`);
+                          } catch (e) {
+                            setMessage(`设置失败: ${e}`);
+                          }
+                        }}
+                        layout="vertical"
+                      >
+                        <Radio value="" label="自动解析 (推荐)" />
+                        {ocrV2Catalog.map((e) => (
+                          <Radio key={e.tag} value={e.tag} label={e.tag + (e.prerelease ? ' (pre-release)' : '')} />
+                        ))}
+                      </RadioGroup>
+                    ) : (
+                      <Text size={200} style={{ color: '#888' }}>暂无候选 tag，点「刷新候选列表」拉取。</Text>
+                    )}
+                  </div>
+                )}
               </>
             )}
             {captchaMode !== 'manual' && (

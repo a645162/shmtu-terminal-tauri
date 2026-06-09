@@ -7,7 +7,7 @@ use shmtu_ocr::const_value;
 use shmtu_ocr::ModelVersion;
 use std::path::Path;
 use std::sync::atomic::Ordering;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::io::AsyncWriteExt;
 
 use crate::config::CaptchaMode;
@@ -654,7 +654,11 @@ async fn download_v2_file(
     }
 
     let opts = shmtu_ocr::downloader::V2DownloadOptions {
-        tag: model_tag.to_string(),
+        tag: if model_tag.is_empty() {
+            None
+        } else {
+            Some(model_tag.to_string())
+        },
         backbone: model_backbone.to_string(),
         precision: model_precision.to_string(),
         mirror: shmtu_ocr::downloader::Mirror::Github,
@@ -1322,4 +1326,99 @@ pub async fn set_ocr_model_version(
         .save()
         .map_err(|e| format!("保存配置失败: {}", e))?;
     Ok(new_version.as_str().to_string())
+}
+
+/// 获取 v2 候选 tag 列表 (缓存优先,不含网络请求)。
+#[tauri::command]
+pub async fn get_ocr_v2_tag_catalog(app: AppHandle) -> Result<Vec<V2TagCatalogEntry>, String> {
+    let path = tag_catalog_cache_path(&app)?;
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("读取缓存失败: {}", e))?;
+    let entries: Vec<V2TagCatalogEntry> =
+        serde_json::from_str(&text).map_err(|e| format!("解析缓存失败: {}", e))?;
+    Ok(entries)
+}
+
+/// 强制刷新 v2 候选 tag 列表 (拉 GitHub API,缓存后返回)。
+#[tauri::command]
+pub async fn refresh_ocr_v2_tag_catalog(
+    app: AppHandle,
+) -> Result<Vec<V2TagCatalogEntry>, String> {
+    use shmtu_ocr::tag_catalog::list_candidate_v2_tags;
+    let tag_infos =
+        list_candidate_v2_tags(
+            shmtu_ocr::const_value::v2::MAX_SUPPORTED_MAJOR,
+            shmtu_ocr::const_value::v2::MAX_SUPPORTED_MINOR,
+        )
+        .await
+        .map_err(|e| format!("拉取 v2 tag 失败: {}", e))?;
+    let entries: Vec<V2TagCatalogEntry> = tag_infos
+        .into_iter()
+        .map(|e| V2TagCatalogEntry {
+            tag: e.tag,
+            published_at: e.published_at,
+            prerelease: e.prerelease,
+        })
+        .collect();
+    // 原子写缓存
+    let path = tag_catalog_cache_path(&app)?;
+    let tmp = path.with_extension("json.tmp");
+    let json = serde_json::to_string_pretty(&entries).map_err(|e| e.to_string())?;
+    std::fs::write(&tmp, json).map_err(|e| format!("写入临时缓存失败: {}", e))?;
+    std::fs::rename(&tmp, &path).map_err(|e| format!("替换缓存文件失败: {}", e))?;
+    tracing::info!("[Captcha] v2 tag catalog refreshed: {} entries", entries.len());
+    Ok(entries)
+}
+
+fn tag_catalog_cache_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("获取 app data dir 失败: {}", e))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("创建 app data dir 失败: {}", e))?;
+    Ok(dir.join("ocr_v2_candidate_tags.json"))
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+pub struct V2TagCatalogEntry {
+    pub tag: String,
+    pub published_at: Option<String>,
+    pub prerelease: bool,
+}
+
+/// 获取当前选中的 v2 model tag。空字符串表示自动解析最新兼容 tag。
+#[tauri::command]
+pub async fn get_ocr_v2_model_tag(state: State<'_, AppState>) -> Result<String, String> {
+    let config = state.config.read().await;
+    Ok(config.get().captcha.model_tag.clone())
+}
+
+/// 设置 v2 model tag。空字符串切回自动解析。
+#[tauri::command]
+pub async fn set_ocr_v2_model_tag(
+    state: State<'_, AppState>,
+    tag: String,
+) -> Result<String, String> {
+    let new = tag.trim().to_string();
+    tracing::info!("[Captcha] set_ocr_v2_model_tag: {:?}", new);
+    let mut config = state.config.write().await;
+    config.get_mut().captcha.model_tag = new.clone();
+    config
+        .save()
+        .map_err(|e| format!("保存配置失败: {}", e))?;
+    Ok(new)
+}
+
+/// 预览 v2 模型在 GitHub releases 上的最新可用 tag。
+#[tauri::command]
+pub async fn ocr_v2_resolve_latest_tag() -> Result<String, String> {
+    let tag = shmtu_ocr::tag_resolver::resolve_latest_tag(
+        shmtu_ocr::const_value::v2::MAX_SUPPORTED_MAJOR,
+        shmtu_ocr::const_value::v2::MAX_SUPPORTED_MINOR,
+        shmtu_ocr::const_value::v2::DEFAULT_TAG,
+    )
+    .await;
+    Ok(tag)
 }

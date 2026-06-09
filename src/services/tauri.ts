@@ -279,6 +279,32 @@ export async function set_ocr_model_version(version: 'v1' | 'v2'): Promise<'v1' 
   return invoke<'v1' | 'v2'>('set_ocr_model_version', { version });
 }
 
+export interface OcrV2TagCatalogEntry {
+  tag: string;
+  published_at: string | null;
+  prerelease: boolean;
+}
+
+export async function get_ocr_v2_tag_catalog(): Promise<OcrV2TagCatalogEntry[]> {
+  return invoke<OcrV2TagCatalogEntry[]>('get_ocr_v2_tag_catalog');
+}
+
+export async function refresh_ocr_v2_tag_catalog(): Promise<OcrV2TagCatalogEntry[]> {
+  return invoke<OcrV2TagCatalogEntry[]>('refresh_ocr_v2_tag_catalog');
+}
+
+export async function get_ocr_v2_model_tag(): Promise<string> {
+  return invoke<string>('get_ocr_v2_model_tag');
+}
+
+export async function set_ocr_v2_model_tag(tag: string): Promise<string> {
+  return invoke<string>('set_ocr_v2_model_tag', { tag });
+}
+
+export async function ocr_v2_resolve_latest_tag(): Promise<string> {
+  return invoke<string>('ocr_v2_resolve_latest_tag');
+}
+
 // ========== Data Transfer ==========
 
 export interface ExportParams {
