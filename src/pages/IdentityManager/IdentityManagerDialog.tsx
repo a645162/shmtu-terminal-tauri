@@ -305,7 +305,9 @@ export const IdentityManagerDialog: React.FC = () => {
                       backgroundColor:
                         selectedIdentity?.id === identity.id
                           ? 'var(--colorBrandBackground2)'
-                          : 'transparent',
+                          : currentIdentity?.id === identity.id
+                            ? 'var(--colorPaletteLightGreenBorderActive)'
+                            : 'transparent',
                       marginBottom: 4,
                       display: 'flex',
                       justifyContent: 'space-between',
@@ -314,9 +316,14 @@ export const IdentityManagerDialog: React.FC = () => {
                   >
                     <Text
                       size={200}
-                      weight={selectedIdentity?.id === identity.id ? 'semibold' : 'regular'}
+                      weight={selectedIdentity?.id === identity.id || currentIdentity?.id === identity.id ? 'semibold' : 'regular'}
                     >
                       {identity.name}
+                      {currentIdentity?.id === identity.id && (
+                        <Text size={100} style={{ color: 'var(--colorBrandForeground1)', marginLeft: 6 }}>
+                          当前
+                        </Text>
+                      )}
                     </Text>
                     <div style={{ display: 'flex', gap: 2 }}>
                       <Button
