@@ -459,6 +459,18 @@ export async function list_cached_person_accounts(accountDbIds: number[]): Promi
   return invoke<import('../types').PersonAccountInfo[]>('list_cached_person_accounts', { accountDbIds });
 }
 
+export async function submit_person_account_captcha(
+  accountDbId: number,
+  captchaCode: string,
+  execution: string
+): Promise<import('../types').PersonAccountInfo> {
+  return invoke<import('../types').PersonAccountInfo>('submit_person_account_captcha', {
+    accountDbId,
+    captchaCode,
+    execution,
+  });
+}
+
 // ========== Manual Captcha Sync ==========
 
 export async function sync_with_captcha(
