@@ -42,7 +42,7 @@ pub struct LocalOcrModelDownloadProgress {
 
 fn local_ocr_model_status(model_path: &Path, version: ModelVersion) -> LocalOcrModelStatus {
     let missing_files = OcrBackend::missing_model_files(version, model_path);
-    let total_files = match version {
+    let total_files: u32 = match version {
         ModelVersion::V1 => 3,
         ModelVersion::V2 => 1,
     };
