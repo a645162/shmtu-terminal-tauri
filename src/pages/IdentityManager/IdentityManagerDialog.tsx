@@ -47,13 +47,14 @@ export const IdentityManagerDialog: React.FC = () => {
   useEffect(() => {
     if (!showIdentityManagerDialog) return;
     if (selectedIdentity) return;
-    if (currentIdentity) {
-      setSelectedIdentity(currentIdentity);
-    } else if (identities.length > 0) {
-      setSelectedIdentity(identities[0]);
+    const identity = currentIdentity ?? identities[0] ?? null;
+    if (identity) {
+      setSelectedIdentity(identity);
+      // 同时拉取该身份的账号列表, 否则右边区会显示"暂无账号"
+      tauri.list_accounts(identity.id).then(setAccounts).catch(() => setAccounts([]));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showIdentityManagerDialog, currentIdentity, selectedIdentity?.id]);
+  }, [showIdentityManagerDialog, currentIdentity?.id, selectedIdentity?.id]);
 
   // Account form state
   const [accountForm, setAccountForm] = useState({
