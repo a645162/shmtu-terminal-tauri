@@ -23,6 +23,7 @@ import {
   Tab,
   Textarea,
   InfoLabel,
+  Tooltip,
 } from '@fluentui/react-components';
 import { useAppStore } from '../../stores/appStore';
 import {
@@ -37,6 +38,7 @@ import {
   ArrowDownload24Regular,
   Bug24Regular,
   PeopleSwap24Regular,
+  QuestionCircle24Regular,
 } from '@fluentui/react-icons';
 import type { AppSettingsTab, CaptchaMode, AppTheme } from '../../types';
 import * as tauri from '../../services/tauri';
@@ -73,6 +75,7 @@ export const SettingsDialog: React.FC = () => {
   const [selectedTab, setSelectedTab] = useState<SettingsTab>('ui');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const [messageDetail, setMessageDetail] = useState<string | null>(null);
 
   // Security settings
   const [startupProtection, setStartupProtection] = useState(
@@ -265,6 +268,7 @@ export const SettingsDialog: React.FC = () => {
 
     setSaving(true);
     setMessage('');
+    setMessageDetail(null);
     try {
       const nextConfig: tauri.AppConfig = {
         ...config,
@@ -284,7 +288,7 @@ export const SettingsDialog: React.FC = () => {
           onnx_model_path: config.captcha.onnx_model_path,
           ocr_retry_count: ocrRetry,
           model_version: ocrModelVersion,
-          model_tag: config.captcha.model_tag,
+          model_tag: ocrV2ModelTag,
           model_backbone: config.captcha.model_backbone,
           model_precision: config.captcha.model_precision,
         },
@@ -334,11 +338,14 @@ export const SettingsDialog: React.FC = () => {
 
       await loadConfig();
       setMessage('设置已保存');
+      setMessageDetail(null);
       if (closeAfterSave) {
         setShowSettingsDialog(false);
       }
     } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
       setMessage('保存失败');
+      setMessageDetail(detail);
       console.error('Failed to save config:', e);
     } finally {
       setSaving(false);
@@ -507,11 +514,14 @@ export const SettingsDialog: React.FC = () => {
                       if (newVersion === ocrModelVersion) return;
                       try {
                         setMessage(`正在切换模型版本到 ${newVersion}...`);
+                        setMessageDetail(null);
                         const ret = await tauri.set_ocr_model_version(newVersion);
                         setOcrModelVersion(ret);
                         setMessage(`模型版本已切换到 ${ret}，请重新下载对应版本的模型`);
                       } catch (e) {
-                        setMessage(`切换失败: ${e}`);
+                        const detail = e instanceof Error ? e.message : String(e);
+                        setMessage('切换失败');
+                        setMessageDetail(detail);
                       }
                     }}
                     style={{ width: '100%' }}
@@ -538,7 +548,9 @@ export const SettingsDialog: React.FC = () => {
                             const entries = await tauri.refresh_ocr_v2_tag_catalog();
                             setOcrV2Catalog(entries);
                           } catch (e) {
-                            setMessage(`刷新失败: ${e}`);
+                            const detail = e instanceof Error ? e.message : String(e);
+                            setMessage('刷新失败');
+                            setMessageDetail(detail);
                           } finally {
                             setIsRefreshingCatalog(false);
                           }
@@ -555,8 +567,11 @@ export const SettingsDialog: React.FC = () => {
                               await tauri.set_ocr_v2_model_tag('');
                               setOcrV2ModelTag('');
                               setMessage('已切回自动解析最新兼容 tag');
+                              setMessageDetail(null);
                             } catch (e) {
-                              setMessage(`清除失败: ${e}`);
+                              const detail = e instanceof Error ? e.message : String(e);
+                              setMessage('清除失败');
+                              setMessageDetail(detail);
                             }
                           }}
                         >
@@ -573,8 +588,11 @@ export const SettingsDialog: React.FC = () => {
                             await tauri.set_ocr_v2_model_tag(picked);
                             setOcrV2ModelTag(picked);
                             setMessage(`已选择 tag: ${picked}`);
+                            setMessageDetail(null);
                           } catch (e) {
-                            setMessage(`设置失败: ${e}`);
+                            const detail = e instanceof Error ? e.message : String(e);
+                            setMessage('设置失败');
+                            setMessageDetail(detail);
                           }
                         }}
                         layout="vertical"
@@ -1234,8 +1252,27 @@ export const SettingsDialog: React.FC = () => {
               {/* Right Content */}
               <div style={{ paddingLeft: 16, borderLeft: '1px solid var(--colorNeutralStroke2)' }}>
                 {message && (
-                  <MessageBar intent={message.includes('失败') ? 'error' : 'success'} style={{ marginBottom: 12 }}>
-                    <MessageBarBody>{message}</MessageBarBody>
+                  <MessageBar
+                    intent={message.includes('失败') ? 'error' : 'success'}
+                    style={{ marginBottom: 12, alignItems: 'center' }}
+                  >
+                    <MessageBarBody
+                      style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+                    >
+                      <span>{message}</span>
+                      {message.includes('失败') && messageDetail && (
+                        <Tooltip
+                          content={messageDetail}
+                          relationship="label"
+                          positioning="above-start"
+                          withArrow
+                        >
+                          <QuestionCircle24Regular
+                            style={{ cursor: 'help', flexShrink: 0 }}
+                          />
+                        </Tooltip>
+                      )}
+                    </MessageBarBody>
                   </MessageBar>
                 )}
                 <PageEnterMotion key={selectedTab}>

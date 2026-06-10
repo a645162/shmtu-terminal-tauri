@@ -1401,6 +1401,7 @@ pub async fn get_ocr_v2_model_tag(state: State<'_, AppState>) -> Result<String, 
 }
 
 /// 设置 v2 model tag。空字符串切回自动解析。
+/// 非空 tag 会校验是否满足最小版本约束。
 #[tauri::command]
 pub async fn set_ocr_v2_model_tag(
     state: State<'_, AppState>,
@@ -1408,6 +1409,19 @@ pub async fn set_ocr_v2_model_tag(
 ) -> Result<String, String> {
     let new = tag.trim().to_string();
     tracing::info!("[Captcha] set_ocr_v2_model_tag: {:?}", new);
+    // 非空 tag 校验最小版本
+    if !new.is_empty() {
+        shmtu_ocr::tag_resolver::validate_tag_min_version(
+            &new,
+            shmtu_ocr::const_value::v2::MIN_SUPPORTED_MAJOR,
+            shmtu_ocr::const_value::v2::MIN_SUPPORTED_MINOR,
+            shmtu_ocr::const_value::v2::MIN_SUPPORTED_PATCH,
+        )
+        .map_err(|e| {
+            tracing::warn!("[Captcha] set_ocr_v2_model_tag: 版本校验失败: {}", e);
+            e
+        })?;
+    }
     let mut config = state.config.write().await;
     config.get_mut().captcha.model_tag = new.clone();
     config
