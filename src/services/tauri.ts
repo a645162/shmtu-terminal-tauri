@@ -305,6 +305,39 @@ export async function ocr_v2_resolve_latest_tag(): Promise<string> {
   return invoke<string>('ocr_v2_resolve_latest_tag');
 }
 
+// ---- v2 OCR Model Selection API ----
+
+export interface OcrV2ModelInfo {
+  asset_stem: string;
+  display_name: string;
+  backbone: string;
+  model_size_m: number | null;
+  val_acc_expression: number | null;
+  test_acc_expression: number | null;
+}
+
+export interface OcrV2Config {
+  tag: string;
+  backbone: string;
+  precision: string;
+}
+
+export async function list_ocr_v2_models(tag: string): Promise<OcrV2ModelInfo[]> {
+  return invoke<OcrV2ModelInfo[]>('list_ocr_v2_models', { tag });
+}
+
+export async function set_ocr_v2_backbone(backbone: string): Promise<void> {
+  return invoke('set_ocr_v2_backbone', { backbone });
+}
+
+export async function set_ocr_v2_precision(precision: string): Promise<void> {
+  return invoke('set_ocr_v2_precision', { precision });
+}
+
+export async function get_ocr_v2_config(): Promise<OcrV2Config> {
+  return invoke<OcrV2Config>('get_ocr_v2_config');
+}
+
 // ========== Data Transfer ==========
 
 export interface ExportParams {

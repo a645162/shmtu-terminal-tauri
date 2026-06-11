@@ -885,6 +885,8 @@ pub async fn delete_local_ocr_models(
     let config = state.config.read().await;
     let model_path = config.onnx_model_path();
     let version = config.get().captcha.model_version;
+    let model_backbone = config.get().captcha.model_backbone.clone();
+    let model_precision = config.get().captcha.model_precision.clone();
     drop(config);
 
     let files: Vec<String> = match version {
@@ -894,8 +896,8 @@ pub async fn delete_local_ocr_models(
             const_value::v1::MODEL_ONNX_DIGIT.to_string(),
         ],
         ModelVersion::V2 => vec![const_value::v2::build_model_name(
-            &shmtu_ocr::const_value::v2::DEFAULT_BACKBONE,
-            &shmtu_ocr::const_value::v2::DEFAULT_PRECISION,
+            &model_backbone,
+            &model_precision,
         )],
     };
 
@@ -1441,4 +1443,92 @@ pub async fn ocr_v2_resolve_latest_tag() -> Result<String, String> {
     )
     .await;
     Ok(tag)
+}
+
+// ---- v2 模型选择 API (tag / backbone / precision) ----
+
+/// 前端展示用的模型信息（精简版）。
+#[derive(Debug, Clone, Serialize)]
+pub struct ModelInfoFrontend {
+    pub asset_stem: String,
+    pub display_name: String,
+    pub backbone: String,
+    pub model_size_m: Option<f64>,
+    pub val_acc_expression: Option<f64>,
+    pub test_acc_expression: Option<f64>,
+}
+
+/// 当前 v2 模型配置。
+#[derive(Debug, Clone, Serialize)]
+pub struct OcrV2Config {
+    pub tag: String,
+    pub backbone: String,
+    pub precision: String,
+}
+
+/// 获取指定 tag 的模型列表（拉 manifest → list_models）。
+#[tauri::command]
+pub async fn list_ocr_v2_models(tag: String) -> Result<Vec<ModelInfoFrontend>, String> {
+    use shmtu_ocr::tag_catalog::list_models_for_tag;
+    tracing::info!("[Captcha] list_ocr_v2_models: tag={}", tag);
+    let models = list_models_for_tag(&tag)
+        .await
+        .map_err(|e| format!("获取模型列表失败: {}", e))?;
+    let entries: Vec<ModelInfoFrontend> = models
+        .into_iter()
+        .map(|m| ModelInfoFrontend {
+            asset_stem: m.asset_stem,
+            display_name: m.display_name,
+            backbone: m.backbone,
+            model_size_m: m.model_size_m,
+            val_acc_expression: m.metrics.as_ref().and_then(|x| x.val_acc_expression),
+            test_acc_expression: m.metrics.as_ref().and_then(|x| x.test_acc_expression),
+        })
+        .collect();
+    tracing::info!("[Captcha] list_ocr_v2_models: {} models", entries.len());
+    Ok(entries)
+}
+
+/// 设置 v2 模型的 backbone（持久化到 config）。
+#[tauri::command]
+pub async fn set_ocr_v2_backbone(
+    state: State<'_, AppState>,
+    backbone: String,
+) -> Result<(), String> {
+    let new = backbone.trim().to_string();
+    tracing::info!("[Captcha] set_ocr_v2_backbone: {:?}", new);
+    let mut config = state.config.write().await;
+    config.get_mut().captcha.model_backbone = new;
+    config
+        .save()
+        .map_err(|e| format!("保存配置失败: {}", e))?;
+    Ok(())
+}
+
+/// 设置 v2 模型的 precision（持久化到 config）。
+#[tauri::command]
+pub async fn set_ocr_v2_precision(
+    state: State<'_, AppState>,
+    precision: String,
+) -> Result<(), String> {
+    let new = precision.trim().to_string();
+    tracing::info!("[Captcha] set_ocr_v2_precision: {:?}", new);
+    let mut config = state.config.write().await;
+    config.get_mut().captcha.model_precision = new;
+    config
+        .save()
+        .map_err(|e| format!("保存配置失败: {}", e))?;
+    Ok(())
+}
+
+/// 获取当前 v2 配置（tag + backbone + precision）。
+#[tauri::command]
+pub async fn get_ocr_v2_config(state: State<'_, AppState>) -> Result<OcrV2Config, String> {
+    let config = state.config.read().await;
+    let captcha = &config.get().captcha;
+    Ok(OcrV2Config {
+        tag: captcha.model_tag.clone(),
+        backbone: captcha.model_backbone.clone(),
+        precision: captcha.model_precision.clone(),
+    })
 }

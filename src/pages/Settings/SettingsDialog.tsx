@@ -39,8 +39,11 @@ import {
   Bug24Regular,
   PeopleSwap24Regular,
   QuestionCircle24Regular,
+  Settings24Regular,
+  CheckmarkCircle24Regular,
+  DismissCircle24Regular,
 } from '@fluentui/react-icons';
-import type { AppSettingsTab, CaptchaMode, AppTheme } from '../../types';
+import type { AppSettingsTab, CaptchaMode, AppTheme, LocalOcrModelStatus } from '../../types';
 import * as tauri from '../../services/tauri';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import {
@@ -105,6 +108,21 @@ export const SettingsDialog: React.FC = () => {
   const [ocrV2ModelTag, setOcrV2ModelTag] = useState(config?.captcha.model_tag ?? '');
   const [ocrV2Catalog, setOcrV2Catalog] = useState<tauri.OcrV2TagCatalogEntry[]>([]);
   const [isRefreshingCatalog, setIsRefreshingCatalog] = useState(false);
+  const [ocrV2Models, setOcrV2Models] = useState<tauri.OcrV2ModelInfo[]>([]);
+  const [ocrV2Backbone, setOcrV2Backbone] = useState(config?.captcha.model_backbone ?? 'mobilenet_v3_small');
+  const [ocrV2Precision, setOcrV2Precision] = useState(config?.captcha.model_precision ?? 'fp16');
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
+  const [showOcrAdvancedDialog, setShowOcrAdvancedDialog] = useState(false);
+  const [ocrModelStatus, setOcrModelStatus] = useState<LocalOcrModelStatus | null>(null);
+  const [ocrDownloading, setOcrDownloading] = useState(false);
+  // Advanced dialog: pending changes (applied on confirm)
+  const [advTag, setAdvTag] = useState('');
+  const [advBackbone, setAdvBackbone] = useState('');
+  const [advPrecision, setAdvPrecision] = useState('fp16');
+  const [advModels, setAdvModels] = useState<tauri.OcrV2ModelInfo[]>([]);
+  const [advLoadingModels, setAdvLoadingModels] = useState(false);
+  const [advRefreshing, setAdvRefreshing] = useState(false);
+  const [advCatalog, setAdvCatalog] = useState<tauri.OcrV2TagCatalogEntry[]>([]);
 
   // Sync settings
   const [maxPages, setMaxPages] = useState(normalizeSyncMaxPages(config?.sync.max_pages));
@@ -191,12 +209,28 @@ export const SettingsDialog: React.FC = () => {
     }
     void (async () => {
       try {
-        const [catalog, currentTag] = await Promise.all([
+        const [catalog, currentTag, v2Config, modelStatus] = await Promise.all([
           tauri.get_ocr_v2_tag_catalog(),
           tauri.get_ocr_v2_model_tag(),
+          tauri.get_ocr_v2_config(),
+          tauri.get_local_ocr_model_status(),
         ]);
         setOcrV2Catalog(catalog);
         setOcrV2ModelTag(currentTag);
+        setOcrV2Backbone(v2Config.backbone);
+        setOcrV2Precision(v2Config.precision);
+        setOcrModelStatus(modelStatus);
+
+        // Load models for the current tag (resolve to a concrete tag if auto)
+        const effectiveTag = currentTag || await tauri.ocr_v2_resolve_latest_tag().catch(() => '');
+        if (effectiveTag) {
+          try {
+            const models = await tauri.list_ocr_v2_models(effectiveTag);
+            setOcrV2Models(models);
+          } catch {
+            setOcrV2Models([]);
+          }
+        }
       } catch {}
     })();
     setSelectedTab(settingsDialogTab);
@@ -289,8 +323,8 @@ export const SettingsDialog: React.FC = () => {
           ocr_retry_count: ocrRetry,
           model_version: ocrModelVersion,
           model_tag: ocrV2ModelTag,
-          model_backbone: config.captcha.model_backbone,
-          model_precision: config.captcha.model_precision,
+          model_backbone: ocrV2Backbone,
+          model_precision: ocrV2Precision,
         },
         sync: {
           max_pages: normalizeSyncMaxPages(maxPages),
@@ -504,19 +538,21 @@ export const SettingsDialog: React.FC = () => {
               <>
                 <div>
                   <InfoLabel info="v1 是 3 个独立 ResNet 模型（兼容老用户），v2 是单个 MobileNetV3 模型（推荐，更快更准）。切换后需要重新下载对应版本的模型。">
-                    本地 ONNX 模型版本
+                    OCR 模型版本
                   </InfoLabel>
-                  <Dropdown
-                    value={ocrModelVersion === 'v1' ? 'v1 (旧版, 3 模型 ResNet)' : 'v2 (新版, 单模型 MobileNetV3)'}
-                    selectedOptions={[ocrModelVersion]}
-                    onOptionSelect={async (_, data) => {
-                      const newVersion = data.optionValue as 'v1' | 'v2';
+                  <RadioGroup
+                    value={ocrModelVersion}
+                    onChange={async (_, data) => {
+                      const newVersion = data.value as 'v1' | 'v2';
                       if (newVersion === ocrModelVersion) return;
                       try {
                         setMessage(`正在切换模型版本到 ${newVersion}...`);
                         setMessageDetail(null);
                         const ret = await tauri.set_ocr_model_version(newVersion);
                         setOcrModelVersion(ret);
+                        // Refresh model status after version switch
+                        const status = await tauri.get_local_ocr_model_status();
+                        setOcrModelStatus(status);
                         setMessage(`模型版本已切换到 ${ret}，请重新下载对应版本的模型`);
                       } catch (e) {
                         const detail = e instanceof Error ? e.message : String(e);
@@ -524,89 +560,109 @@ export const SettingsDialog: React.FC = () => {
                         setMessageDetail(detail);
                       }
                     }}
-                    style={{ width: '100%' }}
+                    layout="horizontal"
                   >
-                    <Option value="v2">v2 (新版, 单模型 MobileNetV3)</Option>
-                    <Option value="v1">v1 (旧版, 3 模型 ResNet)</Option>
-                  </Dropdown>
+                    <Radio value="v2" label="v2 (推荐)" />
+                    <Radio value="v1" label="v1 (旧版)" />
+                  </RadioGroup>
                 </div>
-                {ocrModelVersion === 'v2' && (
-                  <div>
-                    <InfoLabel info="支持 2.x 系列 (主版本号 < 3)。选择具体 tag 或留空让程序自动取最新兼容版本。列表仅在首次打开时读缓存，不会自动刷新。" >
-                      v2 模型 tag:
-                      {ocrV2ModelTag ? ` 当前: ${ocrV2ModelTag}` : ' 当前: 自动解析（推荐）'}
-                    </InfoLabel>
-                    <div style={{ display: 'flex', gap: 8, marginTop: 4, marginBottom: 8 }}>
-                      <Button
-                        size="small"
-                        appearance="outline"
-                        icon={isRefreshingCatalog ? <Spinner size="extra-tiny" /> : undefined}
-                        disabled={isRefreshingCatalog}
-                        onClick={async () => {
-                          setIsRefreshingCatalog(true);
-                          try {
-                            const entries = await tauri.refresh_ocr_v2_tag_catalog();
-                            setOcrV2Catalog(entries);
-                          } catch (e) {
-                            const detail = e instanceof Error ? e.message : String(e);
-                            setMessage('刷新失败');
-                            setMessageDetail(detail);
-                          } finally {
-                            setIsRefreshingCatalog(false);
-                          }
-                        }}
-                      >
-                        刷新候选列表
-                      </Button>
-                      {ocrV2ModelTag && (
-                        <Button
-                          size="small"
-                          appearance="subtle"
-                          onClick={async () => {
-                            try {
-                              await tauri.set_ocr_v2_model_tag('');
-                              setOcrV2ModelTag('');
-                              setMessage('已切回自动解析最新兼容 tag');
-                              setMessageDetail(null);
-                            } catch (e) {
-                              const detail = e instanceof Error ? e.message : String(e);
-                              setMessage('清除失败');
-                              setMessageDetail(detail);
-                            }
-                          }}
-                        >
-                          清除选择
-                        </Button>
-                      )}
+                {/* Model status display */}
+                <div
+                  style={{
+                    padding: 14,
+                    borderRadius: 10,
+                    border: '1px solid var(--colorNeutralStroke2)',
+                    background: 'var(--colorNeutralBackground2)',
+                  }}
+                >
+                  <Text weight="semibold" block style={{ marginBottom: 6 }}>
+                    模型状态
+                  </Text>
+                  {ocrModelStatus?.ready ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <CheckmarkCircle24Regular style={{ color: 'var(--colorPaletteGreenForeground1)', flexShrink: 0 }} />
+                      <Text size={200}>
+                        已就绪
+                        {ocrModelVersion === 'v2' && ocrV2Backbone && (
+                          <> ({ocrV2Backbone}{ocrV2Models.find(m => m.backbone === ocrV2Backbone)?.model_size_m != null
+                            ? `, ${ocrV2Models.find(m => m.backbone === ocrV2Backbone)!.model_size_m!.toFixed(2)}M`
+                            : ''}, {ocrV2Precision})</>
+                        )}
+                      </Text>
                     </div>
-                    {ocrV2Catalog.length > 0 ? (
-                      <RadioGroup
-                        value={ocrV2ModelTag}
-                        onChange={async (_, data) => {
-                          const picked = data.value;
-                          try {
-                            await tauri.set_ocr_v2_model_tag(picked);
-                            setOcrV2ModelTag(picked);
-                            setMessage(`已选择 tag: ${picked}`);
-                            setMessageDetail(null);
-                          } catch (e) {
-                            const detail = e instanceof Error ? e.message : String(e);
-                            setMessage('设置失败');
-                            setMessageDetail(detail);
-                          }
-                        }}
-                        layout="vertical"
-                      >
-                        <Radio value="" label="自动解析 (推荐)" />
-                        {ocrV2Catalog.map((e) => (
-                          <Radio key={e.tag} value={e.tag} label={e.tag + (e.prerelease ? ' (pre-release)' : '')} />
-                        ))}
-                      </RadioGroup>
-                    ) : (
-                      <Text size={200} style={{ color: '#888' }}>暂无候选 tag，点「刷新候选列表」拉取。</Text>
-                    )}
-                  </div>
-                )}
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <DismissCircle24Regular style={{ color: 'var(--colorPaletteRedForeground1)', flexShrink: 0 }} />
+                      <Text size={200}>未下载</Text>
+                    </div>
+                  )}
+                </div>
+                {/* Action buttons */}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Button
+                    appearance="primary"
+                    icon={<ArrowDownload24Regular />}
+                    disabled={ocrDownloading || ocrModelStatus?.ready}
+                    onClick={async () => {
+                      setOcrDownloading(true);
+                      setMessage('正在下载模型...');
+                      setMessageDetail(null);
+                      try {
+                        const status = await tauri.ensure_local_ocr_models();
+                        setOcrModelStatus(status);
+                        if (status.ready) {
+                          setMessage('模型下载完成');
+                        } else {
+                          setMessage('模型下载未完成，请重试');
+                        }
+                      } catch (e) {
+                        const detail = e instanceof Error ? e.message : String(e);
+                        setMessage('下载失败');
+                        setMessageDetail(detail);
+                      } finally {
+                        setOcrDownloading(false);
+                      }
+                    }}
+                  >
+                    {ocrDownloading ? '下载中...' : ocrModelStatus?.ready ? '已下载' : '下载模型'}
+                  </Button>
+                  {ocrModelVersion === 'v2' && (
+                    <Button
+                      appearance="subtle"
+                      icon={<Settings24Regular />}
+                      onClick={async () => {
+                        // Initialize advanced dialog with current values
+                        setAdvTag(ocrV2ModelTag);
+                        setAdvBackbone(ocrV2Backbone);
+                        setAdvPrecision(ocrV2Precision);
+                        setAdvCatalog(ocrV2Catalog);
+                        setAdvModels(ocrV2Models);
+                        setShowOcrAdvancedDialog(true);
+                      }}
+                    >
+                      高级设置
+                    </Button>
+                  )}
+                  {ocrModelStatus?.ready && (
+                    <Button
+                      appearance="subtle"
+                      onClick={async () => {
+                        try {
+                          const status = await tauri.delete_local_ocr_models();
+                          setOcrModelStatus(status);
+                          setMessage('模型已删除');
+                          setMessageDetail(null);
+                        } catch (e) {
+                          const detail = e instanceof Error ? e.message : String(e);
+                          setMessage('删除失败');
+                          setMessageDetail(detail);
+                        }
+                      }}
+                    >
+                      删除模型
+                    </Button>
+                  )}
+                </div>
               </>
             )}
             {captchaMode !== 'manual' && (
@@ -1290,6 +1346,174 @@ export const SettingsDialog: React.FC = () => {
             </Button>
             <Button appearance="primary" onClick={handleSaveAndClose} disabled={saving}>
               {saving ? '保存中...' : '保存'}
+            </Button>
+          </DialogActions>
+        </DialogBody>
+      </DialogSurface>
+    </Dialog>
+
+    {/* OCR v2 Advanced Settings Dialog */}
+    <Dialog
+      open={showOcrAdvancedDialog}
+      onOpenChange={(_, data) => {
+        if (!data.open) setShowOcrAdvancedDialog(false);
+      }}
+    >
+      <DialogSurface style={{ maxWidth: 560 }}>
+        <DialogBody>
+          <DialogTitle>OCR 模型高级设置</DialogTitle>
+          <DialogContent>
+            <div style={{ display: 'grid', gap: 16 }}>
+              {/* Release Tag */}
+              <div>
+                <InfoLabel info="选择具体的 release tag，或留空自动取最新兼容版本。">
+                  Release Tag
+                  {advTag ? `: ${advTag}` : ': 自动解析'}
+                </InfoLabel>
+                <div style={{ display: 'flex', gap: 8, marginTop: 4, marginBottom: 8 }}>
+                  <Button
+                    size="small"
+                    appearance="outline"
+                    icon={advRefreshing ? <Spinner size="extra-tiny" /> : <ArrowSync24Regular />}
+                    disabled={advRefreshing}
+                    onClick={async () => {
+                      setAdvRefreshing(true);
+                      try {
+                        const entries = await tauri.refresh_ocr_v2_tag_catalog();
+                        setAdvCatalog(entries);
+                      } catch {
+                        // silently fail
+                      } finally {
+                        setAdvRefreshing(false);
+                      }
+                    }}
+                  >
+                    刷新
+                  </Button>
+                </div>
+                {advCatalog.length > 0 ? (
+                  <RadioGroup
+                    value={advTag}
+                    onChange={async (_, data) => {
+                      const picked = data.value;
+                      setAdvTag(picked);
+                      // Load models for the selected tag
+                      const effectiveTag = picked || await tauri.ocr_v2_resolve_latest_tag().catch(() => '');
+                      if (effectiveTag) {
+                        setAdvLoadingModels(true);
+                        try {
+                          const models = await tauri.list_ocr_v2_models(effectiveTag);
+                          setAdvModels(models);
+                        } catch {
+                          setAdvModels([]);
+                        } finally {
+                          setAdvLoadingModels(false);
+                        }
+                      }
+                    }}
+                    layout="vertical"
+                  >
+                    <Radio value="" label="自动解析 (推荐)" />
+                    {advCatalog.map((e) => (
+                      <Radio key={e.tag} value={e.tag} label={e.tag + (e.prerelease ? ' (pre-release)' : '')} />
+                    ))}
+                  </RadioGroup>
+                ) : (
+                  <Text size={200} style={{ color: '#888' }}>暂无候选 tag，点「刷新」拉取。</Text>
+                )}
+              </div>
+
+              {/* Model selection */}
+              <div>
+                <InfoLabel info="选择 OCR 模型的骨干网络。较小的模型推理更快，较大的模型精度稍高。">
+                  模型
+                </InfoLabel>
+                {advLoadingModels ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                    <Spinner size="tiny" />
+                    <Text size={200}>加载模型列表...</Text>
+                  </div>
+                ) : advModels.length > 0 ? (
+                  <RadioGroup
+                    value={advBackbone}
+                    onChange={(_, data) => setAdvBackbone(data.value)}
+                    layout="vertical"
+                  >
+                    {advModels.map((m) => {
+                      const sizeStr = m.model_size_m != null ? `${m.model_size_m.toFixed(2)}M` : '';
+                      const valStr = m.val_acc_expression != null
+                        ? `val ${(m.val_acc_expression * 100).toFixed(2)}%` : '';
+                      const testStr = m.test_acc_expression != null
+                        ? `test ${(m.test_acc_expression * 100).toFixed(2)}%` : '';
+                      const infoParts = [sizeStr, valStr, testStr].filter(Boolean);
+                      const label = infoParts.length > 0
+                        ? `${m.backbone}  ${infoParts.join('  ')}`
+                        : m.backbone;
+                      return (
+                        <Radio key={m.backbone} value={m.backbone} label={label} />
+                      );
+                    })}
+                  </RadioGroup>
+                ) : (
+                  <Text size={200} style={{ color: '#888', marginTop: 4, display: 'block' }}>
+                    请先选择 tag 后加载模型列表
+                  </Text>
+                )}
+              </div>
+
+              {/* Precision */}
+              <div>
+                <InfoLabel info="fp16 模型体积更小、推理更快；fp32 精度完整但体积翻倍。一般选 fp16 即可。">
+                  精度
+                </InfoLabel>
+                <RadioGroup
+                  value={advPrecision}
+                  onChange={(_, data) => setAdvPrecision(data.value)}
+                  layout="horizontal"
+                >
+                  <Radio value="fp16" label="fp16 (推荐)" />
+                  <Radio value="fp32" label="fp32" />
+                </RadioGroup>
+              </div>
+            </div>
+          </DialogContent>
+          <DialogActions>
+            <Button appearance="subtle" onClick={() => setShowOcrAdvancedDialog(false)}>
+              取消
+            </Button>
+            <Button
+              appearance="primary"
+              onClick={async () => {
+                try {
+                  // Apply all pending changes
+                  if (advTag !== ocrV2ModelTag) {
+                    await tauri.set_ocr_v2_model_tag(advTag);
+                    setOcrV2ModelTag(advTag);
+                  }
+                  if (advBackbone !== ocrV2Backbone) {
+                    await tauri.set_ocr_v2_backbone(advBackbone);
+                    setOcrV2Backbone(advBackbone);
+                  }
+                  if (advPrecision !== ocrV2Precision) {
+                    await tauri.set_ocr_v2_precision(advPrecision);
+                    setOcrV2Precision(advPrecision);
+                  }
+                  setOcrV2Catalog(advCatalog);
+                  setOcrV2Models(advModels);
+                  // Refresh model status since config changed
+                  const status = await tauri.get_local_ocr_model_status();
+                  setOcrModelStatus(status);
+                  setMessage('高级设置已应用');
+                  setMessageDetail(null);
+                  setShowOcrAdvancedDialog(false);
+                } catch (e) {
+                  const detail = e instanceof Error ? e.message : String(e);
+                  setMessage('应用失败');
+                  setMessageDetail(detail);
+                }
+              }}
+            >
+              应用
             </Button>
           </DialogActions>
         </DialogBody>
