@@ -664,6 +664,7 @@ async fn download_v2_file(
         mirror: shmtu_ocr::downloader::Mirror::Github,
         dest: model_path.to_path_buf(),
         expected_sha256: None,
+        ..Default::default()
     };
 
     // 简单的进度回调封装: 单文件下载期间发 2 次 (开始 + 完成)
