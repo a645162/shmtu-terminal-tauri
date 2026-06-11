@@ -76,6 +76,8 @@ pub async fn set_startup_password(
 pub struct GitContributor {
     pub name: String,
     pub email: String,
+    /// GitHub 主页 URL, 点击可直接跳转
+    pub github_url: String,
 }
 
 #[tauri::command]
@@ -84,7 +86,28 @@ pub async fn get_git_contributors() -> Result<Vec<GitContributor>, String> {
     if raw == "[]" {
         return Ok(vec![]);
     }
-    serde_json::from_str(raw).map_err(|e| format!("解析贡献者信息失败: {}", e))
+
+    // Parse the flat JSON from build.rs, then enrich with github_url
+    #[derive(serde::Deserialize)]
+    struct RawContributor {
+        name: String,
+        email: String,
+    }
+
+    let raw_list: Vec<RawContributor> = serde_json::from_str(raw)
+        .map_err(|e| format!("解析贡献者信息失败: {}", e))?;
+
+    let contributors = raw_list.into_iter().map(|c| {
+        let username = c.email.split('@').next().unwrap_or("").to_string();
+        let github_url = format!("https://github.com/{username}");
+        GitContributor {
+            name: c.name,
+            email: c.email,
+            github_url,
+        }
+    }).collect();
+
+    Ok(contributors)
 }
 
 #[tauri::command]

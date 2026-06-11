@@ -2,6 +2,14 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::process::Command;
 
+/// Email domains to ignore when collecting git contributors.
+/// These are typically auto-generated or placeholder addresses
+/// that don't correspond to real GitHub accounts.
+const IGNORED_EMAIL_DOMAINS: &[&str] = &[
+    "users.noreply.github.com",
+    "example.com",
+];
+
 fn main() {
     // Extract git contributors (name + email) BEFORE tauri_build::build()
     let contributors_json = extract_git_contributors();
@@ -76,6 +84,12 @@ fn collect_from_repo(dir: &PathBuf, seen: &mut HashSet<String>, entries: &mut Ve
         if name.is_empty() || email.is_empty() || seen.contains(&email) {
             continue;
         }
+
+        // Skip ignored email domains
+        if is_ignored_email(&email) {
+            continue;
+        }
+
         seen.insert(email.clone());
 
         let escaped_name = json_escape(&name);
@@ -116,6 +130,12 @@ fn collect_from_submodules(root: &PathBuf, seen: &mut HashSet<String>, entries: 
     }
 }
 
+/// Check if an email address belongs to an ignored domain.
+fn is_ignored_email(email: &str) -> bool {
+    let domain = email.split('@').last().unwrap_or("");
+    IGNORED_EMAIL_DOMAINS.iter().any(|d| domain == *d)
+}
+
 fn json_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for ch in s.chars() {
@@ -128,7 +148,7 @@ fn json_escape(s: &str) -> String {
             c if (c as u32) < 0x20 => {
                 out.push_str(&format!("\\u{:04x}", c as u32));
             }
-            c => out.push(ch),
+            c => out.push(c),
         }
     }
     out

@@ -454,6 +454,7 @@ export async function set_startup_password(password: string): Promise<void> {
 export interface GitContributor {
   name: string;
   email: string;
+  github_url: string;
 }
 
 export async function get_app_version(): Promise<string> {

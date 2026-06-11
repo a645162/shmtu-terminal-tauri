@@ -15,6 +15,7 @@ import {
   shorthands,
 } from '@fluentui/react-components';
 import { Info24Regular } from '@fluentui/react-icons';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { useAppStore } from '../../stores/appStore';
 import * as tauri from '../../services/tauri';
 import {
@@ -36,7 +37,9 @@ const useStyles = makeStyles({
     gap: '12px',
     padding: '6px 4px',
     borderRadius: '6px',
-    cursor: 'default',
+    cursor: 'pointer',
+    textDecoration: 'none',
+    color: 'inherit',
     ':hover': {
       backgroundColor: 'var(--colorNeutralBackground1Hover)',
     },
@@ -140,7 +143,15 @@ export const AboutDialog: React.FC = () => {
                 </Text>
                 <div className={styles.contributorList}>
                   {contributors.map((c) => (
-                    <div key={c.email} className={styles.contributorRow}>
+                    <a
+                      key={c.email}
+                      className={styles.contributorRow}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        openUrl(c.github_url);
+                      }}
+                      title={`打开 ${c.name} 的 GitHub 主页`}
+                    >
                       <Avatar
                         size={32}
                         name={c.name}
@@ -160,7 +171,7 @@ export const AboutDialog: React.FC = () => {
                           {c.email}
                         </Text>
                       </div>
-                    </div>
+                    </a>
                   ))}
                 </div>
               </>
