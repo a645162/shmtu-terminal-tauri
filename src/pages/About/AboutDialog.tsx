@@ -10,6 +10,9 @@ import {
   Text,
   Divider,
   Link,
+  Avatar,
+  makeStyles,
+  shorthands,
 } from '@fluentui/react-components';
 import { Info24Regular } from '@fluentui/react-icons';
 import { useAppStore } from '../../stores/appStore';
@@ -18,6 +21,34 @@ import {
   SectionEnterMotion,
 } from '../../components/Common/motion';
 
+const useStyles = makeStyles({
+  contributorList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    maxHeight: '260px',
+    overflowY: 'auto',
+    ...shorthands.padding('4px', '0'),
+  },
+  contributorRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '6px 4px',
+    borderRadius: '6px',
+    cursor: 'default',
+    ':hover': {
+      backgroundColor: 'var(--colorNeutralBackground1Hover)',
+    },
+  },
+  contributorInfo: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    minWidth: 0,
+  },
+});
+
 export const AboutDialog: React.FC = () => {
   const showAboutDialog = useAppStore((s) => s.showAboutDialog);
   const setShowAboutDialog = useAppStore((s) => s.setShowAboutDialog);
@@ -25,9 +56,13 @@ export const AboutDialog: React.FC = () => {
   const [version, setVersion] = useState('0.1.0');
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<string | null>(null);
+  const [contributors, setContributors] = useState<tauri.GitContributor[]>([]);
+
+  const styles = useStyles();
 
   useEffect(() => {
     tauri.get_app_version().then(setVersion).catch(() => {});
+    tauri.get_git_contributors().then(setContributors).catch(() => {});
   }, []);
 
   const handleCheckUpdate = async () => {
@@ -49,7 +84,7 @@ export const AboutDialog: React.FC = () => {
 
   return (
     <Dialog open={showAboutDialog} onOpenChange={(_, data) => !data.open && setShowAboutDialog(false)}>
-      <DialogSurface style={{ maxWidth: 420 }}>
+      <DialogSurface style={{ maxWidth: 480 }}>
         <DialogBody>
           <DialogTitle>
             <Info24Regular style={{ marginRight: 8 }} />
@@ -96,6 +131,40 @@ export const AboutDialog: React.FC = () => {
             <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
               Fluent UI + Recharts + Zustand
             </Text>
+
+            {contributors.length > 0 && (
+              <>
+                <Divider style={{ margin: '12px 0' }} />
+                <Text size={200} weight="semibold" block style={{ marginBottom: 6 }}>
+                  贡献者 ({contributors.length})
+                </Text>
+                <div className={styles.contributorList}>
+                  {contributors.map((c) => (
+                    <div key={c.email} className={styles.contributorRow}>
+                      <Avatar
+                        size={32}
+                        name={c.name}
+                        image={{
+                          src: `https://avatars.githubusercontent.com/${c.email.split('@')[0]}?s=64`,
+                        }}
+                      />
+                      <div className={styles.contributorInfo}>
+                        <Text size={200} weight="semibold" truncate>
+                          {c.name}
+                        </Text>
+                        <Text
+                          size={100}
+                          style={{ color: 'var(--colorNeutralForeground3)' }}
+                          truncate
+                        >
+                          {c.email}
+                        </Text>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
 
             <Divider style={{ margin: '12px 0' }} />
 

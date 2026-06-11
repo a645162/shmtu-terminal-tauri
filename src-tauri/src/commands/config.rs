@@ -71,6 +71,22 @@ pub async fn set_startup_password(
         .map_err(|e| e.to_string())
 }
 
+/// Git 贡献者信息 (编译时从 git log 提取)
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GitContributor {
+    pub name: String,
+    pub email: String,
+}
+
+#[tauri::command]
+pub async fn get_git_contributors() -> Result<Vec<GitContributor>, String> {
+    let raw = env!("GIT_CONTRIBUTORS");
+    if raw == "[]" {
+        return Ok(vec![]);
+    }
+    serde_json::from_str(raw).map_err(|e| format!("解析贡献者信息失败: {}", e))
+}
+
 #[tauri::command]
 pub async fn get_app_version() -> Result<String, String> {
     Ok(env!("CARGO_PKG_VERSION").to_string())

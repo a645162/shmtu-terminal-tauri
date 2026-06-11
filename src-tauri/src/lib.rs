@@ -130,6 +130,7 @@ pub fn run() {
             cmd_config::set_startup_password,
             cmd_config::get_app_version,
             cmd_config::check_for_updates,
+            cmd_config::get_git_contributors,
             cmd_config::get_auto_sync_status,
             cmd_config::get_session_expiration_status,
             cmd_config::check_session_expiration,

@@ -451,12 +451,21 @@ export async function set_startup_password(password: string): Promise<void> {
 
 // ========== App Info ==========
 
+export interface GitContributor {
+  name: string;
+  email: string;
+}
+
 export async function get_app_version(): Promise<string> {
   return invoke<string>('get_app_version');
 }
 
 export async function check_for_updates(): Promise<string | null> {
   return invoke<string | null>('check_for_updates');
+}
+
+export async function get_git_contributors(): Promise<GitContributor[]> {
+  return invoke<GitContributor[]>('get_git_contributors');
 }
 
 // ========== Default Identity ==========
