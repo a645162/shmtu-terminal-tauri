@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   Dialog,
   DialogTrigger,
@@ -23,9 +23,11 @@ import {
   TableHeaderCell,
   MessageBar,
   MessageBarBody,
+  Tooltip,
+  Field,
 } from '@fluentui/react-components';
 import { listen } from '@tauri-apps/api/event';
-import { ShieldTask24Regular, ArrowCounterclockwise24Regular } from '@fluentui/react-icons';
+import { ShieldTask24Regular, ArrowCounterclockwise24Regular, Settings24Regular, ArrowDownload24Regular } from '@fluentui/react-icons';
 import { useAppStore } from '../../stores/appStore';
 import type {
   CaptchaMode,
@@ -54,6 +56,77 @@ export const CaptchaTestDialog: React.FC = () => {
   const [showLocalModelRecoveryDialog, setShowLocalModelRecoveryDialog] = useState(false);
   const [localModelRecoveryError, setLocalModelRecoveryError] = useState('');
   const [recoveringLocalModels, setRecoveringLocalModels] = useState(false);
+
+  // ---- OCR model settings ----
+  const [ocrModelVersion, setOcrModelVersion] = useState<'v1' | 'v2'>('v2');
+  const [ocrV2Config, setOcrV2Config] = useState<tauri.OcrV2Config | null>(null);
+  const [showAdvancedModelDialog, setShowAdvancedModelDialog] = useState(false);
+  const [quickDownloading, setQuickDownloading] = useState(false);
+  const [quickDownloadResult, setQuickDownloadResult] = useState('');
+
+  const loadOcrConfig = useCallback(async () => {
+    try {
+      const version = await tauri.get_ocr_model_version();
+      setOcrModelVersion(version);
+      if (version === 'v2') {
+        const cfg = await tauri.get_ocr_v2_config();
+        setOcrV2Config(cfg);
+      }
+    } catch {
+      // Ignore errors — settings may not apply yet.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!showCaptchaTestDialog) {
+      return;
+    }
+    void loadOcrConfig();
+  }, [showCaptchaTestDialog, loadOcrConfig]);
+
+  const handleVersionSwitch = async (version: 'v1' | 'v2') => {
+    try {
+      await tauri.set_ocr_model_version(version);
+      setOcrModelVersion(version);
+      if (version === 'v2') {
+        const cfg = await tauri.get_ocr_v2_config();
+        setOcrV2Config(cfg);
+      } else {
+        setOcrV2Config(null);
+      }
+      setQuickDownloadResult('');
+    } catch (error) {
+      setQuickDownloadResult(`切换失败: ${String(error)}`);
+    }
+  };
+
+  const handleQuickDownload = async () => {
+    setQuickDownloading(true);
+    setQuickDownloadResult('');
+    try {
+      // Force v2 if needed for model downloads
+      if (ocrModelVersion !== 'v2') {
+        await tauri.set_ocr_model_version('v2');
+        setOcrModelVersion('v2');
+      }
+      // Set defaults: latest tag, mobilenet_v3_small, fp16
+      await tauri.ocr_v2_resolve_latest_tag();
+      await tauri.set_ocr_v2_backbone('mobilenet_v3_small');
+      await tauri.set_ocr_v2_precision('fp16');
+      const cfg = await tauri.get_ocr_v2_config();
+      setOcrV2Config(cfg);
+      // Download if not already ready.
+      const status = await tauri.get_local_ocr_model_status();
+      if (!status.ready) {
+        await tauri.ensure_local_ocr_models();
+      }
+      setQuickDownloadResult('默认模型 (mobilenet_v3_small + fp16) 已就绪');
+    } catch (error) {
+      setQuickDownloadResult(`下载失败: ${String(error)}`);
+    } finally {
+      setQuickDownloading(false);
+    }
+  };
 
   const normalizeCaptchaSrc = (value: string) =>
     value.startsWith('data:') ? value : `data:image/png;base64,${value}`;
@@ -380,13 +453,77 @@ export const CaptchaTestDialog: React.FC = () => {
                     </MessageBar>
                   )}
 
-                  {mode === 'local_onnx' && config?.captcha?.model_version && (
-                    <MessageBar intent="info">
-                      <MessageBarBody>
-                        当前本地 ONNX 模型版本: <strong>{config.captcha.model_version}</strong>
-                        （v1 = 3 模型 ResNet，v2 = 单模型 MobileNetV3）
-                      </MessageBarBody>
-                    </MessageBar>
+                  {mode === 'local_onnx' && (
+                    <>
+                      {/* OCR Model Configuration Section */}
+                      <div
+                        style={{
+                          padding: 14,
+                          borderRadius: 8,
+                          border: '1px solid var(--colorNeutralStroke2)',
+                          background: 'var(--colorNeutralBackground2)',
+                          display: 'grid',
+                          gap: 12,
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <Text weight="semibold">OCR 模型设置</Text>
+                          <Field label={undefined} style={{ marginBottom: 0 }}>
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                              <Tooltip content="v1: 3 模型 ResNet (legacy)；v2: 单模型 MobileNetV3 Tri-Slot Decoder (默认)" relationship="label">
+                                <Text size={200}>版本</Text>
+                              </Tooltip>
+                              <Dropdown
+                                value={ocrModelVersion}
+                                selectedOptions={[ocrModelVersion]}
+                                onOptionSelect={(_, data) => void handleVersionSwitch(data.optionValue as 'v1' | 'v2')}
+                                disabled={localModelDownloadBusy || showLocalModelDownloadDialog}
+                                style={{ minWidth: 72, fontSize: 12 }}
+                                size="small"
+                              >
+                                <Option value="v2" text="v2">v2 (默认)</Option>
+                                <Option value="v1" text="v1">v1</Option>
+                              </Dropdown>
+                            </div>
+                          </Field>
+                        </div>
+
+                        {ocrModelVersion === 'v2' && ocrV2Config && (
+                          <div style={{ display: 'grid', gap: 6 }}>
+                            <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                              当前 v2 配置: tag=<code>{ocrV2Config.tag}</code> · backbone=<code>{ocrV2Config.backbone}</code> · precision=<code>{ocrV2Config.precision}</code>
+                            </Text>
+                          </div>
+                        )}
+
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <Button
+                            appearance="primary"
+                            size="small"
+                            icon={<ArrowDownload24Regular />}
+                            onClick={() => void handleQuickDownload()}
+                            disabled={quickDownloading || localModelDownloadBusy}
+                          >
+                            {quickDownloading ? <Spinner size="tiny" /> : '一键下载默认模型'}
+                          </Button>
+                          <Button
+                            appearance="subtle"
+                            size="small"
+                            icon={<Settings24Regular />}
+                            onClick={() => setShowAdvancedModelDialog(true)}
+                            disabled={localModelDownloadBusy}
+                          >
+                            高级设置
+                          </Button>
+                        </div>
+
+                        {quickDownloadResult && (
+                          <Text size={200} style={{ color: quickDownloadResult.includes('失败') ? 'var(--colorPaletteRedForeground1)' : 'var(--colorPaletteGreenForeground1)' }}>
+                            {quickDownloadResult}
+                          </Text>
+                        )}
+                      </div>
+                    </>
                   )}
 
                   {mode === 'manual' && (
@@ -604,6 +741,17 @@ export const CaptchaTestDialog: React.FC = () => {
             setLocalModelCancelling(false);
             setLocalModelMessage(String(error));
           });
+        }}
+      />
+      <LocalOcrModelDownloadDialog
+        open={showAdvancedModelDialog}
+        progress={null}
+        cancelling={false}
+        advanced
+        onCancel={async () => {
+          setShowAdvancedModelDialog(false);
+          // Reload config after user finishes configuring via advanced dialog.
+          await loadOcrConfig();
         }}
       />
       <Dialog open={showLocalModelRecoveryDialog}>
