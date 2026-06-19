@@ -1,5 +1,6 @@
 pub mod auto_sync;
 pub mod classification;
+pub mod cloud;
 pub mod commands;
 pub mod config;
 pub mod crypto;
@@ -15,7 +16,7 @@ pub mod state;
 pub mod sync;
 
 use commands::{
-    account, bill, captcha, classify, config as cmd_config, data, debug as cmd_debug,
+    account, bill, captcha, classify, cloud as cmd_cloud, config as cmd_config, data, debug as cmd_debug,
     error as error_cmd, identity, person_account as cmd_person_account, remote as cmd_remote,
     statistics, sync as cmd_sync,
 };
@@ -167,6 +168,19 @@ pub fn run() {
             cmd_person_account::submit_person_account_captcha,
             cmd_debug::clear_all_cookies,
             cmd_debug::clear_all_cookies,
+            // 云备份
+            cmd_cloud::cloud_backup_get_config,
+            cmd_cloud::cloud_backup_save_config,
+            cmd_cloud::cloud_backup_test_connection,
+            cmd_cloud::cloud_backup_test_write_read,
+            cmd_cloud::cloud_backup_now,
+            cmd_cloud::cloud_backup_restore,
+            cmd_cloud::cloud_backup_list_remote,
+            cmd_cloud::cloud_backup_delete_remote,
+            cmd_cloud::cloud_backup_get_auto_config,
+            cmd_cloud::cloud_backup_set_auto_enabled,
+            cmd_cloud::cloud_backup_set_auto_interval,
+            cmd_cloud::cloud_backup_set_max_keep,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

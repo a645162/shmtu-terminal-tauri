@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use shmtu_ocr::ModelVersion;
 use std::path::{Path, PathBuf};
 
+use crate::cloud::webdav::WebDavConfig;
 use crate::error::AppResult;
 
 /// 应用全局配置
@@ -25,6 +26,8 @@ pub struct AppConfig {
     pub ui: UiConfig,
     #[serde(default)]
     pub session: SessionConfig,
+    #[serde(default)]
+    pub cloud_backup: CloudBackupConfig,
 }
 
 /// 安全配置（启动密码保护）
@@ -253,6 +256,27 @@ pub struct SessionConfig {
 }
 
 fn default_session_refresh_interval() -> u64 {
+    10
+}
+
+/// 云备份配置
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CloudBackupConfig {
+    #[serde(default)]
+    pub webdav: WebDavConfig,
+    #[serde(default)]
+    pub auto_enabled: bool,
+    #[serde(default = "default_auto_backup_interval")]
+    pub auto_interval_minutes: u64,
+    #[serde(default = "default_max_keep")]
+    pub max_keep: usize,
+}
+
+fn default_auto_backup_interval() -> u64 {
+    360
+}
+
+fn default_max_keep() -> usize {
     10
 }
 

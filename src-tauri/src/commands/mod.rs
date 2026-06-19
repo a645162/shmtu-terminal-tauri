@@ -2,6 +2,7 @@ pub mod account;
 pub mod bill;
 pub mod captcha;
 pub mod classify;
+pub mod cloud;
 pub mod config;
 pub mod data;
 pub mod debug;

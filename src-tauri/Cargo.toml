@@ -36,6 +36,7 @@ aes-gcm = "0.10"
 base64 = "0.22"
 hex = "0.4"
 sha2 = "0.10"
+hmac = "0.12"
 rand = "0.8"
 subtle = "2"
 
@@ -49,8 +50,11 @@ chrono = { version = "0.4", features = ["serde"] }
 thiserror = "1"
 anyhow = "1"
 
-# HTTP client (for remote rule updates)
+# HTTP client (for remote rule updates + WebDAV)
 reqwest = { version = "0.12", features = ["cookies", "json", "stream"] }
+
+# Regex (for WebDAV XML parsing)
+regex = "1"
 
 # ZIP (for snapshots)
 zip = "2"

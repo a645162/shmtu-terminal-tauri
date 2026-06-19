@@ -7,6 +7,7 @@ use tokio::sync::{Mutex, RwLock};
 
 use crate::auto_sync::AutoSyncService;
 use crate::classification::BillClassifier;
+use crate::cloud::backup::CloudBackupManager;
 use crate::config::TomlConfig;
 use crate::crypto::CryptoService;
 use crate::database::DatabaseFileManager;
@@ -43,6 +44,8 @@ pub struct AppState {
     pub local_ocr_download_active: Arc<AtomicBool>,
     /// 串行化本地 ONNX 模型下载任务
     pub local_ocr_download_lock: Arc<Mutex<()>>,
+    /// 云备份管理器
+    pub cloud_backup: Arc<RwLock<CloudBackupManager>>,
     /// 验证码测试使用的待提交 challenge，会话需与展示的验证码保持一致。
     pub captcha_test_session: Arc<Mutex<Option<CaptchaTestSession>>>,
 }
@@ -119,6 +122,15 @@ impl AppState {
             }
         };
 
+        let mut cloud_backup_mgr = CloudBackupManager::new();
+        // 从配置恢复 WebDAV 设置（在 config_arc 创建后读取）
+        {
+            let webdav_cfg = config_arc.read().await.get().cloud_backup.webdav.clone();
+            if !webdav_cfg.server_url.is_empty() {
+                cloud_backup_mgr.configure_webdav(webdav_cfg);
+            }
+        }
+
         Ok(Self {
             db_manager: Arc::new(RwLock::new(db_manager)),
             crypto: Arc::new(RwLock::new(crypto)),
@@ -133,6 +145,7 @@ impl AppState {
             local_ocr_download_cancel: Arc::new(AtomicBool::new(false)),
             local_ocr_download_active: Arc::new(AtomicBool::new(false)),
             local_ocr_download_lock: Arc::new(Mutex::new(())),
+            cloud_backup: Arc::new(RwLock::new(cloud_backup_mgr)),
             captcha_test_session: Arc::new(Mutex::new(None)),
         })
     }
