@@ -661,7 +661,7 @@ async fn download_v2_file(
         },
         backbone: model_backbone.to_string(),
         precision: model_precision.to_string(),
-        mirror: shmtu_ocr::downloader::Mirror::Github,
+        mirror: shmtu_ocr::downloader::Mirror::Gitee,
         dest: model_path.to_path_buf(),
         expected_sha256: None,
         ..Default::default()
