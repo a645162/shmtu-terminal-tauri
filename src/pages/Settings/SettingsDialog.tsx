@@ -43,8 +43,12 @@ import {
   CheckmarkCircle24Regular,
   DismissCircle24Regular,
 } from '@fluentui/react-icons';
-import type { AppSettingsTab, CaptchaMode, AppTheme, LocalOcrModelStatus } from '../../types';
+import { CloudArrowDown24Regular } from '@fluentui/react-icons';
+import type { AppSettingsTab, CaptchaMode, AppTheme, LocalOcrModelStatus,
+  WebDavConfig, BackupMeta, CloudBackupAutoConfig, RestoreReport,
+  P2PServerStatus, P2PRestDiscoverData, P2PRestPairResponseData } from '../../types';
 import * as tauri from '../../services/tauri';
+import { CloudBackupSettings } from './CloudBackupSettings';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import {
   PageEnterMotion,
@@ -169,6 +173,20 @@ export const SettingsDialog: React.FC = () => {
   const [p2pAutoReconnect, setP2PAutoReconnect] = useState(config?.p2p?.auto_reconnect ?? false);
   const [p2pDeviceName, setP2PDeviceName] = useState(config?.p2p?.device_name ?? '');
   const [p2pPort, setP2PPort] = useState(String(config?.p2p?.port ?? 19827));
+    // Cloud backup & P2P runtime state
+    const [cloudConfig, setCloudConfig] = useState<{ server_url: string; username: string; password: string; backup_root: string }>({ server_url: "", username: "", password: "", backup_root: "shmtu-backup" });
+    const [cloudPasswordInput, setCloudPasswordInput] = useState("");
+    const [cloudTestResult, setCloudTestResult] = useState("");
+    const [cloudTesting, setCloudTesting] = useState(false);
+    const [cloudAuto, setCloudAuto] = useState({ auto_enabled: false, auto_interval_minutes: 360, max_keep: 10 });
+    const [cloudBackupPwd, setCloudBackupPwd] = useState("");
+    const [cloudRestorePwd, setCloudRestorePwd] = useState("");
+    const [cloudRemoteList, setCloudRemoteList] = useState<BackupMeta[]>([]);
+    const [cloudBacking, setCloudBacking] = useState(false);
+    const [cloudBackupMsg, setCloudBackupMsg] = useState("");
+    const [p2pRunning, setP2PRunning] = useState(false);
+    const [p2pPairCode, setP2PPairCode] = useState("");
+    const [p2pActualPort, setP2PActualPort] = useState(0);
 
   useEffect(() => {
     if (!config) return;
@@ -922,6 +940,9 @@ export const SettingsDialog: React.FC = () => {
           </div>
         );
 
+
+      case 'cloud_backup':
+        return <CloudBackupSettings onMessage={(msg) => setMessage(msg)} />;
       case 'p2p':
         return (
           <div style={{ display: 'grid', gap: 16 }}>
@@ -1299,6 +1320,7 @@ export const SettingsDialog: React.FC = () => {
                     <Tab icon={<Database24Regular />} value="data">数据</Tab>
                     <Tab icon={<PeopleSwap24Regular />} value="p2p">点对点互传</Tab>
                     <Tab icon={<Tag24Regular />} value="classification">分类规则</Tab>
+                    <Tab icon={<CloudArrowDown24Regular />} value="cloud_backup">云备份</Tab>
                     <Tab icon={<ArrowDownload24Regular />} value="update">更新</Tab>
                     <Tab icon={<Bug24Regular />} value="debug">调试</Tab>
                   </TabList>

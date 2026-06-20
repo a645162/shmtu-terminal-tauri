@@ -610,3 +610,27 @@ export async function remote_list_bills(session_id: string, query: Record<string
 export async function remote_export(session_id: string): Promise<string> {
   return invoke<string>('remote_export', { sessionId: session_id });
 }
+
+// ========== 云备份 ==========
+export async function cloud_backup_get_config() { return invoke('cloud_backup_get_config') as Promise<import('../types').WebDavConfig>; }
+export async function cloud_backup_save_config(config: import('../types').WebDavConfig) { return invoke<void>('cloud_backup_save_config', { config }); }
+export async function cloud_backup_test_connection() { return invoke<boolean>('cloud_backup_test_connection'); }
+export async function cloud_backup_test_write_read() { return invoke<string>('cloud_backup_test_write_read'); }
+export async function cloud_backup_now(password?: string) { return invoke<string>('cloud_backup_now', { password: password || null }); }
+export async function cloud_backup_restore(remote_path: string, password?: string) { return invoke('cloud_backup_restore', { remotePath: remote_path, password: password || null }) as Promise<import('../types').RestoreReport>; }
+export async function cloud_backup_list_remote() { return invoke('cloud_backup_list_remote') as Promise<import('../types').BackupMeta[]>; }
+export async function cloud_backup_delete_remote(remote_path: string) { return invoke<boolean>('cloud_backup_delete_remote', { remotePath: remote_path }); }
+export async function cloud_backup_get_auto_config() { return invoke('cloud_backup_get_auto_config') as Promise<import('../types').CloudBackupAutoConfig>; }
+export async function cloud_backup_set_auto_enabled(enabled: boolean) { return invoke<void>('cloud_backup_set_auto_enabled', { enabled }); }
+export async function cloud_backup_set_auto_interval(minutes: number) { return invoke<void>('cloud_backup_set_auto_interval', { minutes }); }
+export async function cloud_backup_set_max_keep(count: number) { return invoke<void>('cloud_backup_set_max_keep', { count }); }
+
+// ========== P2P ==========
+export async function p2p_get_status() { return invoke('p2p_get_status') as Promise<import('../types').P2PServerStatus>; }
+export async function p2p_start_server(port: number) { return invoke<void>('p2p_start_server', { port }); }
+export async function p2p_stop_server() { return invoke<void>('p2p_stop_server'); }
+export async function p2p_set_pair_code(code: string) { return invoke<void>('p2p_set_pair_code', { code }); }
+export async function p2p_discover(base_url: string, device_name: string) { return invoke('p2p_discover', { baseUrl: base_url, deviceName: device_name }) as Promise<import('../types').P2PRestDiscoverData>; }
+export async function p2p_pair(base_url: string, pair_code: string, device_name: string, listen_port: number, listen_ips: string[]) { return invoke('p2p_pair', { baseUrl: base_url, pairCode: pair_code, deviceName: device_name, listenPort: listen_port, listenIps: listen_ips }) as Promise<import('../types').P2PRestPairResponseData>; }
+export async function p2p_upload_transfer(base_url: string, peer_key: string, session_id: string, bill_count: number, zip_data: number[]) { return invoke('p2p_upload_transfer', { baseUrl: base_url, peerKey: peer_key, sessionId: session_id, billCount: bill_count, zipData: zip_data }) as Promise<import('../types').P2PRestTransferResponseData>; }
+export async function p2p_download_transfer(base_url: string, peer_key: string, session_id: string) { return invoke('p2p_download_transfer', { baseUrl: base_url, peerKey: peer_key, sessionId: session_id }) as Promise<number[]>; }

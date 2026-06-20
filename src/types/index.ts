@@ -101,6 +101,7 @@ export type AppSettingsTab =
   | 'captcha'
   | 'sync'
   | 'data'
+  | 'cloud_backup'
   | 'p2p'
   | 'ui'
   | 'home'
@@ -297,4 +298,58 @@ export interface ReclassifyResult {
   category_updated: number;
   missed: number;
   duration_ms: number;
+}
+
+// ========== 云备份 ==========
+export interface WebDavConfig {
+  server_url: string;
+  username: string;
+  password: string;
+  backup_root: string;
+}
+
+export interface BackupMeta {
+  remote_path: string;
+  name: string;
+  size: number;
+  last_modified: number;
+}
+
+export interface CloudBackupAutoConfig {
+  auto_enabled: boolean;
+  auto_interval_minutes: number;
+  max_keep: number;
+}
+
+export interface RestoreReport {
+  identity_count: number;
+  account_count: number;
+  bill_count: number;
+}
+
+// ========== P2P ==========
+export interface P2PServerStatus {
+  running: boolean;
+  port: number;
+  device_name: string;
+  pair_code: string;
+}
+
+export interface P2PRestDiscoverData {
+  device_name: string;
+  ips: string[];
+  port: number;
+  pair_code: string;
+}
+
+export interface P2PRestPairResponseData {
+  session_id: string;
+  device_name: string;
+  peer_key: string;
+}
+
+export interface P2PRestTransferResponseData {
+  received: boolean;
+  bill_count: number;
+  checksum: string;
 }
