@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use shmtu_cas::captcha::CaptchaResolver;
 use shmtu_ocr::backend::OcrBackend;
@@ -1519,6 +1519,207 @@ pub async fn set_ocr_v2_precision(
         .save()
         .map_err(|e| format!("保存配置失败: {}", e))?;
     Ok(())
+}
+
+/// 本地发现的单个模型信息。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalOcrModelEntry {
+    pub file_name: String,
+    pub file_size: u64,
+    pub version: String,
+    pub backbone: String,
+    pub precision: String,
+}
+
+/// 扫描本地模型目录，返回所有已下载的 ONNX 模型文件列表。
+///
+/// v1: 检查 3 个固定文件名。v2: 扫描所有 `.onnx` 文件并尝试解析 backbone/precision。
+#[tauri::command]
+pub async fn scan_local_ocr_models(
+    state: State<'_, AppState>,
+) -> Result<Vec<LocalOcrModelEntry>, String> {
+    tracing::info!("[Captcha] scan_local_ocr_models called");
+    let config = state.config.read().await;
+    let model_path = config.onnx_model_path();
+    drop(config);
+
+    if !model_path.exists() {
+        return Ok(vec![]);
+    }
+
+    let mut entries: Vec<LocalOcrModelEntry> = Vec::new();
+
+    // --- v1: 检查 3 个硬编码文件名 ---
+    for name in [
+        const_value::v1::MODEL_ONNX_EQUAL,
+        const_value::v1::MODEL_ONNX_OPERATOR,
+        const_value::v1::MODEL_ONNX_DIGIT,
+    ] {
+        let p = model_path.join(name);
+        if p.exists() {
+            let meta = tokio::fs::metadata(&p).await.map_err(|e| e.to_string())?;
+            entries.push(LocalOcrModelEntry {
+                file_name: name.to_string(),
+                file_size: meta.len(),
+                version: "v1".to_string(),
+                backbone: String::new(),
+                precision: String::new(),
+            });
+        }
+    }
+
+    // --- v2: 扫描 *.onnx 文件,匹配 pattern: {backbone}.trislot_decoder.v2_0.{precision}.onnx ---
+    let mut dir = tokio::fs::read_dir(&model_path)
+        .await
+        .map_err(|e| format!("读取模型目录失败: {}", e))?;
+    let v2_prefix = format!(".{}.v2_0.", const_value::v2::MODEL_FAMILY);
+
+    while let Some(entry) = dir
+        .next_entry()
+        .await
+        .map_err(|e| format!("遍历模型目录失败: {}", e))?
+    {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("onnx") {
+            continue;
+        }
+        let file_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|n| n.to_string())
+            .unwrap_or_default();
+
+        // 跳过已经作为 v1 添加的文件
+        if entries.iter().any(|e| e.file_name == file_name) {
+            continue;
+        }
+
+        // 尝试解析 v2 文件名格式: {backbone}.trislot_decoder.v2_0.{precision}.onnx
+        if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+            if let Some(pos) = stem.find(&v2_prefix) {
+                let backbone = stem[..pos].to_string();
+                let precision = stem[pos + v2_prefix.len()..].to_string();
+                let meta = tokio::fs::metadata(&path).await.map_err(|e| e.to_string())?;
+                entries.push(LocalOcrModelEntry {
+                    file_name,
+                    file_size: meta.len(),
+                    version: "v2".to_string(),
+                    backbone,
+                    precision,
+                });
+                continue;
+            }
+        }
+
+        // The .onnx file didn't match any known pattern; still report it as an "unknown" v2 model
+        let meta = tokio::fs::metadata(&path).await.map_err(|e| e.to_string())?;
+        entries.push(LocalOcrModelEntry {
+            file_name,
+            file_size: meta.len(),
+            version: "v2".to_string(),
+            backbone: String::new(),
+            precision: String::new(),
+        });
+    }
+
+    tracing::info!("[Captcha] scan_local_ocr_models: found {} models", entries.len());
+    Ok(entries)
+}
+
+/// 选择本地已下载的模型，更新配置并重新加载 ONNX 后端。
+///
+/// - `version`: "v1" 或 "v2"
+/// - `backbone`: v2 模型的 backbone (v1 可传空字符串)
+/// - `precision`: v2 模型的 precision (v1 可传空字符串)
+#[tauri::command]
+pub async fn select_local_ocr_model(
+    state: State<'_, AppState>,
+    version: String,
+    backbone: String,
+    precision: String,
+) -> Result<String, String> {
+    tracing::info!(
+        "[Captcha] select_local_ocr_model: version={}, backbone={}, precision={}",
+        version,
+        backbone,
+        precision
+    );
+
+    // 校验文件是否存在
+    let config = state.config.read().await;
+    let model_path = config.onnx_model_path();
+    drop(config);
+
+    let model_version = ModelVersion::parse_or_default(&version);
+    let missing = OcrBackend::missing_model_files(model_version, &model_path);
+
+    // For v2, missing_model_files checks based on config, so we need to pre-check the specific file
+    if model_version == ModelVersion::V2 && !backbone.is_empty() && !precision.is_empty() {
+        let target = const_value::v2::build_model_name(&backbone, &precision);
+        let target_path = model_path.join(&target);
+        if !target_path.exists() {
+            return Err(format!(
+                "本地不存在该模型文件: {} (version={}, backbone={}, precision={})",
+                target, version, backbone, precision
+            ));
+        }
+    } else if !missing.is_empty() {
+        // For v1, check missing files
+        let missing_str = missing.join(", ");
+        return Err(format!(
+            "本地模型文件不完整，缺少: {} (version={})",
+            missing_str, version
+        ));
+    }
+
+    // 卸载当前模型
+    {
+        let mut guard = state
+            .local_ocr
+            .lock()
+            .map_err(|e| format!("获取ONNX锁失败: {}", e))?;
+        *guard = None;
+    }
+
+    // 更新配置
+    {
+        let mut config = state.config.write().await;
+        let captcha = &mut config.get_mut().captcha;
+        captcha.model_version = model_version;
+        if model_version == ModelVersion::V2 {
+            if !backbone.is_empty() {
+                captcha.model_backbone = backbone.clone();
+            }
+            if !precision.is_empty() {
+                captcha.model_precision = precision.clone();
+            }
+        }
+        config
+            .save()
+            .map_err(|e| format!("保存配置失败: {}", e))?;
+    }
+
+    // 重新加载模型
+    let local_ocr = state.local_ocr.clone();
+    let config = state.config.read().await;
+    let load_model_path = config.onnx_model_path();
+    let load_version = config.get().captcha.model_version;
+    drop(config);
+
+    let result = tokio::task::spawn_blocking(move || {
+        OcrBackend::load(load_version, &load_model_path)
+            .map_err(|e| format!("加载ONNX模型失败: {}", e))
+    })
+    .await
+    .map_err(|e| format!("ONNX加载任务执行失败: {}", e))??;
+
+    let mut guard = local_ocr
+        .lock()
+        .map_err(|e| format!("获取ONNX锁失败: {}", e))?;
+    *guard = Some(result);
+
+    tracing::info!("[Captcha] select_local_ocr_model: 模型加载成功");
+    Ok(format!("已选择并加载 {} 模型", version))
 }
 
 /// 获取当前 v2 配置（tag + backbone + precision）。

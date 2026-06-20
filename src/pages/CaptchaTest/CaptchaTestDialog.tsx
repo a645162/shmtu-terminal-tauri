@@ -38,6 +38,12 @@ import * as tauri from '../../services/tauri';
 import { LocalOcrModelDownloadDialog } from './LocalOcrModelDownloadDialog';
 
 export const CaptchaTestDialog: React.FC = () => {
+  function formatModelSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  }
+
   const showCaptchaTestDialog = useAppStore((s) => s.showCaptchaTestDialog);
   const setShowCaptchaTestDialog = useAppStore((s) => s.setShowCaptchaTestDialog);
   const openSettingsDialog = useAppStore((s) => s.openSettingsDialog);
@@ -64,6 +70,13 @@ export const CaptchaTestDialog: React.FC = () => {
   const [quickDownloading, setQuickDownloading] = useState(false);
   const [quickDownloadResult, setQuickDownloadResult] = useState('');
 
+  // ---- Local model scanning & selection ----
+  const [localModels, setLocalModels] = useState<tauri.LocalOcrModelEntry[]>([]);
+  const [localModelsLoading, setLocalModelsLoading] = useState(false);
+  const [selectedLocalModel, setSelectedLocalModel] = useState<string>('');
+  const [selectingModel, setSelectingModel] = useState(false);
+  const [selectModelResult, setSelectModelResult] = useState('');
+
   const loadOcrConfig = useCallback(async () => {
     try {
       const version = await tauri.get_ocr_model_version();
@@ -83,6 +96,60 @@ export const CaptchaTestDialog: React.FC = () => {
     }
     void loadOcrConfig();
   }, [showCaptchaTestDialog, loadOcrConfig]);
+
+  const scanLocalModels = useCallback(async () => {
+    setLocalModelsLoading(true);
+    try {
+      const models = await tauri.scan_local_ocr_models();
+      setLocalModels(models);
+      // Auto-select the model matching current config
+      if (ocrV2Config) {
+        const currentFileName = `${ocrV2Config.backbone}.trislot_decoder.v2_0.${ocrV2Config.precision}.onnx`;
+        const match = models.find((m) => m.file_name === currentFileName);
+        if (match) {
+          setSelectedLocalModel(match.file_name);
+        } else if (models.length > 0) {
+          setSelectedLocalModel(models[0].file_name);
+        }
+      } else if (models.length > 0) {
+        setSelectedLocalModel(models[0].file_name);
+      }
+    } catch {
+      // Ignore scan errors
+    } finally {
+      setLocalModelsLoading(false);
+    }
+  }, [ocrV2Config]);
+
+  useEffect(() => {
+    if (!showCaptchaTestDialog || mode !== 'local_onnx') {
+      return;
+    }
+    void scanLocalModels();
+  }, [showCaptchaTestDialog, mode, scanLocalModels]);
+
+  const handleSelectLocalModel = async () => {
+    const model = localModels.find((m) => m.file_name === selectedLocalModel);
+    if (!model) {
+      return;
+    }
+    setSelectingModel(true);
+    setSelectModelResult('');
+    try {
+      const result = await tauri.select_local_ocr_model(
+        model.version,
+        model.backbone,
+        model.precision,
+      );
+      setSelectModelResult(result);
+      // Refresh config after selection
+      await loadOcrConfig();
+    } catch (error) {
+      setSelectModelResult(`选择失败: ${String(error)}`);
+    } finally {
+      setSelectingModel(false);
+    }
+  };
 
   const handleVersionSwitch = async (version: 'v1' | 'v2') => {
     try {
@@ -522,6 +589,102 @@ export const CaptchaTestDialog: React.FC = () => {
                             {quickDownloadResult}
                           </Text>
                         )}
+
+                        {/* Local Models Section */}
+                        <div style={{ borderTop: '1px solid var(--colorNeutralStroke2)', paddingTop: 10, display: 'grid', gap: 8 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Text weight="semibold" size={200}>本地已下载模型</Text>
+                            <Button
+                              appearance="subtle"
+                              size="small"
+                              onClick={() => void scanLocalModels()}
+                              disabled={localModelsLoading}
+                            >
+                              {localModelsLoading ? <Spinner size="tiny" /> : '刷新'}
+                            </Button>
+                          </div>
+                          {localModels.length === 0 && !localModelsLoading && (
+                            <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+                              未检测到本地模型文件。请先下载模型。
+                            </Text>
+                          )}
+                          {localModels.length > 0 && (
+                            <div
+                              style={{
+                                border: '1px solid var(--colorNeutralStroke2)',
+                                borderRadius: 6,
+                                background: 'var(--colorNeutralBackground1)',
+                                maxHeight: 160,
+                                overflow: 'auto',
+                              }}
+                            >
+                              <Table size="small">
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHeaderCell>选择</TableHeaderCell>
+                                    <TableHeaderCell>版本</TableHeaderCell>
+                                    <TableHeaderCell>Backbone</TableHeaderCell>
+                                    <TableHeaderCell>Precision</TableHeaderCell>
+                                    <TableHeaderCell>大小</TableHeaderCell>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {localModels.map((m) => (
+                                    <TableRow key={m.file_name}>
+                                      <TableCell>
+                                        <input
+                                          type="radio"
+                                          name="local-ocr-model"
+                                          checked={selectedLocalModel === m.file_name}
+                                          onChange={() => setSelectedLocalModel(m.file_name)}
+                                          disabled={selectingModel}
+                                        />
+                                      </TableCell>
+                                      <TableCell>
+                                        <Badge appearance="tint" color={m.version === 'v2' ? 'brand' : 'warning'} size="small">
+                                          {m.version}
+                                        </Badge>
+                                      </TableCell>
+                                      <TableCell>
+                                        <code style={{ fontSize: 11 }}>{m.backbone || '--'}</code>
+                                      </TableCell>
+                                      <TableCell>
+                                        <code style={{ fontSize: 11 }}>{m.precision || '--'}</code>
+                                      </TableCell>
+                                      <TableCell>
+                                        <Text size={200}>{formatModelSize(m.file_size)}</Text>
+                                      </TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </div>
+                          )}
+                          {localModels.length > 0 && (
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                              <Button
+                                appearance="primary"
+                                size="small"
+                                onClick={() => void handleSelectLocalModel()}
+                                disabled={selectingModel || !selectedLocalModel}
+                              >
+                                {selectingModel ? <Spinner size="tiny" /> : '加载选中模型'}
+                              </Button>
+                              {selectModelResult && (
+                                <Text
+                                  size={200}
+                                  style={{
+                                    color: selectModelResult.includes('失败')
+                                      ? 'var(--colorPaletteRedForeground1)'
+                                      : 'var(--colorPaletteGreenForeground1)',
+                                  }}
+                                >
+                                  {selectModelResult}
+                                </Text>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </>
                   )}

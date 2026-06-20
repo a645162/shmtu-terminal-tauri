@@ -338,6 +338,28 @@ export async function get_ocr_v2_config(): Promise<OcrV2Config> {
   return invoke<OcrV2Config>('get_ocr_v2_config');
 }
 
+// ---- Local Model Scanning & Selection API ----
+
+export interface LocalOcrModelEntry {
+  file_name: string;
+  file_size: number;
+  version: string;
+  backbone: string;
+  precision: string;
+}
+
+export async function scan_local_ocr_models(): Promise<LocalOcrModelEntry[]> {
+  return invoke<LocalOcrModelEntry[]>('scan_local_ocr_models');
+}
+
+export async function select_local_ocr_model(
+  version: string,
+  backbone: string,
+  precision: string,
+): Promise<string> {
+  return invoke<string>('select_local_ocr_model', { version, backbone, precision });
+}
+
 // ========== Data Transfer ==========
 
 export interface ExportParams {

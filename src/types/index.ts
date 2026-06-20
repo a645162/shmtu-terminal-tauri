@@ -154,6 +154,15 @@ export interface LocalOcrModelDownloadProgress {
   message: string;
 }
 
+// Local OCR model entry (scanned from disk)
+export interface LocalOcrModelEntry {
+  file_name: string;
+  file_size: number;
+  version: string;
+  backbone: string;
+  precision: string;
+}
+
 // Sync progress
 export interface SyncProgress {
   account_id: string;
