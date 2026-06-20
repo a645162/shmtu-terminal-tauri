@@ -2,7 +2,7 @@ pub mod auto_sync;
 pub mod classification;
 pub mod cloud;
 pub mod commands;
-pub mod p2p;
+pub mod ocr_server;
 pub mod config;
 pub mod crypto;
 pub mod database;
@@ -11,15 +11,18 @@ pub mod entity;
 pub mod error;
 pub mod export;
 pub mod models;
+pub mod p2p;
 pub mod remote;
 pub mod session_refresh;
 pub mod state;
 pub mod sync;
 
+use std::sync::Arc;
+
 use commands::{
     account, bill, captcha, classify, cloud as cmd_cloud, config as cmd_config, data, debug as cmd_debug,
-    error as error_cmd, identity, p2p as cmd_p2p, person_account as cmd_person_account,
-    remote as cmd_remote, statistics, sync as cmd_sync,
+    error as error_cmd, identity, ocr_server as cmd_ocr_server, p2p as cmd_p2p,
+    person_account as cmd_person_account, remote as cmd_remote, statistics, sync as cmd_sync,
 };
 use tauri::Manager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -73,6 +76,35 @@ pub fn run() {
             tracing::info!("应用状态初始化完成");
             app.manage(app_state);
             app.manage(remote::RemoteManager::new());
+
+            // OCR HTTP 服务器管理器 (懒加载模型,首次 POST /api/ocr 才加载)
+            let ocr_http = ocr_server::OcrHttpServerManager::new(
+                std::env::var("HOSTNAME").unwrap_or_else(|_| "Tauri".to_string())
+            );
+            // 若配置启用且端口可用,则自动启动 (setup 是同步上下文,用 block_on)
+            {
+                let app_state_clone: state::AppState = app.state::<state::AppState>().inner().clone();
+                let manager_for_check = ocr_http.clone();
+                let port_to_use = {
+                    let cfg_guard = tauri::async_runtime::block_on(app_state_clone.config.read());
+                    cfg_guard.get().captcha.ocr_server_port
+                };
+                let enabled = {
+                    let cfg_guard = tauri::async_runtime::block_on(app_state_clone.config.read());
+                    cfg_guard.get().captcha.ocr_server_enabled
+                };
+                if enabled {
+                    if let Err(e) = tauri::async_runtime::block_on(
+                        manager_for_check.start(port_to_use, Arc::new(app_state_clone))
+                    ) {
+                        tracing::warn!("[OcrHttpServer] auto-start failed: {}", e);
+                    } else {
+                        tracing::info!("[OcrHttpServer] auto-started on port {}", port_to_use);
+                    }
+                }
+            }
+            app.manage(ocr_http);
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -191,6 +223,11 @@ pub fn run() {
             cmd_p2p::p2p_pair,
             cmd_p2p::p2p_upload_transfer,
             cmd_p2p::p2p_download_transfer,
+            // OCR HTTP 服务器 (懒加载,与 Android OcrWebServer 协议对齐)
+            cmd_ocr_server::ocr_server_start,
+            cmd_ocr_server::ocr_server_stop,
+            cmd_ocr_server::ocr_server_status,
+            cmd_ocr_server::ocr_server_rotate_token,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

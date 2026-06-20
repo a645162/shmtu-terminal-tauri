@@ -96,6 +96,12 @@ pub struct CaptchaConfig {
     /// v2 模型精度（默认 fp16）。
     #[serde(default = "default_model_precision")]
     pub model_precision: String,
+    /// OCR HTTP 服务器:是否启用 (默认 false,懒加载模型)
+    #[serde(default)]
+    pub ocr_server_enabled: bool,
+    /// OCR HTTP 服务器端口 (默认 5000,与 Rust shmtu-ocr-server 对齐)
+    #[serde(default = "default_ocr_server_port")]
+    pub ocr_server_port: u16,
 }
 
 /// 空字符串 → 触发 `V2DownloadOptions` 自动解析最新 tag。
@@ -112,6 +118,10 @@ fn default_model_precision() -> String {
 
 fn default_remote_ocr_http_url() -> String {
     "http://127.0.0.1:5000".to_string()
+}
+
+fn default_ocr_server_port() -> u16 {
+    5000
 }
 
 fn default_ocr_retry_count() -> usize {

@@ -8,6 +8,7 @@ pub mod data;
 pub mod debug;
 pub mod error;
 pub mod identity;
+pub mod ocr_server;
 pub mod p2p;
 pub mod person_account;
 pub mod remote;

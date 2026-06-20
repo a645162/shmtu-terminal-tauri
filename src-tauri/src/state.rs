@@ -24,6 +24,7 @@ pub struct CaptchaTestSession {
 }
 
 /// 应用全局状态，通过 tauri::State 注入到所有命令中
+#[derive(Clone)]
 pub struct AppState {
     pub db_manager: Arc<RwLock<DatabaseManager>>,
     pub crypto: Arc<RwLock<CryptoService>>,
