@@ -71,7 +71,7 @@ export const CaptchaTestDialog: React.FC = () => {
   const [quickDownloadResult, setQuickDownloadResult] = useState('');
 
   // ---- Local model scanning & selection ----
-  const [localModels, setLocalModels] = useState<tauri.LocalOcrModelEntry[]>([]);
+  const [localModels, setLocalModels] = useState<tauri.LocalModelEntry[]>([]);
   const [localModelsLoading, setLocalModelsLoading] = useState(false);
   const [selectedLocalModel, setSelectedLocalModel] = useState<string>('');
   const [selectingModel, setSelectingModel] = useState(false);
@@ -136,12 +136,12 @@ export const CaptchaTestDialog: React.FC = () => {
     setSelectingModel(true);
     setSelectModelResult('');
     try {
-      const result = await tauri.select_local_ocr_model(
+      await tauri.select_and_load_local_ocr_model(
         model.version,
         model.backbone,
         model.precision,
       );
-      setSelectModelResult(result);
+      setSelectModelResult('模型已选择并加载');
       // Refresh config after selection
       await loadOcrConfig();
     } catch (error) {
@@ -652,7 +652,7 @@ export const CaptchaTestDialog: React.FC = () => {
                                         <code style={{ fontSize: 11 }}>{m.precision || '--'}</code>
                                       </TableCell>
                                       <TableCell>
-                                        <Text size={200}>{formatModelSize(m.file_size)}</Text>
+                                        <Text size={200}>{formatModelSize(m.file_size_bytes)}</Text>
                                       </TableCell>
                                     </TableRow>
                                   ))}

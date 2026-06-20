@@ -166,7 +166,7 @@ pub fn run() {
             captcha::set_ocr_v2_precision,
             captcha::get_ocr_v2_config,
             captcha::scan_local_ocr_models,
-            captcha::select_local_ocr_model,
+            captcha::select_and_load_local_ocr_model,
             data::export_data,
             data::import_data,
             data::list_snapshots,

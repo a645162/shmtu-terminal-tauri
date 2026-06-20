@@ -23,6 +23,7 @@ import {
 import { ArrowDownload24Regular, ArrowSync24Regular } from '@fluentui/react-icons';
 import type { LocalOcrModelDownloadProgress } from '../../types';
 import * as tauri from '../../services/tauri';
+import type { LocalModelEntry } from '../../services/tauri';
 
 interface LocalOcrModelDownloadDialogProps {
   open: boolean;
@@ -83,6 +84,10 @@ export const LocalOcrModelDownloadDialog: React.FC<LocalOcrModelDownloadDialogPr
   const [currentConfig, setCurrentConfig] = useState<tauri.OcrV2Config | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const [activeTab, setActiveTab] = useState<'download' | 'local'>('download');
+  const [localModels, setLocalModels] = useState<LocalModelEntry[]>([]);
+  const [localModelsLoading, setLocalModelsLoading] = useState(false);
+  const [loadingModelKey, setLoadingModelKey] = useState<string | null>(null);
 
   const totalProgress = progress?.overall_progress ?? 0;
   const currentFileProgress = progress?.current_file_progress ?? 0;
@@ -114,6 +119,24 @@ export const LocalOcrModelDownloadDialog: React.FC<LocalOcrModelDownloadDialogPr
     void refreshCatalog();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [advanced, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    let disposed = false;
+    setLocalModelsLoading(true);
+    tauri
+      .scan_local_ocr_models()
+      .then((items) => {
+        if (!disposed) setLocalModels(items);
+      })
+      .catch((error) => {
+        if (!disposed) setSubmitError(String(error));
+      })
+      .finally(() => {
+        if (!disposed) setLocalModelsLoading(false);
+      });
+    return () => { disposed = true; };
+  }, [open]);
 
   useEffect(() => {
     if (!advanced || !open || !selectedTag) {
@@ -177,6 +200,22 @@ export const LocalOcrModelDownloadDialog: React.FC<LocalOcrModelDownloadDialogPr
       setSubmitError(String(error));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleLoadModel = async (model: LocalModelEntry) => {
+    const key = `${model.version}:${model.backbone}:${model.precision}:${model.file_name}`;
+    setLoadingModelKey(key);
+    setSubmitError('');
+    try {
+      await tauri.select_and_load_local_ocr_model(model.version, model.backbone, model.precision);
+      // Refresh the list to reflect the loaded state
+      const items = await tauri.scan_local_ocr_models();
+      setLocalModels(items);
+    } catch (error) {
+      setSubmitError(String(error));
+    } finally {
+      setLoadingModelKey(null);
     }
   };
 
@@ -353,6 +392,95 @@ export const LocalOcrModelDownloadDialog: React.FC<LocalOcrModelDownloadDialogPr
     </div>
   );
 
+  const renderLocalModels = () => (
+    <div style={{ display: 'grid', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+        <Text weight="semibold">已下载的模型</Text>
+        {localModelsLoading && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <Spinner size="tiny" />
+            <Text size={200}>扫描中...</Text>
+          </span>
+        )}
+      </div>
+      {localModels.length === 0 && !localModelsLoading && (
+        <Text size={200} style={{ color: 'var(--colorNeutralForeground3)' }}>
+          未找到本地模型文件。请先下载模型。
+        </Text>
+      )}
+      {localModels.length > 0 && (
+        <div
+          style={{
+            border: '1px solid var(--colorNeutralStroke2)',
+            borderRadius: 8,
+            background: 'var(--colorNeutralBackground1)',
+            maxHeight: 320,
+            overflow: 'auto',
+          }}
+        >
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHeaderCell>版本</TableHeaderCell>
+                <TableHeaderCell>显示名</TableHeaderCell>
+                <TableHeaderCell>Backbone</TableHeaderCell>
+                <TableHeaderCell>Precision</TableHeaderCell>
+                <TableHeaderCell>大小</TableHeaderCell>
+                <TableHeaderCell>操作</TableHeaderCell>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {localModels.map((m) => {
+                const key = `${m.version}:${m.backbone}:${m.precision}:${m.file_name}`;
+                const isLoading = loadingModelKey === key;
+                return (
+                  <TableRow key={key}>
+                    <TableCell>
+                      <code>{m.version}</code>
+                    </TableCell>
+                    <TableCell>{m.display_name}</TableCell>
+                    <TableCell>
+                      {m.backbone ? <code>{m.backbone}</code> : '--'}
+                    </TableCell>
+                    <TableCell>
+                      {m.precision ? <code>{m.precision}</code> : '--'}
+                    </TableCell>
+                    <TableCell>{formatBytes(m.file_size_bytes)}</TableCell>
+                    <TableCell>
+                      <Button
+                        size="small"
+                        appearance="primary"
+                        onClick={() => void handleLoadModel(m)}
+                        disabled={isLoading || !!loadingModelKey}
+                      >
+                        {isLoading ? <Spinner size="tiny" /> : '加载'}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {submitError && (
+        <div
+          style={{
+            padding: 10,
+            borderRadius: 8,
+            background: 'var(--colorPaletteRedBackground1)',
+            border: '1px solid var(--colorPaletteRedBorder2)',
+            color: 'var(--colorPaletteRedForeground1)',
+            fontSize: 12,
+          }}
+        >
+          {submitError}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <Dialog open={open}>
       <DialogSurface style={{ width: 'min(92vw, 720px)' }}>
@@ -361,7 +489,31 @@ export const LocalOcrModelDownloadDialog: React.FC<LocalOcrModelDownloadDialogPr
             <ArrowDownload24Regular style={{ marginRight: 8 }} />
             {advanced ? 'OCR 模型高级设置 (v2)' : '下载本地 OCR 模型'}
           </DialogTitle>
-          <DialogContent>{advanced ? renderAdvanced() : renderProgress()}</DialogContent>
+          <DialogContent>
+            {advanced ? (
+              <div style={{ display: 'grid', gap: 12 }}>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Button
+                    appearance={activeTab === 'download' ? 'primary' : 'secondary'}
+                    onClick={() => setActiveTab('download')}
+                    size="small"
+                  >
+                    下载设置
+                  </Button>
+                  <Button
+                    appearance={activeTab === 'local' ? 'primary' : 'secondary'}
+                    onClick={() => setActiveTab('local')}
+                    size="small"
+                  >
+                    已下载的模型
+                  </Button>
+                </div>
+                {activeTab === 'download' ? renderAdvanced() : renderLocalModels()}
+              </div>
+            ) : (
+              renderProgress()
+            )}
+          </DialogContent>
           <DialogActions>
             {advanced ? (
               <>

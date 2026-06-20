@@ -140,6 +140,15 @@ export interface LocalOcrModelStatus {
   missing_files: string[];
 }
 
+export interface LocalModelEntry {
+  version: string;
+  backbone: string;
+  precision: string;
+  display_name: string;
+  file_name: string;
+  file_size_bytes: number;
+}
+
 export interface LocalOcrModelDownloadProgress {
   phase: 'checking' | 'downloading' | 'completed' | 'cancelled' | 'error';
   model_dir: string;
@@ -155,12 +164,13 @@ export interface LocalOcrModelDownloadProgress {
 }
 
 // Local OCR model entry (scanned from disk)
-export interface LocalOcrModelEntry {
-  file_name: string;
-  file_size: number;
+export interface LocalModelEntry {
   version: string;
   backbone: string;
   precision: string;
+  display_name: string;
+  file_name: string;
+  file_size_bytes: number;
 }
 
 // Sync progress
