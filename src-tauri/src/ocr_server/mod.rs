@@ -196,6 +196,7 @@ impl OcrHttpServerManager {
     pub async fn start(
         self: Arc<Self>,
         port: u16,
+        bind_addr: std::net::IpAddr,
         app_state: Arc<CrateAppState>,
     ) -> Result<()> {
         if self.is_running() {
@@ -204,18 +205,21 @@ impl OcrHttpServerManager {
         }
         let manager = self.clone();
         let state_for_handler = app_state.clone();
-        let addr = SocketAddr::from(([0, 0, 0, 0], port));
+        let addr = SocketAddr::from((bind_addr, port));
         let router = build_router(manager, state_for_handler);
 
         let handle = tokio::spawn(async move {
             let listener = match tokio::net::TcpListener::bind(addr).await {
                 Ok(l) => l,
                 Err(e) => {
-                    tracing::error!("[OcrHttpServer] bind error: {}", e);
+                    tracing::error!("[OcrHttpServer] bind error on {}: {}", addr, e);
                     return;
                 }
             };
-            tracing::info!("[OcrHttpServer] listening on {} (lazy-load model)", addr);
+            tracing::info!(
+                "[OcrHttpServer] listening on {} (lazy-load model, scope={})",
+                addr, bind_addr
+            );
             if let Err(e) = axum::serve(listener, router).await {
                 tracing::error!("[OcrHttpServer] serve error: {}", e);
             }

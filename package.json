@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@fluentui/react-components": "^9.74.1",
-    "@fluentui/react-icons": "^2.0.330",
+    "@fluentui/react-icons": "^2.0.316",
     "@fluentui/react-motion": "^9.16.0",
     "@radix-ui/react-context-menu": "^2.3.1",
     "@tauri-apps/api": "^2",

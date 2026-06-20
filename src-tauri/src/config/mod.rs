@@ -60,6 +60,25 @@ pub enum CaptchaMode {
     LocalOnnx,
 }
 
+/// OCR HTTP 服务器监听范围
+///
+/// - `LoopbackOnly`: 只监听 127.0.0.1,本机其他进程可访问,局域网/公网不可达
+/// - `Lan`: 监听 0.0.0.0,局域网内任何设备可达 (默认,适合开发/家庭网络)
+/// - `CustomIp`: 绑定到 [CaptchaConfig::ocr_server_bind_addr] 指定的具体网卡 IP
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum OcrServerScope {
+    LoopbackOnly,
+    Lan,
+    CustomIp,
+}
+
+impl Default for OcrServerScope {
+    fn default() -> Self {
+        OcrServerScope::Lan
+    }
+}
+
 #[allow(clippy::derivable_impls)]
 impl Default for CaptchaMode {
     fn default() -> Self {
@@ -102,6 +121,12 @@ pub struct CaptchaConfig {
     /// OCR HTTP 服务器端口 (默认 5000,与 Rust shmtu-ocr-server 对齐)
     #[serde(default = "default_ocr_server_port")]
     pub ocr_server_port: u16,
+    /// OCR HTTP 服务器监听范围
+    #[serde(default)]
+    pub ocr_server_scope: OcrServerScope,
+    /// OCR HTTP 服务器自定义绑定 IP (scope == CustomIp 时使用)
+    #[serde(default)]
+    pub ocr_server_bind_addr: String,
 }
 
 /// 空字符串 → 触发 `V2DownloadOptions` 自动解析最新 tag。
@@ -122,6 +147,19 @@ fn default_remote_ocr_http_url() -> String {
 
 fn default_ocr_server_port() -> u16 {
     5000
+}
+
+/// 把 [OcrServerScope] 解析为实际的 bind 地址字符串 ("127.0.0.1" / "0.0.0.0" / 用户值)
+pub fn ocr_server_bind_address(scope: &OcrServerScope, custom: &str) -> std::net::IpAddr {
+    use std::net::IpAddr;
+    use std::str::FromStr;
+    match scope {
+        OcrServerScope::LoopbackOnly => IpAddr::from_str("127.0.0.1").unwrap(),
+        OcrServerScope::Lan => IpAddr::from_str("0.0.0.0").unwrap(),
+        OcrServerScope::CustomIp => {
+            IpAddr::from_str(custom.trim()).unwrap_or_else(|_| IpAddr::from_str("127.0.0.1").unwrap())
+        }
+    }
 }
 
 fn default_ocr_retry_count() -> usize {

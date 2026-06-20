@@ -85,21 +85,29 @@ pub fn run() {
             {
                 let app_state_clone: state::AppState = app.state::<state::AppState>().inner().clone();
                 let manager_for_check = ocr_http.clone();
-                let port_to_use = {
+                let cfg_snapshot = {
                     let cfg_guard = tauri::async_runtime::block_on(app_state_clone.config.read());
-                    cfg_guard.get().captcha.ocr_server_port
+                    cfg_guard.get().captcha.clone()
                 };
-                let enabled = {
-                    let cfg_guard = tauri::async_runtime::block_on(app_state_clone.config.read());
-                    cfg_guard.get().captcha.ocr_server_enabled
-                };
-                if enabled {
+                if cfg_snapshot.ocr_server_enabled {
+                    let port_to_use = cfg_snapshot.ocr_server_port;
+                    let bind_ip = config::ocr_server_bind_address(
+                        &cfg_snapshot.ocr_server_scope,
+                        &cfg_snapshot.ocr_server_bind_addr,
+                    );
                     if let Err(e) = tauri::async_runtime::block_on(
-                        manager_for_check.start(port_to_use, Arc::new(app_state_clone))
+                        manager_for_check.start(
+                            port_to_use,
+                            bind_ip,
+                            Arc::new(app_state_clone),
+                        )
                     ) {
                         tracing::warn!("[OcrHttpServer] auto-start failed: {}", e);
                     } else {
-                        tracing::info!("[OcrHttpServer] auto-started on port {}", port_to_use);
+                        tracing::info!(
+                            "[OcrHttpServer] auto-started on {}:{} (scope={:?})",
+                            bind_ip, port_to_use, cfg_snapshot.ocr_server_scope
+                        );
                     }
                 }
             }
