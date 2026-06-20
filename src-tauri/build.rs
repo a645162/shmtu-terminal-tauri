@@ -11,6 +11,18 @@ const IGNORED_EMAIL_DOMAINS: &[&str] = &[
 ];
 
 fn main() {
+    // 从 git tag 动态生成版本号（传给 CARGO_PKG_VERSION）
+    if let Ok(tag) = Command::new("git")
+        .args(["describe", "--tags", "--always", "--dirty"])
+        .output()
+    {
+        let version = String::from_utf8_lossy(&tag.stdout).trim().to_string();
+        if !version.is_empty() {
+            println!("cargo:rustc-env=CARGO_PKG_VERSION={}", version);
+            println!("cargo:rerun-if-changed=.git/HEAD");
+        }
+    }
+
     // Extract git contributors (name + email) BEFORE tauri_build::build()
     let contributors_json = extract_git_contributors();
     println!("cargo:rustc-env=GIT_CONTRIBUTORS={}", contributors_json);
