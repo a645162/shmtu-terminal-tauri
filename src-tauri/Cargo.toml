@@ -50,8 +50,8 @@ chrono = { version = "0.4", features = ["serde"] }
 thiserror = "1"
 anyhow = "1"
 
-# HTTP client (for remote rule updates + WebDAV)
-reqwest = { version = "0.12", features = ["cookies", "json", "stream"] }
+# HTTP client (for remote rule updates + WebDAV + P2P client)
+reqwest = { version = "0.12", features = ["cookies", "json", "stream", "multipart"] }
 
 # Regex (for WebDAV XML parsing)
 regex = "1"
@@ -61,6 +61,16 @@ zip = "2"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
+
+# HTTP server (for P2P RESTful API, aligned with Android NanoHTTPD endpoints)
+axum = { version = "0.7", features = ["multipart"] }
+tower = "0.5"
+
+# UUID (for P2P session IDs)
+uuid = { version = "1", features = ["v4"] }
+
+# Network interface enumeration
+if-addrs = "0.10"
 
 # Logging
 tracing = "0.1"

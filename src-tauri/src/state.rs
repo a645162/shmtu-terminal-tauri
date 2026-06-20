@@ -9,6 +9,7 @@ use crate::auto_sync::AutoSyncService;
 use crate::classification::BillClassifier;
 use crate::cloud::backup::CloudBackupManager;
 use crate::config::TomlConfig;
+use crate::p2p::http_server::P2PServerManager;
 use crate::crypto::CryptoService;
 use crate::database::DatabaseFileManager;
 use crate::db::DatabaseManager;
@@ -46,6 +47,8 @@ pub struct AppState {
     pub local_ocr_download_lock: Arc<Mutex<()>>,
     /// 云备份管理器
     pub cloud_backup: Arc<RwLock<CloudBackupManager>>,
+    /// P2P RESTful HTTP 服务器
+    pub p2p_server: Arc<P2PServerManager>,
     /// 验证码测试使用的待提交 challenge，会话需与展示的验证码保持一致。
     pub captcha_test_session: Arc<Mutex<Option<CaptchaTestSession>>>,
 }
@@ -146,6 +149,9 @@ impl AppState {
             local_ocr_download_active: Arc::new(AtomicBool::new(false)),
             local_ocr_download_lock: Arc::new(Mutex::new(())),
             cloud_backup: Arc::new(RwLock::new(cloud_backup_mgr)),
+            p2p_server: P2PServerManager::new(
+                std::env::var("HOSTNAME").unwrap_or_else(|_| "Tauri".to_string())
+            ),
             captcha_test_session: Arc::new(Mutex::new(None)),
         })
     }

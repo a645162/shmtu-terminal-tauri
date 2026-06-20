@@ -2,6 +2,7 @@ pub mod auto_sync;
 pub mod classification;
 pub mod cloud;
 pub mod commands;
+pub mod p2p;
 pub mod config;
 pub mod crypto;
 pub mod database;
@@ -17,8 +18,8 @@ pub mod sync;
 
 use commands::{
     account, bill, captcha, classify, cloud as cmd_cloud, config as cmd_config, data, debug as cmd_debug,
-    error as error_cmd, identity, person_account as cmd_person_account, remote as cmd_remote,
-    statistics, sync as cmd_sync,
+    error as error_cmd, identity, p2p as cmd_p2p, person_account as cmd_person_account,
+    remote as cmd_remote, statistics, sync as cmd_sync,
 };
 use tauri::Manager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -181,6 +182,15 @@ pub fn run() {
             cmd_cloud::cloud_backup_set_auto_enabled,
             cmd_cloud::cloud_backup_set_auto_interval,
             cmd_cloud::cloud_backup_set_max_keep,
+            // P2P RESTful（与 Android P2PHttpServer 协议对齐）
+            cmd_p2p::p2p_get_status,
+            cmd_p2p::p2p_start_server,
+            cmd_p2p::p2p_stop_server,
+            cmd_p2p::p2p_set_pair_code,
+            cmd_p2p::p2p_discover,
+            cmd_p2p::p2p_pair,
+            cmd_p2p::p2p_upload_transfer,
+            cmd_p2p::p2p_download_transfer,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
